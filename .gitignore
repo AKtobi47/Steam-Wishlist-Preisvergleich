@@ -1,0 +1,4 @@
+*.local
+BIGData.code-workspace
+/Output
+.env
