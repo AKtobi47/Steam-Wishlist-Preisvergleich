@@ -478,7 +478,7 @@ class SteamWishlistManager:
         return results
     
     def _fetch_single_app_price(self, app_id: str, country_code: str) -> Dict:
-        """Holt Preisinformationen für eine einzelne App mit Rate Limiting"""
+        """Holt Preisinformationen für eine einzelne App mit Rate Limiting - ENHANCED mit Release Date"""
         url = f"{self.steam_store_url}/appdetails"
         params = {
             'appids': app_id,
@@ -502,6 +502,24 @@ class SteamWishlistManager:
                     if app_data.get('success') and 'data' in app_data:
                         game_data = app_data['data']
                         price_overview = game_data.get('price_overview')
+                        
+                        # ERWEITERT: Release Date auch hier extrahieren und in DB aktualisieren
+                        release_date = game_data.get('release_date')
+                        if release_date:
+                            # Aktualisiere App in Datenbank mit Release Date falls verfügbar
+                            try:
+                                app_update_data = {
+                                    'app_id': app_id,
+                                    'name': game_data.get('name', ''),
+                                    'type': game_data.get('type', 'game'),
+                                    'is_free': game_data.get('is_free', False),
+                                    'release_date': release_date,
+                                    'developer': ', '.join(game_data.get('developers', [])),
+                                    'publisher': ', '.join(game_data.get('publishers', []))
+                                }
+                                self.db_manager.add_app(app_update_data)
+                            except Exception as e:
+                                logger.debug(f"📅 Konnte Release Date für App {app_id} nicht aktualisieren: {e}")
                         
                         price_info = {
                             'currency': None,
@@ -611,7 +629,7 @@ class SteamWishlistManager:
             return None
     
     def print_wishlist_summary(self, wishlist_data: Dict):
-        """Gibt eine Zusammenfassung der Wishlist aus - FIXED Division by Zero"""
+        """Gibt eine Zusammenfassung der Wishlist aus - ENHANCED mit neuen Mapping-Status"""
         if not wishlist_data:
             print("❌ Keine Wishlist-Daten verfügbar")
             return
@@ -668,23 +686,48 @@ class SteamWishlistManager:
                 
                 print(f"{i:2d}. {name} (ID: {app_id}){price_info}")
                 
-                # CheapShark-Info falls verfügbar
+                # CheapShark-Info falls verfügbar - ERWEITERT mit Release Date Logic
                 if item.get('cheapshark_game_id'):
                     cheapest = item.get('cheapest_price_ever')
                     if cheapest:
                         print(f"     💰 Bester Preis jemals: ${cheapest}")
+                elif item.get('no_mapping_found'):
+                    print(f"     📝 Nicht auf CheapShark verfügbar")
+                elif item.get('mapping_status') == 'too_new':
+                    print(f"     📅 Zu neu für CheapShark (wird später geprüft)")
+                elif item.get('mapping_status') == 'failed':
+                    print(f"     ⚠️ CheapShark-Mapping fehlgeschlagen")
         
-        # Statistiken - FIXED: Division by Zero
+        # Statistiken - ENHANCED mit neuen Kategorien inkl. too_new
         with_cheapshark = sum(1 for item in items if item.get('cheapshark_game_id'))
+        no_mapping_found = sum(1 for item in items if item.get('no_mapping_found'))
+        too_new = sum(1 for item in items if item.get('mapping_status') == 'too_new')
+        mapping_failed = sum(1 for item in items if item.get('mapping_status') == 'failed')
+        not_attempted = total - with_cheapshark - no_mapping_found - too_new - mapping_failed
         with_current_price = sum(1 for item in items if item.get('current_steam_price', {}).get('final_price') is not None)
         
-        print(f"\n📈 STATISTIKEN:")
+        print(f"\n📈 CHEAPSHARK-STATISTIKEN:")
         if total > 0:
-            print(f"CheapShark-Mappings: {with_cheapshark}/{total} ({(with_cheapshark/total)*100:.1f}%)")
-            print(f"Aktuelle Preise: {with_current_price}/{total} ({(with_current_price/total)*100:.1f}%)")
+            print(f"✅ Mit Mapping: {with_cheapshark}/{total} ({(with_cheapshark/total)*100:.1f}%)")
+            print(f"📝 Kein Mapping verfügbar: {no_mapping_found}/{total} ({(no_mapping_found/total)*100:.1f}%)")
+            print(f"📅 Zu neu für Mapping: {too_new}/{total} ({(too_new/total)*100:.1f}%)")
+            print(f"❌ Mapping fehlgeschlagen: {mapping_failed}/{total} ({(mapping_failed/total)*100:.1f}%)")
+            print(f"❔ Noch nicht versucht: {not_attempted}/{total} ({(not_attempted/total)*100:.1f}%)")
+            
+            processed = with_cheapshark + no_mapping_found + too_new
+            print(f"🎯 Verarbeitet: {processed}/{total} ({(processed/total)*100:.1f}%)")
+            
+            print(f"\n💰 PREIS-STATISTIKEN:")
+            print(f"Aktuelle Steam-Preise: {with_current_price}/{total} ({(with_current_price/total)*100:.1f}%)")
+            
+            # Release Date Insights
+            if too_new > 0:
+                print(f"\n📅 RELEASE DATE INSIGHTS:")
+                print(f"🆕 {too_new} Apps sind zu neu für CheapShark")
+                print(f"💡 Diese werden automatisch nach 60+ Tagen erneut geprüft")
         else:
-            print(f"CheapShark-Mappings: {with_cheapshark}/0 (N/A)")
-            print(f"Aktuelle Preise: {with_current_price}/0 (N/A)")
+            print(f"CheapShark-Mappings: 0/0 (N/A)")
+            print(f"Aktuelle Preise: 0/0 (N/A)")
         
         print(f"\n{'='*50}")
     
@@ -701,9 +744,10 @@ class SteamWishlistManager:
 
 def main():
     """Hauptfunktion für interaktive Nutzung"""
-    print("🎮 STEAM WISHLIST MANAGER v2.0 (FIXED)")
+    print("🎮 STEAM WISHLIST MANAGER v2.0 (ENHANCED)")
     print("Modulare Architektur mit automatischem Mapping")
     print("🔧 Fixes: Rate Limiting & ZeroDivisionError")
+    print("🆕 Enhanced: Explizites 'Kein Mapping' Tracking")
     print("=" * 60)
     
     # API Key laden
@@ -786,26 +830,49 @@ def main():
                 print("❌ Wishlist konnte nicht verarbeitet werden")
         
         elif choice == "2":
-            # Manager-Status anzeigen
+            # Manager-Status anzeigen - ENHANCED mit Release Date Features
             status = manager.get_manager_status()
             
             print(f"\n📊 MANAGER STATUS:")
             print(f"=" * 40)
             
-            # Datenbank
+            # Datenbank - ERWEITERT
             db = status['database']
             print(f"📚 Apps in DB: {db['apps']['total']:,}")
-            print(f"🎯 CheapShark gemappt: {db['cheapshark']['mapped']:,} ({db['cheapshark']['success_rate']:.1f}%)")
-            print(f"📋 Wishlist Items: {db['wishlist']['total_items']:,}")
-            print(f"👥 Unique Users: {db['wishlist']['unique_users']:,}")
+            print(f"   🆓 Kostenlos: {db['apps']['free']:,}")
+            print(f"   💰 Kostenpflichtig: {db['apps']['paid']:,}")
+            print(f"   📅 Mit Release Date: {db['apps']['with_release_date']:,}")
+            print(f"   🆕 Kürzlich veröffentlicht: {db['apps']['recently_released']:,}")
+            
+            print(f"\n🔗 CheapShark Status:")
+            cs = db['cheapshark']
+            print(f"✅ Erfolgreich gemappt: {cs['mapped']:,} ({cs['found_rate']:.1f}%)")
+            print(f"📝 Kein Mapping verfügbar: {cs['no_mapping_found']:,}")
+            print(f"📅 Zu neu für Mapping: {cs['too_new']:,}")
+            print(f"❌ Mapping fehlgeschlagen: {cs['mapping_failed']:,}")
+            print(f"❔ Noch nicht versucht: {cs['unmapped']:,}")
+            print(f"🎯 Coverage (verarbeitet): {cs['coverage']:.1f}%")
+            print(f"📈 Erfolgsrate: {cs['success_rate']:.1f}%")
+            
+            print(f"\n👥 Wishlist:")
+            wl = db['wishlist']
+            print(f"📋 Gesamt Items: {wl['total_items']:,}")
+            print(f"👤 Unique Users: {wl['unique_users']:,}")
+            print(f"📊 Ø Items/User: {wl['avg_items_per_user']:.1f}")
             
             # Scheduler
             scheduler = status['scheduler']
-            print(f"🚀 Scheduler: {'Läuft' if scheduler['scheduler_running'] else 'Gestoppt'}")
+            print(f"\n🚀 Scheduler: {'Läuft' if scheduler['scheduler_running'] else 'Gestoppt'}")
             print(f"📋 Queue: {scheduler['pending_jobs']:,} ausstehend, {scheduler['failed_jobs']:,} fehlgeschlagen")
             
             # Cache
-            print(f"💾 Preis-Cache: {status['cache_size']} Einträge")
+            print(f"\n💾 Preis-Cache: {status['cache_size']} Einträge")
+            
+            # Release Date Insights (falls verfügbar)
+            if cs['too_new'] > 0:
+                print(f"\n📅 RELEASE DATE INSIGHTS:")
+                print(f"🆕 Apps zu neu für CheapShark: {cs['too_new']:,}")
+                print(f"💡 Diese werden automatisch später erneut geprüft")
         
         elif choice == "3":
             # Bulk Import

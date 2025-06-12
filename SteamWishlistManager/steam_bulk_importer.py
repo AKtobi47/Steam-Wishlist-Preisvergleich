@@ -1,6 +1,7 @@
 """
-Steam Bulk Importer - Aktualisierte Version
+Steam Bulk Importer - ENHANCED Version mit Release Date Support
 Nutzt die zentrale DatabaseManager Klasse
+ERWEITERT: Bessere Release Date Verarbeitung für intelligente CheapShark-Mappings
 """
 
 import requests
@@ -14,6 +15,7 @@ class SteamBulkImporter:
     """
     Importiert ALLE verfügbaren Steam-Spiele auf einmal über verschiedene APIs
     Nutzt DatabaseManager für alle Datenbankoperationen
+    ERWEITERT: Bessere Release Date Verarbeitung
     """
     
     def __init__(self, api_key: str, db_manager: DatabaseManager = None):
@@ -265,6 +267,7 @@ class SteamBulkImporter:
         """
         Importiert fehlende Apps aus einer Liste von App IDs
         Nützlich für Wishlist-Apps die nicht in der DB sind
+        ERWEITERT: Bessere Release Date Verarbeitung
         """
         print(f"🔍 Importiere {len(app_ids)} fehlende Apps aus Liste...")
         
@@ -284,6 +287,17 @@ class SteamBulkImporter:
                 if app_data and self.db_manager.add_app(app_data):
                     imported_count += 1
                     print(f"   ✅ {app_id}: {app_data.get('name', 'Unknown')}")
+                    
+                    # Release Date Info falls verfügbar
+                    if app_data.get('release_date'):
+                        release_info = app_data['release_date']
+                        if isinstance(release_info, dict):
+                            release_date = release_info.get('date', 'Unknown')
+                            coming_soon = release_info.get('coming_soon', False)
+                            if coming_soon:
+                                print(f"      📅 Release: Coming Soon")
+                            elif release_date and release_date != 'Unknown':
+                                print(f"      📅 Release: {release_date}")
                 else:
                     print(f"   ❌ {app_id}: Fehler beim Abrufen/Speichern")
                 
@@ -294,11 +308,11 @@ class SteamBulkImporter:
         return imported_count
     
     def _fetch_single_app_details(self, app_id: str) -> dict:
-        """Holt Details für eine einzelne App von Steam"""
+        """Holt Details für eine einzelne App von Steam - ENHANCED mit Release Date"""
         url = "https://store.steampowered.com/api/appdetails"
         params = {
             'appids': app_id,
-            'filters': 'basic,price_overview',
+            'filters': 'basic,price_overview,release_date',
             'cc': 'DE'
         }
         
@@ -312,13 +326,14 @@ class SteamBulkImporter:
                 if app_data.get('success') and 'data' in app_data:
                     game_data = app_data['data']
                     price_overview = game_data.get('price_overview', {})
+                    release_date = game_data.get('release_date', {})
                     
                     return {
                         'app_id': app_id,
                         'name': game_data.get('name', ''),
                         'type': game_data.get('type', 'game'),
                         'is_free': game_data.get('is_free', False),
-                        'release_date': game_data.get('release_date', {}).get('date'),
+                        'release_date': release_date,  # Ganze Release Date Struktur übergeben
                         'developer': ', '.join(game_data.get('developers', [])),
                         'publisher': ', '.join(game_data.get('publishers', [])),
                         'price_current': price_overview.get('final', 0) / 100 if price_overview.get('final') else None,
@@ -378,22 +393,116 @@ class SteamBulkImporter:
         
         return success_count > 0
     
+    def enhanced_import_with_release_dates(self, sample_size: int = 1000) -> bool:
+        """
+        NEUE METHODE: Enhanced Import mit Release Date Collection
+        Sammelt Release Dates für eine Stichprobe von Apps
+        
+        Args:
+            sample_size: Anzahl Apps für die Release Dates gesammelt werden sollen
+        """
+        print(f"📅 ENHANCED IMPORT MIT RELEASE DATES")
+        print(f"Sammelt Release Dates für {sample_size} Apps")
+        print("=" * 60)
+        
+        # Hole Apps ohne Release Date
+        apps_without_release_date = []
+        with self.db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT app_id, name FROM steam_apps 
+                WHERE release_date IS NULL OR release_date = ''
+                ORDER BY updated_at DESC
+                LIMIT ?
+            ''', (sample_size,))
+            
+            apps_without_release_date = [dict(row) for row in cursor.fetchall()]
+        
+        if not apps_without_release_date:
+            print("✅ Alle Apps haben bereits Release Date Informationen")
+            return True
+        
+        print(f"🔍 {len(apps_without_release_date)} Apps ohne Release Date gefunden")
+        
+        # Sammle Release Dates
+        updated_count = 0
+        new_apps_count = 0
+        
+        for i, app in enumerate(apps_without_release_date, 1):
+            app_id = app['app_id']
+            print(f"📅 {i}/{len(apps_without_release_date)}: {app['name']} (ID: {app_id})")
+            
+            # Hole detaillierte App-Informationen
+            app_details = self._fetch_single_app_details(app_id)
+            
+            if app_details:
+                # Aktualisiere App in Datenbank
+                if self.db_manager.add_app(app_details):
+                    updated_count += 1
+                    
+                    # Zeige Release Date falls verfügbar
+                    release_info = app_details.get('release_date')
+                    if release_info and isinstance(release_info, dict):
+                        release_date = release_info.get('date', 'Unknown')
+                        coming_soon = release_info.get('coming_soon', False)
+                        
+                        if coming_soon:
+                            print(f"   📅 Coming Soon")
+                        elif release_date and release_date != 'Unknown':
+                            print(f"   📅 {release_date}")
+                            
+                            # Prüfe ob kürzlich veröffentlicht
+                            if self.db_manager.is_app_recently_released(app_id, max_age_days=30):
+                                print(f"   🆕 Kürzlich veröffentlicht (< 30 Tage)")
+                                new_apps_count += 1
+                else:
+                    print(f"   ❌ Fehler beim Aktualisieren")
+            else:
+                print(f"   ❌ Konnte Details nicht abrufen")
+            
+            # Rate Limiting
+            time.sleep(1)
+            
+            # Fortschrittsanzeige alle 50 Apps
+            if i % 50 == 0:
+                print(f"📊 Fortschritt: {i}/{len(apps_without_release_date)} ({(i/len(apps_without_release_date))*100:.1f}%)")
+                print(f"   ✅ Aktualisiert: {updated_count}")
+                print(f"   🆕 Kürzlich veröffentlicht: {new_apps_count}")
+        
+        # Abschluss-Statistiken
+        print(f"\n🏁 ENHANCED IMPORT ABGESCHLOSSEN")
+        print(f"✅ {updated_count}/{len(apps_without_release_date)} Apps aktualisiert")
+        print(f"🆕 {new_apps_count} kürzlich veröffentlichte Apps gefunden")
+        
+        # Aktuelle Release Date Statistiken
+        stats = self.db_manager.get_database_stats()
+        print(f"\n📊 RELEASE DATE STATISTIKEN:")
+        print(f"📅 Apps mit Release Date: {stats['apps']['with_release_date']:,}")
+        print(f"🆕 Kürzlich veröffentlicht: {stats['apps']['recently_released']:,}")
+        
+        return updated_count > 0
+    
     def _print_import_stats(self, stats: dict):
-        """Zeigt Import-Statistiken an"""
+        """Zeigt Import-Statistiken an - ERWEITERT mit Release Date Info"""
         print(f"\n📊 DATENBANK STATISTIKEN:")
         print(f"📚 Gesamt Apps: {stats['apps']['total']:,}")
         print(f"🆓 Kostenlose Apps: {stats['apps']['free']:,}")
         print(f"💰 Bezahl-Apps: {stats['apps']['paid']:,}")
+        print(f"📅 Mit Release Date: {stats['apps']['with_release_date']:,}")
+        print(f"🆕 Kürzlich veröffentlicht: {stats['apps']['recently_released']:,}")
         print(f"🎯 CheapShark gemappt: {stats['cheapshark']['mapped']:,}")
+        print(f"📝 Kein Mapping verfügbar: {stats['cheapshark']['no_mapping_found']:,}")
+        print(f"📅 Zu neu für Mapping: {stats['cheapshark']['too_new']:,}")
         print(f"📈 Mapping-Rate: {stats['cheapshark']['success_rate']:.1f}%")
 
 def bulk_import_main():
     """
     Hauptfunktion für Bulk Import aller Steam Apps
+    ERWEITERT: Release Date Features
     """
-    print("🚀 STEAM BULK IMPORTER v2.0")
-    print("Importiert ALLE verfügbaren Steam-Spiele auf einmal!")
-    print("=" * 60)
+    print("🚀 STEAM BULK IMPORTER v2.0 (ENHANCED)")
+    print("Importiert ALLE Steam-Spiele mit Release Date Intelligence!")
+    print("=" * 70)
     
     # API Key laden
     try:
@@ -430,9 +539,11 @@ def bulk_import_main():
     print("2. 🎮 Nur Steam Store Service (gefilterte Spiele)")
     print("3. 📦 Steam Web API v2 (alle Apps)")
     print("4. 📊 SteamSpy API (mit Statistiken, langsam)")
-    print("5. ❌ Abbrechen")
+    print("5. 📅 Enhanced Import mit Release Dates")
+    print("6. 🔄 Release Dates für vorhandene Apps sammeln")
+    print("7. ❌ Abbrechen")
     
-    choice = input("\nWählen Sie eine Option (1-5): ").strip()
+    choice = input("\nWählen Sie eine Option (1-7): ").strip()
     
     if choice == "1":
         importer.full_import_recommended()
@@ -448,6 +559,23 @@ def bulk_import_main():
             max_pages = 10
         importer.import_steamspy_data_method3(max_pages)
     elif choice == "5":
+        sample_size = input("Wie viele Apps für Release Date Collection? (Standard: 1000): ").strip()
+        try:
+            sample_size = int(sample_size) if sample_size else 1000
+        except ValueError:
+            sample_size = 1000
+        importer.enhanced_import_with_release_dates(sample_size)
+    elif choice == "6":
+        # Release Dates für vorhandene Apps sammeln
+        apps_to_update = input("Wie viele Apps aktualisieren? (Standard: 500): ").strip()
+        try:
+            apps_to_update = int(apps_to_update) if apps_to_update else 500
+        except ValueError:
+            apps_to_update = 500
+        
+        print(f"\n📅 Sammle Release Dates für {apps_to_update} Apps...")
+        importer.enhanced_import_with_release_dates(apps_to_update)
+    elif choice == "7":
         print("👋 Import abgebrochen")
         return
     else:
@@ -458,6 +586,12 @@ def bulk_import_main():
     print("\n🎉 IMPORT ABGESCHLOSSEN!")
     final_stats = db_manager.get_database_stats()
     importer._print_import_stats(final_stats)
+    
+    # Release Date Insights
+    if final_stats['apps']['recently_released'] > 0:
+        print(f"\n📅 RELEASE DATE INSIGHTS:")
+        print(f"🆕 {final_stats['apps']['recently_released']} kürzlich veröffentlichte Apps")
+        print(f"💡 Diese werden intelligenter für CheapShark-Mapping behandelt")
 
 if __name__ == "__main__":
     bulk_import_main()
