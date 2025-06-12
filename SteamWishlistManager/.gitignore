@@ -1,4 +1,6 @@
 *.local
+.env
 BIGData.code-workspace
 /Output
-.env
+/.idea
+Steam Wunschliste.py
