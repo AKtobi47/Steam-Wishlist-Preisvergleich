@@ -1,0 +1,44 @@
+{
+  "database": {
+    "path": "steam_wishlist.db",
+    "backup_enabled": true,
+    "backup_interval_hours": 24,
+    "cleanup_days": 30
+  },
+  "steam_api": {
+    "base_url": "https://api.steampowered.com",
+    "store_url": "https://store.steampowered.com/api",
+    "rate_limit_seconds": 0.5,
+    "timeout_seconds": 15,
+    "retry_attempts": 3
+  },
+  "cheapshark": {
+    "base_url": "https://www.cheapshark.com/api/1.0",
+    "rate_limit_seconds": 1.5,
+    "timeout_seconds": 15,
+    "retry_attempts": 2,
+    "max_consecutive_failures": 5
+  },
+  "scheduler": {
+    "enabled": true,
+    "batch_size": 10,
+    "interval_minutes": 10,
+    "cleanup_interval_hours": 24,
+    "max_workers": 3,
+    "priority_boost_for_wishlist": 3
+  },
+  "bulk_import": {
+    "preferred_method": "steam_store_service",
+    "batch_size": 1000,
+    "enable_steamspy": false,
+    "steamspy_max_pages": 10
+  },
+  "wishlist": {
+    "default_country_code": "DE",
+    "include_steam_prices_default": true,
+    "include_cheapshark_default": true,
+    "auto_schedule_mapping_default": true,
+    "cache_prices": true,
+    "cache_expiry_hours": 6
+  }
+}

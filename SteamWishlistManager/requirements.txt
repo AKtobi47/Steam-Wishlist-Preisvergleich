@@ -1,0 +1,24 @@
+# Steam Wishlist Manager - Python Dependencies
+
+# Core HTTP requests
+requests>=2.31.0
+
+# Scheduling for background tasks
+schedule>=1.2.0
+
+# Optional: Better environment variable handling
+python-dotenv>=1.0.0
+
+# Optional: Enhanced logging
+colorlog>=6.7.0
+
+# Optional: Progress bars for long operations
+tqdm>=4.66.0
+
+# Optional: Rich console output (for better CLI experience)
+rich>=13.7.0
+
+# Development dependencies (optional)
+pytest>=7.4.0
+black>=23.0.0
+flake8>=6.0.0

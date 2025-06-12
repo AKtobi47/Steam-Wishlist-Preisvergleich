@@ -1,4 +1,1 @@
-*.local
-BIGData.code-workspace
-/Output
-.env
+SteamWishlistManager/Steam Wunschliste.py
