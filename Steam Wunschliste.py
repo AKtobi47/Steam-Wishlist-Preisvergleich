@@ -5,6 +5,98 @@ from datetime import datetime
 import time
 from urllib.parse import quote
 import sqlite3
+from pathlib import Path
+
+def load_api_key_from_env(env_file=".env"):
+    """
+    Lädt den Steam API Key aus einer .env-Datei
+    
+    Args:
+        env_file (str): Pfad zur .env-Datei (default: ".env")
+        
+    Returns:
+        str: API Key oder None falls nicht gefunden
+    """
+    env_path = Path(env_file)
+    
+    # Prüfe ob .env-Datei existiert
+    if not env_path.exists():
+        return None
+    
+    try:
+        # Versuche python-dotenv zu verwenden (falls installiert)
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(env_path)
+            api_key = os.getenv('STEAM_API_KEY')
+            if api_key:
+                return api_key.strip()
+        except ImportError:
+            # Fallback: Manuelle .env-Parsing
+            pass
+        
+        # Manuelle .env-Parsing als Fallback
+        with open(env_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                # Überspringe Kommentare und leere Zeilen
+                if line.startswith('#') or not line or '=' not in line:
+                    continue
+                
+                key, value = line.split('=', 1)
+                key = key.strip()
+                value = value.strip()
+                
+                # Entferne Anführungszeichen falls vorhanden
+                if value.startswith('"') and value.endswith('"'):
+                    value = value[1:-1]
+                elif value.startswith("'") and value.endswith("'"):
+                    value = value[1:-1]
+                
+                if key == 'STEAM_API_KEY':
+                    return value
+        
+        return None
+        
+    except Exception as e:
+        print(f"⚠️  Fehler beim Lesen der .env-Datei: {e}")
+        return None
+
+def create_env_template(env_file=".env"):
+    """
+    Erstellt eine .env-Template-Datei falls sie nicht existiert
+    
+    Args:
+        env_file (str): Pfad zur .env-Datei
+        
+    Returns:
+        bool: True wenn Datei erstellt wurde
+    """
+    env_path = Path(env_file)
+    
+    if env_path.exists():
+        return False
+    
+    try:
+        template_content = """# Steam Wishlist Manager Konfiguration
+# Trage hier deinen Steam Web API Key ein
+# Erhältlich unter: https://steamcommunity.com/dev/apikey
+STEAM_API_KEY=your_steam_api_key_here
+
+# Beispiel:
+# STEAM_API_KEY=ABCD1234567890EFGH
+"""
+        
+        with open(env_path, 'w', encoding='utf-8') as f:
+            f.write(template_content)
+        
+        print(f"📝 .env-Template erstellt: {env_file}")
+        print("   Bitte trage deinen Steam API Key ein und starte das Programm erneut.")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Fehler beim Erstellen der .env-Datei: {e}")
+        return False
 
 class SteamWishlistManager:
     def __init__(self, api_key):
@@ -51,69 +143,100 @@ class SteamWishlistManager:
     def download_cheapshark_catalog(self, force_update=False):
         """
         Lädt den kompletten CheapShark-Katalog herunter und speichert ihn lokal
-        
-        Args:
-            force_update (bool): Erzwinge Update auch wenn Daten aktuell sind
-            
-        Returns:
-            bool: True wenn erfolgreich
+        VERBESSERTE VERSION mit alternativen Parametern
         """
         # Prüfe ob Update nötig ist
         if not force_update and self._is_catalog_current():
             print("✅ CheapShark-Katalog ist aktuell")
             return True
-        
+    
         print("📥 Lade CheapShark-Katalog herunter...")
-        
+    
         try:
-            # Hole alle Spiele von CheapShark
+            # NEUE STRATEGIE: Verwende andere Parameter
             url = f"{self.cheapshark_base_url}/games"
-            params = {
-                'limit': 60000,  # Maximum
-                'exact': 0
-            }
+        
+            # Versuche verschiedene Parameter-Kombinationen
+            param_sets = [
+                # Strategie 1: Ohne Limit-Parameter
+                {'exact': 0},
+                # Strategie 2: Kleineres Limit
+                {'limit': 10000, 'exact': 0},
+                # Strategie 3: Noch kleineres Limit
+                {'limit': 5000},
+                # Strategie 4: Minimal
+                {}
+            ]
+        
+            for i, params in enumerate(param_sets, 1):
+                print(f"🔄 Versuche Strategie {i}: {params}")
             
-            response = self.session.get(url, params=params, timeout=60)
+                response = self.session.get(url, params=params, timeout=120)
             
-            if response.status_code != 200:
-                print(f"❌ CheapShark-Katalog Download Fehler: {response.status_code}")
+                if response.status_code == 429:  # Rate limit
+                    print("⚠️  Rate limit erreicht, warte 60 Sekunden...")
+                    time.sleep(60)
+                    response = self.session.get(url, params=params, timeout=120)
+            
+                if response.status_code == 200:
+                    games = response.json()
+                    print(f"✅ Strategie {i} erfolgreich! {len(games)} Spiele erhalten")
+                    break
+                
+                elif response.status_code == 400:
+                    print(f"❌ Strategie {i} fehlgeschlagen (400): {response.text[:100]}...")
+                    continue
+                
+                else:
+                    print(f"❌ Strategie {i} fehlgeschlagen ({response.status_code})")
+                    continue
+            else:
+                # Alle Strategien fehlgeschlagen
+                print("❌ Alle CheapShark-Strategien fehlgeschlagen")
+                print("💡 Deaktiviere CheapShark-Integration für diese Sitzung")
                 return False
+        
+            # Daten speichern (falls erfolgreich)
+            if 'games' in locals() and games:
+                conn = sqlite3.connect(self.db_path)
+                cursor = conn.cursor()
             
-            games = response.json()
-            print(f"📊 {len(games)} Spiele von CheapShark erhalten")
+                # Alte Daten löschen
+                cursor.execute('DELETE FROM cheapshark_mapping')
             
-            # In Datenbank speichern
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
+                # Neue Daten einfügen
+                insert_count = 0
+                for game in games:
+                    steam_app_id = game.get('steamAppID')
+                    if steam_app_id:  # Nur Spiele mit Steam App ID
+                        cursor.execute('''
+                            INSERT OR REPLACE INTO cheapshark_mapping 
+                            (steam_app_id, cheapshark_game_id, game_title, thumb_url)
+                            VALUES (?, ?, ?, ?)
+                        ''', (
+                            steam_app_id,
+                            game.get('gameID'),
+                            game.get('external'),
+                            game.get('thumb')
+                        ))
+                        insert_count += 1
             
-            # Alte Daten löschen
-            cursor.execute('DELETE FROM cheapshark_mapping')
+                conn.commit()
+                conn.close()
             
-            # Neue Daten einfügen
-            insert_count = 0
-            for game in games:
-                steam_app_id = game.get('steamAppID')
-                if steam_app_id:  # Nur Spiele mit Steam App ID
-                    cursor.execute('''
-                        INSERT OR REPLACE INTO cheapshark_mapping 
-                        (steam_app_id, cheapshark_game_id, game_title, thumb_url)
-                        VALUES (?, ?, ?, ?)
-                    ''', (
-                        steam_app_id,
-                        game.get('gameID'),
-                        game.get('external'),  # Spieltitel
-                        game.get('thumb')
-                    ))
-                    insert_count += 1
-            
-            conn.commit()
-            conn.close()
-            
-            print(f"✅ {insert_count} Steam-Spiele in lokaler Datenbank gespeichert")
-            return True
-            
+                print(f"✅ {insert_count} Steam-Spiele in lokaler Datenbank gespeichert")
+                return True
+        
+            return False
+        
+        except requests.RequestException as e:
+            print(f"❌ CheapShark-Katalog Download Request-Fehler: {e}")
+            return False
+        except json.JSONDecodeError as e:
+            print(f"❌ CheapShark-Katalog JSON-Parsing Fehler: {e}")
+            return False
         except Exception as e:
-            print(f"❌ CheapShark-Katalog Download Fehler: {e}")
+            print(f"❌ CheapShark-Katalog Download Unerwarteter Fehler: {e}")
             return False
     
     def _is_catalog_current(self):
@@ -188,13 +311,7 @@ class SteamWishlistManager:
     def get_steam_price_info(self, app_ids, country_code="DE"):
         """
         Ruft Steam Preisinformationen für mehrere Apps ab (Batch-Request)
-        
-        Args:
-            app_ids (list): Liste von Steam App IDs
-            country_code (str): Land für Preise (DE, US, etc.)
-            
-        Returns:
-            dict: Dict mit app_id als Key und Preisinformationen als Value
+        VERBESSERTE VERSION mit kleineren Batches
         """
         if not app_ids:
             return {}
@@ -213,54 +330,86 @@ class SteamWishlistManager:
         if not uncached_ids:
             return results
         
-        # Batch-Request für uncached IDs (max 20 pro Request statt 100)
-        batch_size = 20  # Kleinere Batches für Steam Store API
+        print(f"🔄 {len(uncached_ids)} neue Spiele zu laden (Cache: {len(results)})")
+        
+        # Kleinere Batches für besseres Rate Limiting
+        batch_size = 10  # Reduziert von 20 auf 10
         for i in range(0, len(uncached_ids), batch_size):
             batch_ids = uncached_ids[i:i+batch_size]
+            
+            print(f"   🎯 Batch {i//batch_size + 1}/{(len(uncached_ids)-1)//batch_size + 1}: {len(batch_ids)} Spiele")
+            
             batch_results = self._fetch_steam_prices_batch(batch_ids, country_code)
             results.update(batch_results)
             
-            # Kurze Pause zwischen Batches
+            # Längere Pause zwischen Batches
             if i + batch_size < len(uncached_ids):
-                time.sleep(1.0)  # Längere Pause für Steam Store API
+                print("   ⏱️  Batch-Pause...")
+                time.sleep(2.0)  # Erhöht von 1.0s auf 2.0s
         
         return results
     
     def _fetch_steam_prices_batch(self, app_ids, country_code):
         """
         Fetcht Steam Preise für eine Batch von App IDs
-        
-        Args:
-            app_ids (list): Liste von App IDs (max 20)
-            country_code (str): Ländercode
-            
-        Returns:
-            dict: Preisinformationen
+        VERBESSERTE VERSION mit exponential backoff
         """
         results = {}
-        
-        # Einzelne Requests für jede App ID (zuverlässiger)
-        for app_id in app_ids:
+        consecutive_429_count = 0
+    
+        for i, app_id in enumerate(app_ids):
             app_id_str = str(app_id)
             url = f"{self.steam_store_url}/appdetails"
-            
+        
             params = {
                 'appids': app_id_str,
                 'filters': 'price_overview,basic',
                 'cc': country_code
             }
-            
+        
+            # Dynamische Pause basierend auf 429-Fehlern
+            if consecutive_429_count > 0:
+                # Exponential backoff: 1s, 2s, 4s, 8s, max 16s
+                wait_time = min(2 ** consecutive_429_count, 16)
+                print(f"⏱️  Warte {wait_time}s wegen Rate Limiting...")
+                time.sleep(wait_time)
+        
             try:
                 response = self.session.get(url, params=params, timeout=10)
+            
+                if response.status_code == 429:  # Rate Limit
+                    consecutive_429_count += 1
+                    print(f"⚠️  Rate Limit #{consecutive_429_count} für App {app_id}")
                 
-                if response.status_code == 200:
+                    # Bei wiederholten 429ern längere Pause
+                    if consecutive_429_count >= 3:
+                        print(f"⏸️  Längere Pause nach {consecutive_429_count} Rate Limits...")
+                        time.sleep(30)  # 30 Sekunden Pause
+                
+                    # Leeren Eintrag für dieses Spiel
+                    empty_price_info = {
+                        'currency': None,
+                        'initial_price': None,
+                        'final_price': None,
+                        'discount_percent': 0,
+                        'is_free': False,
+                        'formatted_initial': 'Rate Limit',
+                        'formatted_final': 'Rate Limit'
+                    }
+                    results[app_id_str] = empty_price_info
+                    continue
+            
+                elif response.status_code == 200:
+                    # Erfolgreicher Request - Reset 429 Counter
+                    consecutive_429_count = 0
+                
                     data = response.json()
                     app_data = data.get(app_id_str, {})
-                    
+                
                     if app_data.get('success', False) and 'data' in app_data:
                         game_data = app_data['data']
                         price_overview = game_data.get('price_overview')
-                        
+                    
                         price_info = {
                             'currency': None,
                             'initial_price': None,
@@ -269,15 +418,13 @@ class SteamWishlistManager:
                             'is_free': game_data.get('is_free', False),
                             'formatted_initial': None,
                             'formatted_final': None,
-                            # Spielname aus Steam Store API
                             'steam_name': game_data.get('name', 'Unbekannt')
                         }
-                        
+                    
                         if price_overview:
-                            # Sicherstellen dass Preise vorhanden sind
                             initial = price_overview.get('initial', 0)
                             final = price_overview.get('final', 0)
-                            
+                        
                             price_info.update({
                                 'currency': price_overview.get('currency', 'EUR'),
                                 'initial_price': initial / 100 if initial else 0,
@@ -294,14 +441,14 @@ class SteamWishlistManager:
                                 'formatted_initial': 'Kostenlos',
                                 'formatted_final': 'Kostenlos'
                             })
-                        
+                    
                         results[app_id_str] = price_info
-                        
+                    
                         # Cache das Ergebnis
                         cache_key = f"{app_id}_{country_code}"
                         self.steam_price_cache[cache_key] = price_info
                     else:
-                        # Spiel nicht gefunden oder kein Erfolg
+                        # Spiel nicht gefunden
                         empty_price_info = {
                             'currency': None,
                             'initial_price': None,
@@ -312,12 +459,12 @@ class SteamWishlistManager:
                             'formatted_final': 'Nicht verfügbar'
                         }
                         results[app_id_str] = empty_price_info
-                        
+                    
                         cache_key = f"{app_id}_{country_code}"
                         self.steam_price_cache[cache_key] = empty_price_info
                 else:
+                    # Anderer HTTP-Fehler
                     print(f"⚠️  Steam Store API Error {response.status_code} für App {app_id}")
-                    # Bei Fehler leeren Eintrag hinzufügen
                     empty_price_info = {
                         'currency': None,
                         'initial_price': None,
@@ -328,10 +475,9 @@ class SteamWishlistManager:
                         'formatted_final': 'API Fehler'
                     }
                     results[app_id_str] = empty_price_info
-                    
+                
             except requests.RequestException as e:
                 print(f"⚠️  Steam Store Request Error für App {app_id}: {e}")
-                # Bei Request-Fehler auch leeren Eintrag
                 empty_price_info = {
                     'currency': None,
                     'initial_price': None,
@@ -342,10 +488,15 @@ class SteamWishlistManager:
                     'formatted_final': 'Request Fehler'
                 }
                 results[app_id_str] = empty_price_info
-            
-            # Kurze Pause zwischen einzelnen Requests
-            time.sleep(0.2)
         
+            # Basis-Pause zwischen Requests (reduziert von 0.2s auf 0.5s)
+            if i < len(app_ids) - 1:  # Nicht nach dem letzten Request
+                time.sleep(0.5)
+        
+            # Fortschrittsanzeige bei vielen Requests
+            if len(app_ids) > 50 and (i + 1) % 25 == 0:
+                print(f"   📊 Fortschritt: {i + 1}/{len(app_ids)} ({((i + 1)/len(app_ids))*100:.1f}%)")
+    
         return results
     
     def enrich_items_with_steam_prices(self, items, country_code="DE", show_progress=True):
@@ -363,12 +514,12 @@ class SteamWishlistManager:
         if not items:
             return items
         
+        # Sammle alle App IDs und konvertiere zu Strings - MOVED UP
+        app_ids = [str(item.get('appid')) for item in items if item.get('appid')]
+        
         if show_progress:
             print(f"💰 Rufe Steam-Preise für {len(items)} Spiele ab (Land: {country_code})...")
             print(f"⏱️  Geschätzte Zeit: {(len(app_ids) * 0.3) / 60:.1f} Minuten (einzelne Requests)")
-        
-        # Sammle alle App IDs und konvertiere zu Strings
-        app_ids = [str(item.get('appid')) for item in items if item.get('appid')]
         
         # Hole Preisinformationen (in Batches)
         price_data = self.get_steam_price_info(app_ids, country_code)
@@ -579,7 +730,7 @@ class SteamWishlistManager:
     
     def get_wishlist_sorted_filtered(self, steam_id, page_size=100, start_index=0):
         """
-        Ruft Wishlist-Items paginiert ab (empfohlene Methode)
+        Ruft Wishlist-Items paginiert ab (empfohlene Methode) - VERBESSERT
         
         Args:
             steam_id (str): Steam ID des Benutzers
@@ -592,6 +743,7 @@ class SteamWishlistManager:
         url = f"{self.base_url}/IWishlistService/GetWishlistSortedFiltered/v1/"
         
         params = {
+            'key': self.api_key,  # API Key hinzugefügt
             'steamid': steam_id,
             'sort_order': 'date_added',  # oder 'name', 'price', 'user_order'
             'start_index': start_index,
@@ -605,7 +757,7 @@ class SteamWishlistManager:
             if response.status_code == 200:
                 return response.json()
             else:
-                print(f"❌ HTTP Error {response.status_code}: {response.text}")
+                print(f"❌ HTTP Error {response.status_code}: {response.text[:200]}...")
                 return None
                 
         except requests.RequestException as e:
@@ -776,7 +928,7 @@ class SteamWishlistManager:
     
     def save_wishlist_to_file(self, wishlist_data, filename=None):
         """
-        Speichert Wishlist-Daten als JSON-Datei
+        Speichert Wishlist-Daten als JSON-Datei im Output-Unterordner
         
         Args:
             wishlist_data (dict): Wishlist-Daten
@@ -785,17 +937,24 @@ class SteamWishlistManager:
         Returns:
             str: Pfad zur gespeicherten Datei
         """
+        # Output-Ordner erstellen falls nicht vorhanden
+        output_dir = Path("Output")
+        output_dir.mkdir(exist_ok=True)
+        
         if not filename:
             steam_id = wishlist_data['metadata']['steam_id']
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"steam_wishlist_{steam_id}_{timestamp}.json"
         
+        # Vollständigen Pfad erstellen
+        filepath = output_dir / filename
+        
         try:
-            with open(filename, 'w', encoding='utf-8') as f:
+            with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(wishlist_data, f, indent=2, ensure_ascii=False)
             
-            print(f"💾 Wishlist gespeichert: {filename}")
-            return filename
+            print(f"💾 Wishlist gespeichert: {filepath}")
+            return str(filepath)
             
         except Exception as e:
             print(f"❌ Fehler beim Speichern: {e}")
@@ -889,14 +1048,28 @@ def get_user_wishlist(api_key, steam_id, include_cheapshark=True, include_steam_
     return manager.get_complete_wishlist(steam_id, include_cheapshark, include_steam_prices, country_code)
 
 def main():
-    """Hauptfunktion für interaktive Nutzung"""
-    print("🎮 Steam Wishlist Manager v2.0")
+    """Hauptfunktion für interaktive Nutzung - MIT .env SUPPORT"""
+    print("🎮 Steam Wishlist Manager")
     print("=" * 40)
     
-    # API Key abrufen
-    api_key = os.getenv('STEAM_API_KEY')
+    # API Key aus .env laden
+    api_key = load_api_key_from_env()
+    
     if not api_key:
+        print("⚠️  Kein API Key in .env gefunden")
+        
+        # Template erstellen falls .env nicht existiert
+        if create_env_template():
+            return
+        
+        # Fallback: Manuelle Eingabe
+        print("💡 Du kannst deinen API Key in die .env-Datei eintragen oder hier eingeben:")
         api_key = input("Steam API Key eingeben: ").strip()
+    else:
+        print("✅ API Key aus .env geladen")
+        # Optional: Zeige ersten/letzten Zeichen zur Bestätigung
+        masked_key = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "***"
+        print(f"🔑 Key: {masked_key}")
     
     if not api_key:
         print("❌ Kein API Key angegeben")
