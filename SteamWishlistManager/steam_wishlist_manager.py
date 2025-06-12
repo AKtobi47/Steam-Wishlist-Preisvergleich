@@ -1,6 +1,7 @@
 """
-Steam Wishlist Manager - Hauptmanager v2.0
+Steam Wishlist Manager - Hauptmanager v2.0 (FIXED)
 Modulare Architektur mit automatischem CheapShark-Mapping
+Fixed: ZeroDivisionError und Rate Limiting
 """
 
 import requests
@@ -106,11 +107,17 @@ class SteamWishlistManager:
         self.steam_base_url = "https://api.steampowered.com"
         self.steam_store_url = "https://store.steampowered.com/api"
         
-        # Session für Steam API Requests
+        # Session für Steam API Requests mit verbessertem Rate Limiting
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'SteamWishlistManager/2.0'
         })
+        
+        # Rate Limiting Tracking
+        self.last_steam_api_request = 0
+        self.last_steam_store_request = 0
+        self.steam_api_rate_limit = 1.0  # 1 Sekunde zwischen Steam API Requests
+        self.steam_store_rate_limit = 1.5  # 1.5 Sekunden zwischen Store API Requests
         
         # Module initialisieren
         self.db_manager = DatabaseManager(db_path)
@@ -122,12 +129,30 @@ class SteamWishlistManager:
         
         logger.info("✅ Steam Wishlist Manager initialisiert")
     
+    def _wait_for_steam_api_rate_limit(self):
+        """Wartet für Steam API Rate Limiting"""
+        time_since_last = time.time() - self.last_steam_api_request
+        if time_since_last < self.steam_api_rate_limit:
+            wait_time = self.steam_api_rate_limit - time_since_last
+            logger.debug(f"⏳ Rate Limiting: warte {wait_time:.2f}s für Steam API")
+            time.sleep(wait_time)
+        self.last_steam_api_request = time.time()
+    
+    def _wait_for_steam_store_rate_limit(self):
+        """Wartet für Steam Store API Rate Limiting"""  
+        time_since_last = time.time() - self.last_steam_store_request
+        if time_since_last < self.steam_store_rate_limit:
+            wait_time = self.steam_store_rate_limit - time_since_last
+            logger.debug(f"⏳ Rate Limiting: warte {wait_time:.2f}s für Steam Store API")
+            time.sleep(wait_time)
+        self.last_steam_store_request = time.time()
+    
     # ========================
     # CORE WISHLIST OPERATIONS
     # ========================
     
     def get_player_info(self, steam_id: str) -> Optional[Dict]:
-        """Ruft Spielerinformationen ab"""
+        """Ruft Spielerinformationen ab mit Rate Limiting und Retry-Logik"""
         url = f"{self.steam_base_url}/ISteamUser/GetPlayerSummaries/v0002/"
         
         params = {
@@ -136,50 +161,77 @@ class SteamWishlistManager:
             'format': 'json'
         }
         
-        try:
-            logger.info(f"👤 Rufe Spielerinformationen für {steam_id} ab...")
-            response = self.session.get(url, params=params, timeout=15)
-            
-            if response.status_code == 200:
-                data = response.json()
-                players = data.get('response', {}).get('players', [])
+        max_retries = 3
+        retry_delay = 5  # Sekunden
+        
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"👤 Rufe Spielerinformationen für {steam_id} ab... (Versuch {attempt + 1})")
                 
-                if players and len(players) > 0:
-                    player = players[0]
-                    player_info = {
-                        'steam_id': player.get('steamid'),
-                        'username': player.get('personaname'),
-                        'real_name': player.get('realname'),
-                        'profile_url': player.get('profileurl'),
-                        'avatar_url': player.get('avatarfull'),
-                        'country_code': player.get('loccountrycode'),
-                        'profile_state': player.get('profilestate'),
-                        'last_logoff': player.get('lastlogoff'),
-                        'account_created': player.get('timecreated')
-                    }
-                    logger.info(f"✅ Spieler gefunden: {player_info['username']}")
-                    return player_info
+                # Rate Limiting anwenden
+                self._wait_for_steam_api_rate_limit()
+                
+                response = self.session.get(url, params=params, timeout=30)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    players = data.get('response', {}).get('players', [])
+                    
+                    if players and len(players) > 0:
+                        player = players[0]
+                        player_info = {
+                            'steam_id': player.get('steamid'),
+                            'username': player.get('personaname'),
+                            'real_name': player.get('realname'),
+                            'profile_url': player.get('profileurl'),
+                            'avatar_url': player.get('avatarfull'),
+                            'country_code': player.get('loccountrycode'),
+                            'profile_state': player.get('profilestate'),
+                            'last_logoff': player.get('lastlogoff'),
+                            'account_created': player.get('timecreated')
+                        }
+                        logger.info(f"✅ Spieler gefunden: {player_info['username']}")
+                        return player_info
+                    else:
+                        logger.warning("⚠️ Keine Spielerdaten gefunden")
+                        return None
+                        
+                elif response.status_code == 429:
+                    # Rate Limiting - warte länger bei 429
+                    wait_time = retry_delay * (2 ** attempt)  # Exponential backoff
+                    logger.warning(f"⚠️ Rate Limit erreicht (429). Warte {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+                    
                 else:
-                    logger.warning("⚠️ Keine Spielerdaten gefunden")
+                    logger.error(f"❌ HTTP Error {response.status_code}: {response.text[:200]}")
+                    if attempt < max_retries - 1:
+                        logger.info(f"🔄 Wiederhole in {retry_delay}s...")
+                        time.sleep(retry_delay)
+                        continue
                     return None
-            else:
-                logger.error(f"❌ HTTP Error {response.status_code}: {response.text}")
+                    
+            except requests.RequestException as e:
+                logger.error(f"❌ Request Error: {e}")
+                if attempt < max_retries - 1:
+                    logger.info(f"🔄 Wiederhole in {retry_delay}s...")
+                    time.sleep(retry_delay)
+                    continue
                 return None
-                
-        except requests.RequestException as e:
-            logger.error(f"❌ Request Error: {e}")
-            return None
+        
+        logger.error("❌ Alle Versuche fehlgeschlagen")
+        return None
     
     def get_wishlist_from_steam(self, steam_id: str) -> List[Dict]:
         """
-        Ruft Wishlist direkt von Steam ab
-        Verwendet GetWishlistSortedFiltered für bessere Datenqualität
+        Ruft Wishlist direkt von Steam ab mit verbessertem Rate Limiting
         """
         url = f"{self.steam_base_url}/IWishlistService/GetWishlistSortedFiltered/v1/"
         
         all_items = []
         page_size = 100
         start_index = 0
+        max_retries = 3
         
         while True:
             params = {
@@ -191,31 +243,54 @@ class SteamWishlistManager:
                 'format': 'json'
             }
             
-            try:
-                response = self.session.get(url, params=params, timeout=15)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    response_data = data.get('response', {})
-                    page_items = response_data.get('items', [])
+            for attempt in range(max_retries):
+                try:
+                    # Rate Limiting anwenden
+                    self._wait_for_steam_api_rate_limit()
                     
-                    if not page_items:
-                        break
+                    response = self.session.get(url, params=params, timeout=30)
                     
-                    all_items.extend(page_items)
-                    logger.info(f"📄 Seite {start_index//page_size + 1}: {len(page_items)} Items geladen (Gesamt: {len(all_items)})")
-                    
-                    start_index += page_size
-                    
-                    # Rate Limiting
-                    time.sleep(0.5)
-                    
-                else:
-                    logger.error(f"❌ Wishlist API Error: {response.status_code}")
-                    break
-                    
-            except requests.RequestException as e:
-                logger.error(f"❌ Wishlist Request Error: {e}")
+                    if response.status_code == 200:
+                        data = response.json()
+                        response_data = data.get('response', {})
+                        page_items = response_data.get('items', [])
+                        
+                        if not page_items:
+                            logger.info("📭 Keine weiteren Wishlist-Items gefunden")
+                            break
+                        
+                        all_items.extend(page_items)
+                        logger.info(f"📄 Seite {start_index//page_size + 1}: {len(page_items)} Items geladen (Gesamt: {len(all_items)})")
+                        
+                        start_index += page_size
+                        break  # Erfolg - breche aus Retry-Loop aus
+                        
+                    elif response.status_code == 429:
+                        wait_time = 10 * (2 ** attempt)  # Exponential backoff
+                        logger.warning(f"⚠️ Wishlist API Rate Limit (429). Warte {wait_time}s...")
+                        time.sleep(wait_time)
+                        continue
+                        
+                    else:
+                        logger.error(f"❌ Wishlist API Error: {response.status_code}")
+                        if attempt < max_retries - 1:
+                            time.sleep(5)
+                            continue
+                        break  # Breche aus beiden Loops aus
+                        
+                except requests.RequestException as e:
+                    logger.error(f"❌ Wishlist Request Error: {e}")
+                    if attempt < max_retries - 1:
+                        time.sleep(5)
+                        continue
+                    break  # Breche aus beiden Loops aus
+            else:
+                # Alle Versuche für diese Seite fehlgeschlagen
+                logger.error("❌ Alle Versuche für Wishlist-Seite fehlgeschlagen")
+                break
+            
+            # Erfolgreiche Seite - prüfe ob weitere Seiten vorhanden
+            if not page_items:
                 break
         
         logger.info(f"✅ {len(all_items)} Wishlist-Items von Steam abgerufen")
@@ -387,8 +462,8 @@ class SteamWishlistManager:
         
         logger.info(f"🔄 {len(uncached_ids)} neue Preis-Anfragen (Cache: {len(results)})")
         
-        # Batch-Verarbeitung für neue Preise
-        batch_size = 10
+        # Batch-Verarbeitung für neue Preise mit Rate Limiting
+        batch_size = 5  # Kleinere Batches wegen Rate Limiting
         for i in range(0, len(uncached_ids), batch_size):
             batch_ids = uncached_ids[i:i+batch_size]
             
@@ -399,14 +474,11 @@ class SteamWishlistManager:
                 # Cache das Ergebnis
                 cache_key = f"{app_id}_{country_code}"
                 self.steam_price_cache[cache_key] = price_info
-                
-                # Rate Limiting
-                time.sleep(0.5)
         
         return results
     
     def _fetch_single_app_price(self, app_id: str, country_code: str) -> Dict:
-        """Holt Preisinformationen für eine einzelne App"""
+        """Holt Preisinformationen für eine einzelne App mit Rate Limiting"""
         url = f"{self.steam_store_url}/appdetails"
         params = {
             'appids': app_id,
@@ -414,73 +486,102 @@ class SteamWishlistManager:
             'cc': country_code
         }
         
-        try:
-            response = self.session.get(url, params=params, timeout=10)
-            
-            if response.status_code == 200:
-                data = response.json()
-                app_data = data.get(app_id, {})
+        max_retries = 2
+        
+        for attempt in range(max_retries):
+            try:
+                # Rate Limiting für Store API
+                self._wait_for_steam_store_rate_limit()
                 
-                if app_data.get('success') and 'data' in app_data:
-                    game_data = app_data['data']
-                    price_overview = game_data.get('price_overview')
+                response = self.session.get(url, params=params, timeout=15)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    app_data = data.get(app_id, {})
                     
-                    price_info = {
-                        'currency': None,
-                        'initial_price': None,
-                        'final_price': None,
-                        'discount_percent': 0,
-                        'is_free': game_data.get('is_free', False),
-                        'formatted_initial': None,
-                        'formatted_final': None
-                    }
-                    
-                    if price_overview:
-                        initial = price_overview.get('initial', 0)
-                        final = price_overview.get('final', 0)
+                    if app_data.get('success') and 'data' in app_data:
+                        game_data = app_data['data']
+                        price_overview = game_data.get('price_overview')
                         
-                        price_info.update({
-                            'currency': price_overview.get('currency', 'EUR'),
-                            'initial_price': initial / 100 if initial else 0,
-                            'final_price': final / 100 if final else 0,
-                            'discount_percent': price_overview.get('discount_percent', 0),
-                            'formatted_initial': price_overview.get('initial_formatted', ''),
-                            'formatted_final': price_overview.get('final_formatted', '')
-                        })
-                    elif game_data.get('is_free'):
-                        price_info.update({
-                            'currency': 'EUR',
-                            'initial_price': 0.0,
-                            'final_price': 0.0,
-                            'formatted_initial': 'Kostenlos',
-                            'formatted_final': 'Kostenlos'
-                        })
-                    
-                    return price_info
-            
-            # Fallback für Fehler/nicht verfügbare Apps
-            return {
-                'currency': None,
-                'initial_price': None,
-                'final_price': None,
-                'discount_percent': 0,
-                'is_free': False,
-                'formatted_initial': 'Nicht verfügbar',
-                'formatted_final': 'Nicht verfügbar',
-                'error': f"HTTP {response.status_code}"
-            }
-            
-        except requests.RequestException as e:
-            return {
-                'currency': None,
-                'initial_price': None,
-                'final_price': None,
-                'discount_percent': 0,
-                'is_free': False,
-                'formatted_initial': 'Request Fehler',
-                'formatted_final': 'Request Fehler',
-                'error': str(e)
-            }
+                        price_info = {
+                            'currency': None,
+                            'initial_price': None,
+                            'final_price': None,
+                            'discount_percent': 0,
+                            'is_free': game_data.get('is_free', False),
+                            'formatted_initial': None,
+                            'formatted_final': None
+                        }
+                        
+                        if price_overview:
+                            initial = price_overview.get('initial', 0)
+                            final = price_overview.get('final', 0)
+                            
+                            price_info.update({
+                                'currency': price_overview.get('currency', 'EUR'),
+                                'initial_price': initial / 100 if initial else 0,
+                                'final_price': final / 100 if final else 0,
+                                'discount_percent': price_overview.get('discount_percent', 0),
+                                'formatted_initial': price_overview.get('initial_formatted', ''),
+                                'formatted_final': price_overview.get('final_formatted', '')
+                            })
+                        elif game_data.get('is_free'):
+                            price_info.update({
+                                'currency': 'EUR',
+                                'initial_price': 0.0,
+                                'final_price': 0.0,
+                                'formatted_initial': 'Kostenlos',
+                                'formatted_final': 'Kostenlos'
+                            })
+                        
+                        return price_info
+                
+                elif response.status_code == 429:
+                    # Rate Limiting - warte bei 429
+                    wait_time = 10 * (2 ** attempt)
+                    logger.warning(f"⚠️ Store API Rate Limit für App {app_id}. Warte {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+                
+                # Andere HTTP Fehler
+                return {
+                    'currency': None,
+                    'initial_price': None,
+                    'final_price': None,
+                    'discount_percent': 0,
+                    'is_free': False,
+                    'formatted_initial': 'Nicht verfügbar',
+                    'formatted_final': 'Nicht verfügbar',
+                    'error': f"HTTP {response.status_code}"
+                }
+                
+            except requests.RequestException as e:
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+                    continue
+                
+                return {
+                    'currency': None,
+                    'initial_price': None,
+                    'final_price': None,
+                    'discount_percent': 0,
+                    'is_free': False,
+                    'formatted_initial': 'Request Fehler',
+                    'formatted_final': 'Request Fehler',
+                    'error': str(e)
+                }
+        
+        # Fallback wenn alle Versuche fehlschlagen
+        return {
+            'currency': None,
+            'initial_price': None,
+            'final_price': None,
+            'discount_percent': 0,
+            'is_free': False,
+            'formatted_initial': 'Fehler',
+            'formatted_final': 'Fehler',
+            'error': 'Max retries exceeded'
+        }
     
     # ========================
     # UTILITY METHODS
@@ -510,7 +611,7 @@ class SteamWishlistManager:
             return None
     
     def print_wishlist_summary(self, wishlist_data: Dict):
-        """Gibt eine Zusammenfassung der Wishlist aus"""
+        """Gibt eine Zusammenfassung der Wishlist aus - FIXED Division by Zero"""
         if not wishlist_data:
             print("❌ Keine Wishlist-Daten verfügbar")
             return
@@ -530,6 +631,15 @@ class SteamWishlistManager:
         processing_stats = metadata.get('processing_stats', {})
         if processing_stats.get('added_apps_to_db', 0) > 0:
             print(f"Neue Apps hinzugefügt: {processing_stats['added_apps_to_db']}")
+        
+        if total == 0:
+            print("\n📭 Die Wishlist ist leer.")
+            print("💡 Mögliche Gründe:")
+            print("   - Profil ist auf 'Privat' gestellt")
+            print("   - Wishlist-Privatsphäre ist eingeschränkt") 
+            print("   - Steam API Probleme")
+            print("   - Tatsächlich leere Wishlist")
+            return
         
         if items and len(items) > 0:
             print(f"\n📋 ERSTE 5 SPIELE:")
@@ -564,13 +674,17 @@ class SteamWishlistManager:
                     if cheapest:
                         print(f"     💰 Bester Preis jemals: ${cheapest}")
         
-        # Statistiken
+        # Statistiken - FIXED: Division by Zero
         with_cheapshark = sum(1 for item in items if item.get('cheapshark_game_id'))
         with_current_price = sum(1 for item in items if item.get('current_steam_price', {}).get('final_price') is not None)
         
         print(f"\n📈 STATISTIKEN:")
-        print(f"CheapShark-Mappings: {with_cheapshark}/{total} ({(with_cheapshark/total)*100:.1f}%)")
-        print(f"Aktuelle Preise: {with_current_price}/{total} ({(with_current_price/total)*100:.1f}%)")
+        if total > 0:
+            print(f"CheapShark-Mappings: {with_cheapshark}/{total} ({(with_cheapshark/total)*100:.1f}%)")
+            print(f"Aktuelle Preise: {with_current_price}/{total} ({(with_current_price/total)*100:.1f}%)")
+        else:
+            print(f"CheapShark-Mappings: {with_cheapshark}/0 (N/A)")
+            print(f"Aktuelle Preise: {with_current_price}/0 (N/A)")
         
         print(f"\n{'='*50}")
     
@@ -587,8 +701,9 @@ class SteamWishlistManager:
 
 def main():
     """Hauptfunktion für interaktive Nutzung"""
-    print("🎮 STEAM WISHLIST MANAGER v2.0")
+    print("🎮 STEAM WISHLIST MANAGER v2.0 (FIXED)")
     print("Modulare Architektur mit automatischem Mapping")
+    print("🔧 Fixes: Rate Limiting & ZeroDivisionError")
     print("=" * 60)
     
     # API Key laden
