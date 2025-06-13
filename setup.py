@@ -13,7 +13,7 @@ from typing import Optional
 
 def check_python_version():
     """Prüft ob Python-Version kompatibel ist"""
-    if sys.version_info < (3.8):
+    if sys.version_info < (3, 8):  # <-- KORRIGIERT: (3, 8) statt (3.8)
         print("❌ Python 3.8 oder höher erforderlich")
         print(f"   Aktuelle Version: {sys.version}")
         sys.exit(1)
