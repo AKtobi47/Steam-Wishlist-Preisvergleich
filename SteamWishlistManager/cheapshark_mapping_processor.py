@@ -2,16 +2,21 @@
 CheapShark Mapping Processor - COMPLETE ENHANCED VERSION
 Mit integriertem Scheduler, DatabaseManager Integration und Monthly Release Discovery
 Explizite Speicherung wenn kein CheapShark-Mapping existiert + automatischer Release-Import
+Separates Terminal Support + Vollständige Menü-Implementierung
 """
 
 import requests
 import time
 import threading
 import schedule
+import subprocess
+import platform
+import os
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 import json
 import logging
+from pathlib import Path
 from database_manager import DatabaseManager
 
 # Logging Setup
@@ -623,6 +628,90 @@ class CheapSharkMappingProcessor:
             return 0
     
     # ========================
+    # SEPARATE TERMINAL SUPPORT
+    # ========================
+    
+    def start_scheduler_in_new_terminal(self, 
+                                       mapping_batch_size: int = 10,
+                                       mapping_interval_minutes: int = 3,
+                                       releases_interval_hours: int = 24) -> bool:
+        """
+        Startet Enhanced Scheduler in neuem Terminal-Fenster
+        
+        Returns:
+            True wenn erfolgreich gestartet
+        """
+        try:
+            # Prüfe ob scheduler_runner.py existiert
+            runner_file = Path("scheduler_runner.py")
+            if not runner_file.exists():
+                print("❌ scheduler_runner.py nicht gefunden!")
+                print("💡 Erstellen Sie zuerst die Datei:")
+                print("   1. Kopieren Sie den Code aus der Anleitung")
+                print("   2. Speichern Sie als 'scheduler_runner.py'")
+                return False
+            
+            # Parameter für den Runner
+            args = [
+                str(mapping_batch_size),
+                str(mapping_interval_minutes),
+                str(releases_interval_hours)
+            ]
+            
+            # Betriebssystem erkennen und entsprechenden Befehl ausführen
+            system = platform.system().lower()
+            
+            print(f"🖥️ Starte separates Terminal ({system})...")
+            
+            if system == "windows":
+                # Windows: Neues CMD-Fenster
+                cmd = ["start", "cmd", "/k", f"python scheduler_runner.py {' '.join(args)}"]
+                subprocess.Popen(cmd, shell=True)
+                
+            elif system == "darwin":  # macOS
+                # macOS: Neues Terminal-Tab/Fenster
+                script = f"cd '{os.getcwd()}' && python scheduler_runner.py {' '.join(args)}"
+                cmd = ["osascript", "-e", f'tell app "Terminal" to do script "{script}"']
+                subprocess.Popen(cmd)
+                
+            else:  # Linux
+                # Linux: Versuche gängige Terminals
+                terminals_to_try = [
+                    ["gnome-terminal", "--", "python", "scheduler_runner.py"] + args,
+                    ["konsole", "-e", "python", "scheduler_runner.py"] + args,
+                    ["xfce4-terminal", "-e", f"python scheduler_runner.py {' '.join(args)}"],
+                    ["xterm", "-e", f"python scheduler_runner.py {' '.join(args)}"]
+                ]
+                
+                success = False
+                for terminal_cmd in terminals_to_try:
+                    try:
+                        subprocess.Popen(terminal_cmd)
+                        success = True
+                        break
+                    except FileNotFoundError:
+                        continue
+                
+                if not success:
+                    print("❌ Kein unterstütztes Terminal gefunden!")
+                    print("💡 Installieren Sie: gnome-terminal, konsole, xfce4-terminal oder xterm")
+                    return False
+            
+            print("🚀 SEPARATES SCHEDULER-TERMINAL GESTARTET!")
+            print("📊 Live-Status läuft im neuen Terminal-Fenster")
+            print("🔄 Dieses Terminal bleibt für weitere Aktionen frei")
+            print("\n💡 HINWEISE:")
+            print("   • Wechseln Sie zum Scheduler-Terminal für Live-Updates")
+            print("   • Schließen Sie das Scheduler-Fenster zum Beenden")
+            print("   • Strg+C im Scheduler-Terminal stoppt den Scheduler")
+            
+            return True
+            
+        except Exception as e:
+            print(f"❌ Fehler beim Starten des Terminals: {e}")
+            return False
+    
+    # ========================
     # ENHANCED SCHEDULER WITH RELEASE DISCOVERY
     # ========================
     
@@ -1005,7 +1094,7 @@ class CheapSharkMappingProcessor:
         print("🔄 MANUELLE CHEAPSHARK-MAPPING VERARBEITUNG")
         print("=" * 60)
         
-        # Hole Apps ohne erfolgreiches Mapping
+        #Hole Apps ohne erfolgreiches Mapping
         unmapped_apps = self.db_manager.get_apps_without_successful_cheapshark_mapping(max_apps or 100000)
         total_to_process = len(unmapped_apps)
         
@@ -1095,7 +1184,7 @@ def cheapshark_processor_main():
     """
     Hauptfunktion für CheapShark-Mapping Processor
     Enhanced Features mit Release Discovery
-    FIXED: Endlos-Schleife für kontinuierliche Nutzung
+    FIXED: Vollständige Implementierung aller Menü-Optionen
     """
     print("🔗 ENHANCED CHEAPSHARK PROCESSOR v2.1")
     print("Mit automatischem Release-Import und intelligenter Priorisierung")
@@ -1142,11 +1231,16 @@ def cheapshark_processor_main():
         # Scheduler Status anzeigen
         scheduler_status = processor.get_scheduler_status()
         if scheduler_status['scheduler_running']:
-            print(f"🚀 Enhanced Scheduler: LÄUFT ✅")
+            print(f"\n🚀 Enhanced Scheduler: LÄUFT ✅")
             print(f"   📋 {scheduler_status['pending_jobs']:,} ausstehende Jobs")
-            print(f"   ⏰ Nächster Lauf: {scheduler_status.get('next_run', 'Unbekannt')}")
+            try:
+                next_run = scheduler_status.get('next_run')
+                if next_run:
+                    print(f"   ⏰ Nächster Lauf: {next_run}")
+            except:
+                pass
         else:
-            print(f"🚀 Enhanced Scheduler: GESTOPPT ❌")
+            print(f"\n🚀 Enhanced Scheduler: GESTOPPT ❌")
         
         # Release Date Status für kürzlich veröffentlichte Apps
         try:
@@ -1162,7 +1256,8 @@ def cheapshark_processor_main():
         print("\n🔧 ENHANCED PROCESSOR OPTIONEN:")
         print("1. 🔄 Manuelle Verarbeitung (alle unverarbeiteten Apps)")
         print("2. ⚡ Limitierte Verarbeitung (nur X Apps)")
-        print("3. 🚀 Enhanced Scheduler starten (mit Release-Import)")
+        print("3. 🚀 Enhanced Scheduler starten (aktuelles Terminal)")
+        print("3n. 🖥️ Enhanced Scheduler in NEUEM Terminal")
         print("4. 🔄 Standard-Scheduler starten")
         print("5. 🛑 Scheduler stoppen")
         print("6. 📊 Enhanced Scheduler-Status anzeigen")
@@ -1189,6 +1284,20 @@ def cheapshark_processor_main():
                 processor.stop_background_scheduler()
             print("👋 Enhanced Processor beendet")
             break  # Beende die Hauptschleife
+        
+        elif choice == "1":
+            print("\n🔄 Starte manuelle Verarbeitung aller Apps...")
+            processor.process_mapping_manual()
+            
+        elif choice == "2":
+            max_apps = input("Wie viele Apps verarbeiten? (Standard: 1000): ").strip()
+            try:
+                max_apps = int(max_apps) if max_apps else 1000
+            except ValueError:
+                max_apps = 1000
+            
+            print(f"\n🔄 Starte limitierte Verarbeitung für {max_apps} Apps...")
+            processor.process_mapping_manual(max_apps=max_apps)
         
         elif choice == "3":
             # Enhanced Scheduler starten - FIXED VERSION
@@ -1220,9 +1329,35 @@ def cheapshark_processor_main():
             print("🔄 Das Hauptmenü bleibt verfügbar für weitere Aktionen")
             
             # Kurze Pause um dem User die Bestätigung zu zeigen
-            import time
             time.sleep(2)
             continue  # Zurück zum Hauptmenü
+        
+        elif choice == "3n":
+            # NEU: Enhanced Scheduler in separatem Terminal
+            print("\n🖥️ ENHANCED SCHEDULER IN NEUEM TERMINAL")
+            print("=" * 50)
+            
+            batch_size = input("Batch-Größe (Standard: 10): ").strip()
+            mapping_interval = input("Mapping-Intervall Minuten (Standard: 3): ").strip()
+            releases_interval = input("Release-Intervall Stunden (Standard: 24): ").strip()
+            
+            try:
+                batch_size = int(batch_size) if batch_size else 10
+                mapping_interval = int(mapping_interval) if mapping_interval else 3
+                releases_interval = int(releases_interval) if releases_interval else 24
+            except ValueError:
+                batch_size, mapping_interval, releases_interval = 10, 3, 24
+            
+            # Starte in neuem Terminal
+            success = processor.start_scheduler_in_new_terminal(
+                mapping_batch_size=batch_size,
+                mapping_interval_minutes=mapping_interval,
+                releases_interval_hours=releases_interval
+            )
+            
+            if not success:
+                print("❌ Konnte neues Terminal nicht starten")
+                print("💡 Verwenden Sie Option 3 für aktuelles Terminal")
         
         elif choice == "4":
             # Standard Scheduler starten
@@ -1289,91 +1424,276 @@ def cheapshark_processor_main():
             except Exception as e:
                 print(f"❌ Fehler beim Abrufen des Scheduler-Status: {e}")
         
-        # ... Hier würden alle anderen Optionen implementiert werden
-        # (1, 2, 7, 8, 9a-9e, 10a-10c)
-        # Diese bleiben unverändert von der ursprünglichen Implementierung
+        elif choice == "7":
+            # Wishlist-Apps priorisieren
+            steam_id = input("Steam ID eingeben: ").strip()
+            if steam_id:
+                added_count = processor.process_wishlist_apps_priority(steam_id)
+                print(f"🎯 {added_count} Wishlist-Apps zur Priority-Queue hinzugefügt")
+            else:
+                print("❌ Ungültige Steam ID")
         
-        elif choice == "1":
-            print("\n🔄 Starte manuelle Verarbeitung aller Apps...")
-            processor.process_mapping_manual()
+        elif choice == "8":
+            # Detaillierte Statistiken
+            print(f"\n📈 DETAILLIERTE CHEAPSHARK-STATISTIKEN:")
+            print("=" * 50)
             
-        elif choice == "2":
-            max_apps = input("Wie viele Apps verarbeiten? (Standard: 1000): ").strip()
+            final_stats = db_manager.get_database_stats()
+            final_breakdown = db_manager.get_cheapshark_mapping_breakdown()
+            
+            print(f"📚 Gesamt Steam Apps: {final_stats['apps']['total']:,}")
+            print(f"🆓 Davon kostenlos: {final_stats['apps']['free']:,}")
+            print(f"💰 Davon kostenpflichtig: {final_stats['apps']['paid']:,}")
+            print(f"📅 Mit Release Date: {final_stats['apps']['with_release_date']:,}")
+            print(f"🆕 Kürzlich veröffentlicht: {final_stats['apps']['recently_released']:,}")
+            
+            print(f"\n🔗 CheapShark Mapping Status:")
+            cs_stats = final_stats['cheapshark']
+            print(f"✅ Erfolgreich gemappt: {cs_stats['mapped']:,} ({cs_stats['found_rate']:.1f}%)")
+            print(f"📝 Kein Mapping verfügbar: {cs_stats['no_mapping_found']:,}")
+            print(f"📅 Zu neu für Mapping: {cs_stats['too_new']:,}")
+            print(f"❌ Mapping fehlgeschlagen: {cs_stats['mapping_failed']:,}")
+            print(f"❔ Noch nicht versucht: {cs_stats['unmapped']:,}")
+            print(f"📊 Gesamt verarbeitet: {cs_stats['attempted']:,} ({cs_stats['coverage']:.1f}%)")
+            print(f"📈 Erfolgsrate (von verarbeiteten): {cs_stats['success_rate']:.1f}%")
+            
+            print(f"\n👥 Wishlist Statistiken:")
+            wl_stats = final_stats['wishlist'] 
+            print(f"📋 Gesamt Wishlist-Items: {wl_stats['total_items']:,}")
+            print(f"👤 Unique Benutzer: {wl_stats['unique_users']:,}")
+            print(f"📊 Durchschnitt pro Benutzer: {wl_stats['avg_items_per_user']:.1f}")
+        
+        elif choice == "9a":
+            # Apps ohne Mapping erneut prüfen
+            print("\n📝 APPS OHNE MAPPING ERNEUT PRÜFEN")
+            print("=" * 40)
+            
+            max_apps = input("Wie viele Apps maximal? (Standard: 1000): ").strip()
+            older_days = input("Nur Apps älter als X Tage? (Standard: 30): ").strip()
+            
             try:
                 max_apps = int(max_apps) if max_apps else 1000
+                older_days = int(older_days) if older_days else 30
+            except ValueError:
+                max_apps, older_days = 1000, 30
+            
+            added_count = processor.retry_no_mapping_found_apps(
+                max_apps=max_apps, 
+                older_than_days=older_days
+            )
+            print(f"✅ {added_count} Apps ohne Mapping zur Retry-Queue hinzugefügt")
+        
+        elif choice == "9b":
+            # Fehlgeschlagene Mappings wiederholen
+            print("\n❌ FEHLGESCHLAGENE MAPPINGS WIEDERHOLEN")
+            print("=" * 40)
+            
+            max_apps = input("Wie viele Apps maximal? (Standard: 1000): ").strip()
+            older_days = input("Nur Apps älter als X Tage? (Standard: 7): ").strip()
+            max_attempts = input("Nur Apps mit max. X Versuchen? (Standard: 3): ").strip()
+            
+            try:
+                max_apps = int(max_apps) if max_apps else 1000
+                older_days = int(older_days) if older_days else 7
+                max_attempts = int(max_attempts) if max_attempts else 3
+            except ValueError:
+                max_apps, older_days, max_attempts = 1000, 7, 3
+            
+            added_count = processor.retry_failed_mappings(
+                max_apps=max_apps,
+                older_than_days=older_days,
+                max_attempts=max_attempts
+            )
+            print(f"✅ {added_count} fehlgeschlagene Apps zur Retry-Queue hinzugefügt")
+        
+        elif choice == "9c":
+            # 'Zu neue' Apps für Age-Based Retry
+            print("\n📅 'ZU NEUE' APPS FÜR AGE-BASED RETRY")
+            print("=" * 40)
+            
+            min_age = input("Apps müssen mindestens X Tage alt sein? (Standard: 60): ").strip()
+            max_apps = input("Maximal wie viele Apps? (Standard: 1000): ").strip()
+            
+            try:
+                min_age = int(min_age) if min_age else 60
+                max_apps = int(max_apps) if max_apps else 1000
+            except ValueError:
+                min_age, max_apps = 60, 1000
+            
+            added_count = processor.retry_too_new_apps(
+                min_age_days=min_age,
+                max_apps=max_apps
+            )
+            print(f"✅ {added_count} 'zu neue' Apps zur Age-Based Retry-Queue hinzugefügt")
+        
+        elif choice == "9d":
+            # Benutzerdefinierte Retry-Kriterien
+            print("\n🔧 BENUTZERDEFINIERTE RETRY-KRITERIEN")
+            print("=" * 40)
+            
+            print("Verfügbare Status: found, not_found, too_new, failed, unknown")
+            status_input = input("Status zum Retry (kommagetrennt, leer für alle): ").strip()
+            statuses = [s.strip() for s in status_input.split(',')] if status_input else None
+            
+            max_apps = input("Maximale Anzahl Apps? (Standard: 1000): ").strip()
+            max_apps = int(max_apps) if max_apps else 1000
+            
+            older_days = input("Nur Apps älter als X Tage? (leer für alle): ").strip()
+            older_days = int(older_days) if older_days else None
+            
+            priority = input("Queue-Priorität? (1-10, Standard: 5): ").strip()
+            priority = int(priority) if priority else 5
+            
+            if statuses:
+                added_count = processor.retry_apps_with_status(
+                    statuses=statuses,
+                    max_apps=max_apps,
+                    older_than_days=older_days,
+                    priority=priority
+                )
+                print(f"✅ {added_count} Apps zur benutzerdefinierten Retry-Queue hinzugefügt")
+            else:
+                print("❌ Keine Status ausgewählt")
+        
+        elif choice == "9e":
+            # Status-basierte Retry
+            print("\n📋 STATUS-BASIERTE RETRY")
+            print("=" * 30)
+            
+            print("Verfügbare Status:")
+            print("1. not_found (kein Mapping gefunden)")
+            print("2. too_new (zu neu für Mapping)")
+            print("3. failed (fehlgeschlagen)")
+            print("4. found (erfolgreich) - für Re-Check")
+            print("5. unknown (unbekannter Status)")
+            
+            status_choice = input("Status wählen (1-5): ").strip()
+            status_map = {
+                '1': ['not_found'],
+                '2': ['too_new'],
+                '3': ['failed'], 
+                '4': ['found'],
+                '5': ['unknown']
+            }
+            
+            if status_choice not in status_map:
+                print("❌ Ungültige Auswahl")
+                continue
+            
+            statuses = status_map[status_choice]
+            
+            max_apps = input("Wie viele Apps maximal? (Standard: 1000): ").strip()
+            older_days = input("Nur Apps älter als X Tage? (leer für alle): ").strip()
+            
+            try:
+                max_apps = int(max_apps) if max_apps else 1000
+                older_days = int(older_days) if older_days else None
             except ValueError:
                 max_apps = 1000
+                older_days = None
             
-            print(f"\n🔄 Starte limitierte Verarbeitung für {max_apps} Apps...")
-            processor.process_mapping_manual(max_apps=max_apps)
+            added_count = processor.retry_apps_with_status(
+                statuses=statuses,
+                max_apps=max_apps,
+                older_than_days=older_days
+            )
+            print(f"✅ {added_count} Apps mit Status '{statuses[0]}' zur Retry-Queue hinzugefügt")
         
-        # Weitere Optionen hier...
+        elif choice == "10a":
+            # Kürzlich veröffentlichte Apps anzeigen
+            print("\n🆕 KÜRZLICH VERÖFFENTLICHTE APPS")
+            print("=" * 40)
+            
+            max_age = input("Apps maximal X Tage alt? (Standard: 30): ").strip()
+            limit = input("Wie viele Apps anzeigen? (Standard: 20): ").strip()
+            
+            try:
+                max_age = int(max_age) if max_age else 30
+                limit = int(limit) if limit else 20
+            except ValueError:
+                max_age, limit = 30, 20
+            
+            recent_apps = db_manager.get_recently_released_apps_without_mapping(
+                max_age_days=max_age,
+                limit=limit
+            )
+            
+            if recent_apps:
+                print(f"\n📋 {len(recent_apps)} kürzlich veröffentlichte Apps ohne CheapShark-Mapping:")
+                for i, app in enumerate(recent_apps, 1):
+                    age_days = int(app['age_days'])
+                    print(f"{i:2d}. {app['name']} (ID: {app['app_id']}) - {age_days} Tage alt")
+            else:
+                print(f"📭 Keine kürzlich veröffentlichten Apps ohne Mapping gefunden")
+        
+        elif choice == "10b":
+            # Release Date Statistiken
+            print("\n📊 RELEASE DATE STATISTIKEN")
+            print("=" * 40)
+            
+            # Verschiedene Altersgruppen
+            age_groups = [7, 14, 30, 60, 90, 180, 365]
+            
+            print("📅 Apps nach Veröffentlichungsalter (ohne CheapShark-Mapping):")
+            for age_days in age_groups:
+                apps_in_group = db_manager.get_recently_released_apps_without_mapping(
+                    max_age_days=age_days,
+                    limit=10000
+                )
+                print(f"   <= {age_days:3d} Tage: {len(apps_in_group):,} Apps")
+            
+            # Status-Übersicht für neue Apps
+            recent_status = processor.get_recently_released_apps_status()
+            print(f"\n📈 Status-Übersicht (< 30 Tage):")
+            print(f"🆕 Ohne Mapping: {recent_status['recent_without_mapping']:,}")
+            print(f"📝 Als 'zu neu' markiert: {recent_status['marked_too_new']:,}")
+            print(f"🔄 Bereit für Retry: {recent_status['ready_for_retry']:,}")
+            
+            # Beispiele zeigen
+            if recent_status['examples']['recent_without_mapping']:
+                print(f"\n📄 Beispiele kürzlich veröffentlichter Apps ohne Mapping:")
+                for app in recent_status['examples']['recent_without_mapping']:
+                    age_days = int(app['age_days'])
+                    print(f"   • {app['name']} - {age_days} Tage alt")
+        
+        elif choice == "10c":
+            # Release-Discovery testen
+            print("\n🔄 RELEASE-DISCOVERY TESTEN")
+            print("=" * 30)
+            
+            if not processor.bulk_importer:
+                print("❌ Bulk Importer nicht verfügbar")
+            else:
+                print("🆕 Teste Release-Discovery...")
+                
+                # Teste sehr neue Releases
+                new_count = processor.bulk_importer._check_for_very_recent_releases(days_back=7)
+                
+                if new_count > 0:
+                    print(f"✅ {new_count} sehr neue Apps gefunden und importiert")
+                    
+                    # Plane für CheapShark-Mapping
+                    mapped_count = processor._schedule_new_releases_for_mapping()
+                    if mapped_count > 0:
+                        print(f"📅 {mapped_count} neue Apps für CheapShark-Mapping geplant")
+                else:
+                    print("📭 Keine sehr neuen Apps gefunden")
+                    
+                # Teste monatlichen Release-Import
+                print("\n📅 Teste monatlichen Release-Import...")
+                if processor.bulk_importer.schedule_monthly_release_import():
+                    print("✅ Monatlicher Release-Import erfolgreich getestet")
+                else:
+                    print("❌ Monatlicher Release-Import fehlgeschlagen")
+        
         else:
             print("❌ Ungültige Auswahl - bitte versuchen Sie es erneut")
+            print("💡 Verfügbare Optionen: 1-11, 9a-9e, 10a-10c")
         
         # Kleine Pause zwischen Aktionen
         print("\n" + "="*50)
         input("💡 Drücken Sie Enter um zum Hauptmenü zurückzukehren...")
 
-
-# ZUSÄTZLICHER BUGFIX: Scheduler Keep-Alive Methode
-def run_scheduler_interactive(processor):
-    """
-    Interaktive Scheduler-Session
-    Hält das Programm am Leben während der Scheduler läuft
-    """
-    print("\n🚀 INTERACTIVE SCHEDULER MODE")
-    print("=" * 40)
-    print("📊 Scheduler läuft kontinuierlich im Hintergrund")
-    print("🔄 Verwenden Sie die folgenden Befehle:")
-    print("   'status' - Scheduler-Status anzeigen")
-    print("   'stats' - Datenbank-Statistiken anzeigen") 
-    print("   'stop' - Scheduler stoppen und beenden")
-    print("   'help' - Diese Hilfe anzeigen")
-    
-    while processor.scheduler_running:
-        try:
-            command = input("\nScheduler> ").strip().lower()
-            
-            if command == 'stop':
-                processor.stop_background_scheduler()
-                print("✅ Scheduler gestoppt - kehre zum Hauptmenü zurück")
-                break
-                
-            elif command == 'status':
-                status = processor.get_scheduler_status()
-                print(f"🔄 Status: {'LÄUFT' if status['scheduler_running'] else 'GESTOPPT'}")
-                print(f"📋 Ausstehende Jobs: {status['pending_jobs']:,}")
-                print(f"❌ Fehlgeschlagene Jobs: {status['failed_jobs']:,}")
-                
-            elif command == 'stats':
-                from database_manager import DatabaseManager
-                db_stats = DatabaseManager().get_database_stats()
-                print(f"📚 Gesamt Apps: {db_stats['apps']['total']:,}")
-                print(f"✅ CheapShark gemappt: {db_stats['cheapshark']['mapped']:,}")
-                print(f"📈 Mapping-Rate: {db_stats['cheapshark']['success_rate']:.1f}%")
-                
-            elif command == 'help':
-                print("📋 Verfügbare Befehle:")
-                print("   status - Scheduler-Status")
-                print("   stats - Datenbank-Statistiken")
-                print("   stop - Scheduler stoppen")
-                print("   help - Diese Hilfe")
-                
-            elif command == '':
-                continue
-                
-            else:
-                print(f"❌ Unbekannter Befehl: '{command}' - verwenden Sie 'help'")
-                
-        except KeyboardInterrupt:
-            print("\n🛑 Strg+C erkannt - stoppe Scheduler...")
-            processor.stop_background_scheduler()
-            break
-        except EOFError:
-            print("\n🛑 EOF erkannt - stoppe Scheduler...")
-            processor.stop_background_scheduler()
-            break
 
 if __name__ == "__main__":
     cheapshark_processor_main()
