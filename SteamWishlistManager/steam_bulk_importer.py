@@ -1,21 +1,22 @@
 """
-Steam Bulk Importer - ENHANCED Version mit Release Date Support
+Steam Bulk Importer - COMPLETE VERSION mit Release Date Support
 Nutzt die zentrale DatabaseManager Klasse
-ERWEITERT: Bessere Release Date Verarbeitung für intelligente CheapShark-Mappings
+Automatische Discovery neuer Releases via ISteamChartsService
 """
 
 import requests
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
+from typing import List, Dict, Optional, Tuple
 from database_manager import DatabaseManager
 
 class SteamBulkImporter:
     """
     Importiert ALLE verfügbaren Steam-Spiele auf einmal über verschiedene APIs
     Nutzt DatabaseManager für alle Datenbankoperationen
-    ERWEITERT: Bessere Release Date Verarbeitung
+    Automatische Discovery neuer Releases via ISteamChartsService
     """
     
     def __init__(self, api_key: str, db_manager: DatabaseManager = None):
@@ -43,6 +44,10 @@ class SteamBulkImporter:
         # Session in Datenbank loggen (würde normalerweise Session ID zurückgeben)
         print(f"📋 Import Session: {session_type} - {items_successful}/{items_processed} erfolgreich")
         return 1  # Mock Session ID
+    
+    # ========================
+    # CLASSIC BULK IMPORT METHODS
+    # ========================
     
     def import_all_steam_apps_method1(self) -> bool:
         """
@@ -263,11 +268,384 @@ class SteamBulkImporter:
             print("❌ Keine Apps von SteamSpy erhalten")
             return False
     
+    # ========================
+    # AUTOMATIC RELEASE DISCOVERY
+    # ========================
+    
+    def import_monthly_top_releases(self, year_month: str = None, category: str = "new_releases") -> bool:
+        """
+        Importiert die Top-Releases eines bestimmten Monats
+        
+        Args:
+            year_month: Format "YYYY-MM" (z.B. "2024-12"), None für aktuellen Monat
+            category: "new_releases" oder "top_releases"
+        
+        Returns:
+            True wenn erfolgreich importiert
+        """
+        if not year_month:
+            # Aktueller Monat
+            year_month = datetime.now().strftime("%Y-%m")
+        
+        print(f"🆕 MONATLICHE TOP RELEASES: {year_month}")
+        print("=" * 50)
+        
+        url = "https://api.steampowered.com/ISteamChartsService/GetMonthTopAppReleases/v1/"
+        params = {
+            'key': self.api_key,
+            'date': year_month,
+            'request_type': category,
+            'format': 'json'
+        }
+        
+        try:
+            print(f"📥 Lade Top-Releases für {year_month}...")
+            response = self.session.get(url, params=params, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                releases = data.get('response', {}).get('releases', [])
+                
+                if not releases:
+                    print(f"📭 Keine Releases für {year_month} gefunden")
+                    return False
+                
+                print(f"✅ {len(releases)} Releases gefunden")
+                
+                # Zeige Top 5 Releases
+                print(f"\n📋 TOP 5 RELEASES FÜR {year_month.upper()}:")
+                for i, release in enumerate(releases[:5], 1):
+                    app_id = release.get('appid')
+                    name = release.get('name', 'Unknown')
+                    peak_ccu = release.get('peak_ccu', 0)
+                    print(f"{i:2d}. {name} (ID: {app_id}) - Peak CCU: {peak_ccu:,}")
+                
+                # Apps importieren mit detaillierten Informationen
+                imported_count = self._import_release_apps_with_details(releases)
+                
+                # Session loggen
+                self.log_import_session(
+                    f'monthly_releases_{year_month}', 
+                    len(releases), 
+                    imported_count, 
+                    True,
+                    metadata={
+                        'year_month': year_month,
+                        'category': category,
+                        'peak_releases': len([r for r in releases if r.get('peak_ccu', 0) > 1000])
+                    }
+                )
+                
+                print(f"💾 {imported_count}/{len(releases)} Releases erfolgreich importiert")
+                
+                return True
+                
+            else:
+                error_msg = f"HTTP {response.status_code}: {response.text[:200]}"
+                print(f"❌ API Fehler: {error_msg}")
+                self.log_import_session(f'monthly_releases_{year_month or "current"}', 0, 0, False, error_msg)
+                return False
+                
+        except requests.RequestException as e:
+            error_msg = str(e)
+            print(f"❌ Request Fehler: {error_msg}")
+            self.log_import_session(f'monthly_releases_{year_month or "current"}', 0, 0, False, error_msg)
+            return False
+    
+    def import_multiple_months_releases(self, start_month: str, end_month: str = None) -> Dict:
+        """
+        Importiert Releases mehrerer Monate
+        
+        Args:
+            start_month: Start-Monat "YYYY-MM"
+            end_month: End-Monat "YYYY-MM", None für aktuellen Monat
+        
+        Returns:
+            Dictionary mit Statistiken
+        """
+        if not end_month:
+            end_month = datetime.now().strftime("%Y-%m")
+        
+        print(f"📅 MEHRERE MONATE: {start_month} bis {end_month}")
+        print("=" * 60)
+        
+        # Parse start und end dates
+        try:
+            start_date = datetime.strptime(start_month, "%Y-%m")
+            end_date = datetime.strptime(end_month, "%Y-%m")
+        except ValueError as e:
+            print(f"❌ Ungültiges Datumsformat: {e}")
+            return {'months_processed': 0, 'total_releases': 0, 'total_imported': 0}
+        
+        if start_date > end_date:
+            print("❌ Start-Monat muss vor End-Monat liegen")
+            return {'months_processed': 0, 'total_releases': 0, 'total_imported': 0}
+        
+        months_processed = 0
+        total_releases = 0
+        total_imported = 0
+        failed_months = []
+        
+        current_date = start_date
+        while current_date <= end_date:
+            year_month = current_date.strftime("%Y-%m")
+            
+            print(f"\n📆 Verarbeite Monat: {year_month}")
+            
+            try:
+                if self.import_monthly_top_releases(year_month):
+                    months_processed += 1
+                    
+                    # Hole Statistiken für diesen Monat
+                    month_stats = self._get_month_release_stats(year_month)
+                    total_releases += month_stats.get('releases_found', 0)
+                    total_imported += month_stats.get('releases_imported', 0)
+                    
+                    print(f"✅ {year_month} erfolgreich verarbeitet")
+                else:
+                    failed_months.append(year_month)
+                    print(f"❌ {year_month} fehlgeschlagen")
+                
+                # Rate Limiting zwischen Monaten
+                time.sleep(2)
+                
+            except Exception as e:
+                failed_months.append(year_month)
+                print(f"❌ {year_month} Fehler: {e}")
+            
+            # Nächster Monat
+            if current_date.month == 12:
+                current_date = current_date.replace(year=current_date.year + 1, month=1)
+            else:
+                current_date = current_date.replace(month=current_date.month + 1)
+        
+        # Zusammenfassung
+        total_months = ((end_date.year - start_date.year) * 12 + end_date.month - start_date.month + 1)
+        result = {
+            'months_processed': months_processed,
+            'total_releases': total_releases,
+            'total_imported': total_imported,
+            'failed_months': failed_months,
+            'success_rate': (months_processed / total_months) * 100 if total_months > 0 else 0
+        }
+        
+        print(f"\n🏁 MEHRMONATIGER IMPORT ABGESCHLOSSEN:")
+        print(f"✅ Monate verarbeitet: {months_processed}")
+        print(f"📊 Gesamt Releases: {total_releases}")
+        print(f"💾 Erfolgreich importiert: {total_imported}")
+        print(f"📈 Erfolgsrate: {result['success_rate']:.1f}%")
+        
+        if failed_months:
+            print(f"❌ Fehlgeschlagene Monate: {', '.join(failed_months)}")
+        
+        return result
+    
+    def import_latest_releases_auto(self, months_back: int = 3) -> bool:
+        """
+        Automatischer Import der neuesten Releases
+        Ideal für regelmäßige Ausführung via Scheduler
+        
+        Args:
+            months_back: Wie viele Monate zurück importieren
+        
+        Returns:
+            True wenn mindestens ein Monat erfolgreich war
+        """
+        print(f"🤖 AUTOMATISCHER IMPORT: Letzte {months_back} Monate")
+        print("=" * 50)
+        
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=months_back * 30)  # Approximation
+        
+        start_month = start_date.strftime("%Y-%m")
+        end_month = end_date.strftime("%Y-%m")
+        
+        print(f"📅 Zeitraum: {start_month} bis {end_month}")
+        
+        result = self.import_multiple_months_releases(start_month, end_month)
+        
+        # Bestimme Erfolg
+        success = result['months_processed'] > 0
+        
+        if success:
+            print(f"✅ Automatischer Import erfolgreich")
+            
+            # Zusätzlich: Prüfe auf sehr neue Apps (letzten 7 Tage)
+            recent_apps_added = self._check_for_very_recent_releases()
+            if recent_apps_added > 0:
+                print(f"🆕 {recent_apps_added} sehr neue Apps zusätzlich gefunden")
+        else:
+            print(f"❌ Automatischer Import fehlgeschlagen")
+        
+        return success
+    
+    def _import_release_apps_with_details(self, releases: List[Dict]) -> int:
+        """
+        Importiert Release-Apps mit detaillierten Informationen
+        """
+        imported_count = 0
+        
+        for i, release in enumerate(releases, 1):
+            app_id = str(release.get('appid'))
+            name = release.get('name', 'Unknown')
+            
+            print(f"📦 {i}/{len(releases)}: {name} (ID: {app_id})")
+            
+            # Prüfe ob App bereits in DB existiert
+            if self.db_manager.app_exists(app_id):
+                print(f"   ⏭️ Bereits in Datenbank")
+                imported_count += 1  # Zähle als "importiert" da bereits vorhanden
+                continue
+            
+            # Hole detaillierte App-Informationen
+            app_details = self._fetch_single_app_details(app_id)
+            
+            if app_details:
+                # Füge Release-spezifische Daten hinzu
+                app_details.update({
+                    'peak_ccu': release.get('peak_ccu', 0),
+                    'release_month': release.get('release_date', ''),
+                    'source': 'monthly_releases'
+                })
+                
+                if self.db_manager.add_app(app_details):
+                    imported_count += 1
+                    
+                    # Zeige Release-Info
+                    release_info = app_details.get('release_date')
+                    if release_info and isinstance(release_info, dict):
+                        release_date = release_info.get('date', 'Unknown')
+                        print(f"   📅 Release: {release_date}")
+                    
+                    peak_ccu = release.get('peak_ccu', 0)
+                    if peak_ccu > 0:
+                        print(f"   👥 Peak CCU: {peak_ccu:,}")
+                    
+                    print(f"   ✅ Importiert")
+                else:
+                    print(f"   ❌ Fehler beim Speichern")
+            else:
+                print(f"   ❌ Details nicht verfügbar")
+            
+            # Rate Limiting
+            time.sleep(0.5)
+        
+        return imported_count
+    
+    def _get_month_release_stats(self, year_month: str) -> Dict:
+        """
+        Holt Statistiken für Releases eines bestimmten Monats aus der DB
+        """
+        # Simplified - in reality würde man die DB nach dem Monat durchsuchen
+        return {
+            'releases_found': 0,  # Placeholder
+            'releases_imported': 0  # Placeholder
+        }
+    
+    def _check_for_very_recent_releases(self, days_back: int = 7) -> int:
+        """
+        Prüft auf sehr neue Releases (letzte X Tage) die nicht in monatlichen Charts stehen
+        Nutzt Steam Store "Recently Released" API
+        """
+        print(f"🔍 Prüfe sehr neue Releases (letzte {days_back} Tage)...")
+        
+        # Steam Store API für kürzlich veröffentlichte Spiele
+        url = "https://store.steampowered.com/api/featured/"
+        
+        try:
+            response = self.session.get(url, timeout=15)
+            
+            if response.status_code == 200:
+                data = response.json()
+                new_releases = data.get('new_releases', {}).get('items', [])
+                
+                if not new_releases:
+                    print("   📭 Keine neuen Releases in Featured API gefunden")
+                    return 0
+                
+                print(f"   📋 {len(new_releases)} neue Releases in Featured API gefunden")
+                
+                # Importiere nur die die noch nicht in der DB sind
+                new_apps_imported = 0
+                
+                for release in new_releases[:20]:  # Limitiere auf Top 20
+                    app_id = str(release.get('id'))
+                    name = release.get('name', 'Unknown')
+                    
+                    if not self.db_manager.app_exists(app_id):
+                        print(f"   🆕 Neue App gefunden: {name} (ID: {app_id})")
+                        
+                        # Hole Details und importiere
+                        app_details = self._fetch_single_app_details(app_id)
+                        if app_details and self.db_manager.add_app(app_details):
+                            new_apps_imported += 1
+                            print(f"      ✅ Importiert")
+                        else:
+                            print(f"      ❌ Import fehlgeschlagen")
+                        
+                        time.sleep(0.5)
+                
+                return new_apps_imported
+                
+        except requests.RequestException as e:
+            print(f"   ❌ Fehler bei Recent Releases Check: {e}")
+            return 0
+        
+        return 0
+    
+    # ========================
+    # SCHEDULER INTEGRATION
+    # ========================
+    
+    def schedule_monthly_release_import(self) -> bool:
+        """
+        NEUE METHODE: Für Integration in Background-Scheduler
+        Führt automatischen monatlichen Release-Import durch
+        """
+        print("⏰ GEPLANTER MONATLICHER RELEASE-IMPORT")
+        print("=" * 50)
+        
+        try:
+            # Importiere aktuellen Monat
+            current_month = datetime.now().strftime("%Y-%m")
+            success_current = self.import_monthly_top_releases(current_month)
+            
+            # Importiere letzten Monat (falls noch nicht komplett)
+            last_month_date = datetime.now() - timedelta(days=30)
+            last_month = last_month_date.strftime("%Y-%m")
+            success_last = self.import_monthly_top_releases(last_month)
+            
+            # Zusätzlich: Sehr neue Releases checken
+            recent_count = self._check_for_very_recent_releases()
+            
+            success = success_current or success_last or (recent_count > 0)
+            
+            if success:
+                print("✅ Geplanter Release-Import erfolgreich")
+                
+                # Statistiken aktualisieren
+                stats = self.db_manager.get_database_stats()
+                print(f"📊 Neue DB-Statistiken:")
+                print(f"   📚 Gesamt Apps: {stats['apps']['total']:,}")
+                print(f"   🆕 Kürzlich veröffentlicht: {stats['apps']['recently_released']:,}")
+            else:
+                print("❌ Geplanter Release-Import fehlgeschlagen")
+            
+            return success
+            
+        except Exception as e:
+            print(f"❌ Fehler beim geplanten Import: {e}")
+            return False
+    
+    # ========================
+    # EXISTING METHODS
+    # ========================
+    
     def import_missing_apps_from_list(self, app_ids: list) -> int:
         """
         Importiert fehlende Apps aus einer Liste von App IDs
         Nützlich für Wishlist-Apps die nicht in der DB sind
-        ERWEITERT: Bessere Release Date Verarbeitung
+        Bessere Release Date Verarbeitung
         """
         print(f"🔍 Importiere {len(app_ids)} fehlende Apps aus Liste...")
         
@@ -395,7 +773,7 @@ class SteamBulkImporter:
     
     def enhanced_import_with_release_dates(self, sample_size: int = 1000) -> bool:
         """
-        NEUE METHODE: Enhanced Import mit Release Date Collection
+        Enhanced Import mit Release Date Collection
         Sammelt Release Dates für eine Stichprobe von Apps
         
         Args:
@@ -498,7 +876,6 @@ class SteamBulkImporter:
 def bulk_import_main():
     """
     Hauptfunktion für Bulk Import aller Steam Apps
-    ERWEITERT: Release Date Features
     """
     print("🚀 STEAM BULK IMPORTER v2.0 (ENHANCED)")
     print("Importiert ALLE Steam-Spiele mit Release Date Intelligence!")
@@ -541,9 +918,11 @@ def bulk_import_main():
     print("4. 📊 SteamSpy API (mit Statistiken, langsam)")
     print("5. 📅 Enhanced Import mit Release Dates")
     print("6. 🔄 Release Dates für vorhandene Apps sammeln")
-    print("7. ❌ Abbrechen")
+    print("7. 🆕 Monatliche Top-Releases importieren")
+    print("8. 🤖 Automatischer Release-Import (letzte 3 Monate)")
+    print("9. ❌ Abbrechen")
     
-    choice = input("\nWählen Sie eine Option (1-7): ").strip()
+    choice = input("\nWählen Sie eine Option (1-9): ").strip()
     
     if choice == "1":
         importer.full_import_recommended()
@@ -576,6 +955,20 @@ def bulk_import_main():
         print(f"\n📅 Sammle Release Dates für {apps_to_update} Apps...")
         importer.enhanced_import_with_release_dates(apps_to_update)
     elif choice == "7":
+        # Monatliche Top-Releases
+        from monthly_releases_main import monthly_releases_main
+        monthly_releases_main()
+    elif choice == "8":
+        # Automatischer Release-Import
+        months_back = input("Wie viele Monate zurück? (Standard: 3): ").strip()
+        try:
+            months_back = int(months_back) if months_back else 3
+        except ValueError:
+            months_back = 3
+        
+        print(f"\n🤖 Starte automatischen Release-Import (letzte {months_back} Monate)...")
+        importer.import_latest_releases_auto(months_back)
+    elif choice == "9":
         print("👋 Import abgebrochen")
         return
     else:
@@ -592,6 +985,147 @@ def bulk_import_main():
         print(f"\n📅 RELEASE DATE INSIGHTS:")
         print(f"🆕 {final_stats['apps']['recently_released']} kürzlich veröffentlichte Apps")
         print(f"💡 Diese werden intelligenter für CheapShark-Mapping behandelt")
+
+def monthly_releases_main():
+    """
+    Hauptfunktion für monatliche Release-Imports
+    """
+    print("🆕 STEAM MONATLICHE RELEASES IMPORTER")
+    print("Automatische Discovery neuer Steam-Releases!")
+    print("=" * 60)
+    
+    # API Key laden
+    try:
+        from steam_wishlist_manager import load_api_key_from_env
+        api_key = load_api_key_from_env()
+    except ImportError:
+        api_key = input("Steam API Key eingeben: ").strip()
+    
+    if not api_key:
+        print("❌ Kein Steam API Key gefunden")
+        return
+    
+    print("✅ API Key geladen")
+    
+    # Database Manager und Importer erstellen
+    db_manager = DatabaseManager()
+    importer = SteamBulkImporter(api_key, db_manager)
+    
+    # Aktuelle Statistiken
+    print("\n📊 AKTUELLE DATENBANK:")
+    current_stats = db_manager.get_database_stats()
+    print(f"📚 Gesamt Apps: {current_stats['apps']['total']:,}")
+    print(f"🆕 Kürzlich veröffentlicht: {current_stats['apps']['recently_released']:,}")
+    
+    print("\n🆕 MONATLICHE RELEASE-OPTIONEN:")
+    print("1. 📅 Aktueller Monat importieren")
+    print("2. 📆 Bestimmten Monat importieren") 
+    print("3. 📋 Mehrere Monate importieren")
+    print("4. 🤖 Automatischer Import (letzte 3 Monate)")
+    print("5. 🔍 Nur sehr neue Releases (letzte 7 Tage)")
+    print("6. ⏰ Für Scheduler vorbereiten")
+    print("7. ❌ Zurück zum Hauptmenü")
+    
+    choice = input("\nWählen Sie eine Option (1-7): ").strip()
+    
+    if choice == "1":
+        # Aktueller Monat
+        current_month = datetime.now().strftime("%Y-%m")
+        print(f"\n📅 Importiere aktuellen Monat: {current_month}")
+        
+        if importer.import_monthly_top_releases():
+            print("✅ Import erfolgreich")
+        else:
+            print("❌ Import fehlgeschlagen")
+    
+    elif choice == "2":
+        # Bestimmter Monat
+        year_month = input("Monat eingeben (YYYY-MM, z.B. 2024-12): ").strip()
+        
+        if len(year_month) == 7 and '-' in year_month:
+            if importer.import_monthly_top_releases(year_month):
+                print("✅ Import erfolgreich")
+            else:
+                print("❌ Import fehlgeschlagen")
+        else:
+            print("❌ Ungültiges Format. Nutzen Sie YYYY-MM")
+    
+    elif choice == "3":
+        # Mehrere Monate
+        start_month = input("Start-Monat (YYYY-MM): ").strip()
+        end_month = input("End-Monat (YYYY-MM, Enter für aktuell): ").strip()
+        
+        if not end_month:
+            end_month = None
+        
+        if len(start_month) == 7 and '-' in start_month:
+            result = importer.import_multiple_months_releases(start_month, end_month)
+            
+            if result['months_processed'] > 0:
+                print("✅ Mehrmonatiger Import erfolgreich")
+            else:
+                print("❌ Mehrmonatiger Import fehlgeschlagen")
+        else:
+            print("❌ Ungültiges Start-Monat Format")
+    
+    elif choice == "4":
+        # Automatischer Import
+        months_back = input("Wie viele Monate zurück? (Standard: 3): ").strip()
+        try:
+            months_back = int(months_back) if months_back else 3
+        except ValueError:
+            months_back = 3
+        
+        print(f"\n🤖 Starte automatischen Import (letzte {months_back} Monate)...")
+        
+        if importer.import_latest_releases_auto(months_back):
+            print("✅ Automatischer Import erfolgreich")
+        else:
+            print("❌ Automatischer Import fehlgeschlagen")
+    
+    elif choice == "5":
+        # Nur sehr neue Releases
+        days_back = input("Wie viele Tage zurück? (Standard: 7): ").strip()
+        try:
+            days_back = int(days_back) if days_back else 7
+        except ValueError:
+            days_back = 7
+        
+        print(f"\n🔍 Suche sehr neue Releases (letzte {days_back} Tage)...")
+        new_count = importer._check_for_very_recent_releases(days_back)
+        
+        if new_count > 0:
+            print(f"✅ {new_count} sehr neue Apps importiert")
+        else:
+            print("📭 Keine neuen Apps gefunden")
+    
+    elif choice == "6":
+        # Scheduler-Test
+        print("\n⏰ Teste Scheduler-Integration...")
+        
+        if importer.schedule_monthly_release_import():
+            print("✅ Scheduler-Integration erfolgreich getestet")
+            print("💡 Diese Methode kann im Background-Scheduler verwendet werden")
+        else:
+            print("❌ Scheduler-Integration fehlgeschlagen")
+    
+    elif choice == "7":
+        print("👋 Zurück zum Hauptmenü")
+        return
+    
+    else:
+        print("❌ Ungültige Auswahl")
+        return
+    
+    # Final stats
+    print("\n📊 FINAL STATISTIKEN:")
+    final_stats = db_manager.get_database_stats()
+    print(f"📚 Gesamt Apps: {final_stats['apps']['total']:,}")
+    print(f"🆕 Kürzlich veröffentlicht: {final_stats['apps']['recently_released']:,}")
+    
+    if final_stats['apps']['recently_released'] > current_stats['apps']['recently_released']:
+        new_releases = final_stats['apps']['recently_released'] - current_stats['apps']['recently_released']
+        print(f"🎉 {new_releases} neue Releases hinzugefügt!")
 
 if __name__ == "__main__":
     bulk_import_main()

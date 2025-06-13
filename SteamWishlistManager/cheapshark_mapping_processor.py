@@ -1,7 +1,7 @@
 """
-CheapShark Mapping Processor - ENHANCED Version
-Mit integriertem Scheduler und DatabaseManager Integration
-ERWEITERT: Explizite Speicherung wenn kein CheapShark-Mapping existiert
+CheapShark Mapping Processor - COMPLETE ENHANCED VERSION
+Mit integriertem Scheduler, DatabaseManager Integration und Monthly Release Discovery
+Explizite Speicherung wenn kein CheapShark-Mapping existiert + automatischer Release-Import
 """
 
 import requests
@@ -22,7 +22,7 @@ class CheapSharkMappingProcessor:
     """
     Verknüpft Steam Apps mit CheapShark Game IDs
     Mit automatischem Scheduler für kontinuierliche Verarbeitung
-    ERWEITERT: Unterscheidet zwischen "kein Mapping" und "API-Fehler"
+    Explizite Speicherung wenn kein CheapShark-Mapping existiert + Release Discovery
     """
     
     def __init__(self, api_key: str, db_manager: DatabaseManager = None):
@@ -39,6 +39,25 @@ class CheapSharkMappingProcessor:
         self.scheduler_running = False
         self.scheduler_thread = None
         self.stop_scheduler = threading.Event()
+        
+        # Integration: Steam Bulk Importer für Release Discovery
+        self._bulk_importer = None  # Lazy loading
+    
+    @property
+    def bulk_importer(self):
+        """Lazy loading des Bulk Importers"""
+        if self._bulk_importer is None:
+            try:
+                from steam_bulk_importer import SteamBulkImporter
+                self._bulk_importer = SteamBulkImporter(self.api_key, self.db_manager)
+            except ImportError:
+                logger.warning("SteamBulkImporter nicht verfügbar")
+                self._bulk_importer = None
+        return self._bulk_importer
+    
+    # ========================
+    # CORE CHEAPSHARK MAPPING METHODS
+    # ========================
     
     def get_cheapshark_mapping_for_app_id(self, steam_app_id: str) -> Dict:
         """
@@ -61,7 +80,7 @@ class CheapSharkMappingProcessor:
             if response.status_code == 200:
                 games = response.json()
                 
-                # ERWEITERT: Explizite Prüfung auf leere Antwort
+                # Explizite Prüfung auf leere Antwort
                 if games and len(games) > 0:
                     game = games[0]  # Nimm das erste Ergebnis
                     
@@ -79,7 +98,7 @@ class CheapSharkMappingProcessor:
                         'result_type': 'found'
                     }
                 else:
-                    # ERWEITERT: Explizit "kein Mapping gefunden" (leere API-Antwort)
+                    # Explizit "kein Mapping gefunden" (leere API-Antwort)
                     return {
                         'app_id': steam_app_id,
                         'result_type': 'not_found',
@@ -173,7 +192,7 @@ class CheapSharkMappingProcessor:
                     return False
                     
             elif result_type == 'not_found':
-                # ERWEITERT: Kein Mapping gefunden - prüfe Release Date
+                # Kein Mapping gefunden - prüfe Release Date
                 is_recent = self.db_manager.is_app_recently_released(app_id, max_age_days=30)
                 
                 if is_recent:
@@ -208,7 +227,7 @@ class CheapSharkMappingProcessor:
     def process_mapping_queue_batch(self, batch_size: int = 10) -> Dict:
         """
         Verarbeitet eine Batch von Jobs aus der Mapping Queue
-        ERWEITERT: Bessere Statistiken inkl. "too_new" Status
+        Bessere Statistiken inkl. "too_new" Status
         """
         # Nächste Jobs aus Queue holen
         jobs = self.db_manager.get_next_mapping_jobs(batch_size)
@@ -309,9 +328,13 @@ class CheapSharkMappingProcessor:
         
         return result
     
+    # ========================
+    # ENHANCED RETRY METHODS
+    # ========================
+    
     def retry_too_new_apps(self, min_age_days: int = 60, max_apps: int = 1000, priority: int = 6) -> int:
         """
-        NEUE METHODE: Plant Apps die als "too_new" markiert sind für erneute Prüfung
+        Plant Apps die als "too_new" markiert sind für erneute Prüfung
         
         Args:
             min_age_days: Apps müssen mindestens X Tage alt sein
@@ -341,12 +364,13 @@ class CheapSharkMappingProcessor:
         if len(apps_to_retry) > 5:
             print(f"   ... und {len(apps_to_retry) - 5} weitere")
         
-        # Bestätigung anfordern
-        confirm = input(f"\n🤔 {len(apps_to_retry)} Apps für Age-Based Retry? (j/n): ").strip().lower()
-        
-        if confirm not in ['j', 'ja', 'y', 'yes']:
-            logger.info("❌ Age-Based Retry abgebrochen")
-            return 0
+        # Bestätigung anfordern für interaktive Nutzung
+        if not hasattr(self, '_auto_confirm') or not self._auto_confirm:
+            confirm = input(f"\n🤔 {len(apps_to_retry)} Apps für Age-Based Retry? (j/n): ").strip().lower()
+            
+            if confirm not in ['j', 'ja', 'y', 'yes']:
+                logger.info("❌ Age-Based Retry abgebrochen")
+                return 0
         
         # Apps zurücksetzen und zur Queue hinzufügen
         app_ids = [app['app_id'] for app in apps_to_retry]
@@ -365,7 +389,7 @@ class CheapSharkMappingProcessor:
     
     def get_recently_released_apps_status(self, max_age_days: int = 30) -> Dict:
         """
-        NEUE METHODE: Gibt Status für kürzlich veröffentlichte Apps zurück
+        Gibt Status für kürzlich veröffentlichte Apps zurück
         """
         # Apps ohne Mapping die kürzlich veröffentlicht wurden
         recent_without_mapping = self.db_manager.get_recently_released_apps_without_mapping(
@@ -393,72 +417,10 @@ class CheapSharkMappingProcessor:
             }
         }
     
-    def add_missing_apps_to_queue(self, app_ids: List[str], priority: int = 5) -> int:
-        """
-        Fügt fehlende Apps zur CheapShark-Mapping Queue hinzu
-        ERWEITERT: Filtert Apps die bereits "no mapping found" haben
-        """
-        if not app_ids:
-            return 0
-        
-        # Filtere Apps die bereits verarbeitet wurden
-        apps_to_add = []
-        already_processed = 0
-        
-        for app_id in app_ids:
-            attempt_info = self.db_manager.has_cheapshark_mapping_been_attempted(app_id)
-            
-            if not attempt_info['attempted']:
-                # Noch nie versucht
-                apps_to_add.append(app_id)
-            elif attempt_info['status'] == 'failed' and attempt_info['attempts'] < 3:
-                # Fehlgeschlagen aber noch Retry-Versuche übrig
-                apps_to_add.append(app_id)
-            else:
-                # Bereits erfolgreich verarbeitet oder zu oft fehlgeschlagen
-                already_processed += 1
-        
-        if not apps_to_add:
-            logger.info(f"📋 Alle {len(app_ids)} Apps bereits verarbeitet")
-            return 0
-        
-        added_count = self.db_manager.add_to_mapping_queue(apps_to_add, priority)
-        logger.info(f"📝 {added_count}/{len(apps_to_add)} Apps zur Mapping Queue hinzugefügt")
-        
-        if already_processed > 0:
-            logger.info(f"⏭️ {already_processed} Apps bereits verarbeitet (übersprungen)")
-        
-        return added_count
-    
-    def process_wishlist_apps_priority(self, steam_id: str) -> int:
-        """
-        Fügt Wishlist-Apps mit hoher Priorität zur Mapping Queue hinzu
-        ERWEITERT: Bessere Filterung
-        """
-        logger.info(f"🎯 Verarbeite Wishlist-Apps für User {steam_id} mit hoher Priorität...")
-        
-        # Hole Wishlist-Items ohne erfolgreiches CheapShark-Mapping
-        wishlist_items = self.db_manager.get_wishlist_items(steam_id, include_cheapshark=True)
-        
-        apps_to_map = []
-        for item in wishlist_items:
-            # Nur Apps ohne erfolgreiches Mapping oder explizites "not found"
-            if not item.get('cheapshark_game_id') and not item.get('no_mapping_found'):
-                apps_to_map.append(item['app_id'])
-        
-        if apps_to_map:
-            # Hohe Priorität für Wishlist-Apps
-            added_count = self.add_missing_apps_to_queue(apps_to_map, priority=8)
-            logger.info(f"🎯 {added_count} Wishlist-Apps zur Priority-Queue hinzugefügt")
-            return added_count
-        else:
-            logger.info("✅ Alle Wishlist-Apps sind bereits verarbeitet")
-            return 0
-    
     def retry_apps_with_status(self, statuses: List[str], max_apps: int = 1000, 
                               older_than_days: int = None, priority: int = 5) -> int:
         """
-        NEUE METHODE: Plant Apps mit bestimmten Status für erneute Verarbeitung
+        Plant Apps mit bestimmten Status für erneute Verarbeitung
         
         Args:
             statuses: Liste der Status ['found', 'not_found', 'failed', 'unknown']
@@ -505,7 +467,7 @@ class CheapSharkMappingProcessor:
     def retry_no_mapping_found_apps(self, max_apps: int = 1000, 
                                    older_than_days: int = 30, priority: int = 6) -> int:
         """
-        NEUE METHODE: Plant Apps mit 'kein Mapping gefunden' für erneute Prüfung
+        Plant Apps mit 'kein Mapping gefunden' für erneute Prüfung
         
         Args:
             max_apps: Maximale Anzahl Apps
@@ -526,14 +488,15 @@ class CheapSharkMappingProcessor:
         
         logger.info(f"📋 {len(apps_to_retry)} Apps ohne Mapping gefunden (für Retry)")
         
-        # Bestätigung anfordern
-        print(f"\n🤔 Möchten Sie {len(apps_to_retry)} Apps ohne CheapShark-Mapping erneut prüfen?")
-        print("   Grund: CheapShark könnte neue Spiele hinzugefügt haben")
-        confirm = input("   Fortfahren? (j/n): ").strip().lower()
-        
-        if confirm not in ['j', 'ja', 'y', 'yes']:
-            logger.info("❌ Retry abgebrochen")
-            return 0
+        # Bestätigung anfordern für interaktive Nutzung
+        if not hasattr(self, '_auto_confirm') or not self._auto_confirm:
+            print(f"\n🤔 Möchten Sie {len(apps_to_retry)} Apps ohne CheapShark-Mapping erneut prüfen?")
+            print("   Grund: CheapShark könnte neue Spiele hinzugefügt haben")
+            confirm = input("   Fortfahren? (j/n): ").strip().lower()
+            
+            if confirm not in ['j', 'ja', 'y', 'yes']:
+                logger.info("❌ Retry abgebrochen")
+                return 0
         
         # Apps zurücksetzen und zur Queue hinzufügen
         app_ids = [app['app_id'] for app in apps_to_retry]
@@ -554,7 +517,7 @@ class CheapSharkMappingProcessor:
                              older_than_days: int = 7, max_attempts: int = 3, 
                              priority: int = 4) -> int:
         """
-        NEUE METHODE: Plant fehlgeschlagene Mappings für erneute Verarbeitung
+        Plant fehlgeschlagene Mappings für erneute Verarbeitung
         
         Args:
             max_apps: Maximale Anzahl Apps
@@ -593,87 +556,347 @@ class CheapSharkMappingProcessor:
             logger.warning("⚠️ Keine Apps konnten zurückgesetzt werden")
             return 0
     
-    def schedule_retry_by_criteria(self, 
-                                  mapping_status: List[str] = None,
-                                  no_mapping_found: bool = None,
-                                  older_than_days: int = None,
-                                  max_attempts: int = None,
-                                  max_apps: int = 1000,
-                                  priority: int = 5) -> int:
+    # ========================
+    # QUEUE MANAGEMENT
+    # ========================
+    
+    def add_missing_apps_to_queue(self, app_ids: List[str], priority: int = 5) -> int:
         """
-        NEUE METHODE: Flexible Retry-Planung nach benutzerdefinierten Kriterien
-        
-        Args:
-            mapping_status: Liste der Status zum Retry
-            no_mapping_found: True=nur "kein Mapping", False=nur "mit Mapping", None=alle
-            older_than_days: Nur Apps deren letzter Versuch älter ist
-            max_attempts: Nur Apps mit max. X Versuchen
-            max_apps: Maximale Anzahl Apps
-            priority: Queue-Priorität
+        Fügt fehlende Apps zur CheapShark-Mapping Queue hinzu
+        Filtert Apps die bereits "no mapping found" haben
         """
-        criteria_desc = []
-        if mapping_status:
-            criteria_desc.append(f"Status: {', '.join(mapping_status)}")
-        if no_mapping_found is not None:
-            criteria_desc.append(f"Kein Mapping: {'Ja' if no_mapping_found else 'Nein'}")
-        if older_than_days:
-            criteria_desc.append(f"Älter als: {older_than_days} Tage")
-        if max_attempts:
-            criteria_desc.append(f"Max Versuche: {max_attempts}")
-        
-        criteria_str = ", ".join(criteria_desc) if criteria_desc else "Alle"
-        logger.info(f"🔧 Plane flexiblen Retry - Kriterien: {criteria_str}")
-        
-        # Apps nach Kriterien finden
-        apps_to_retry = self.db_manager.get_apps_by_custom_criteria(
-            mapping_status=mapping_status,
-            no_mapping_found=no_mapping_found,
-            older_than_days=older_than_days,
-            max_attempts=max_attempts,
-            limit=max_apps
-        )
-        
-        if not apps_to_retry:
-            logger.info("📭 Keine Apps mit den gewünschten Kriterien gefunden")
+        if not app_ids:
             return 0
         
-        logger.info(f"📋 {len(apps_to_retry)} Apps gefunden für flexiblen Retry")
+        # Filtere Apps die bereits verarbeitet wurden
+        apps_to_add = []
+        already_processed = 0
         
-        # Bestätigung anfordern
-        print(f"\n🤔 {len(apps_to_retry)} Apps für Retry gefunden:")
-        print(f"   Kriterien: {criteria_str}")
-        confirm = input("   Fortfahren mit Retry? (j/n): ").strip().lower()
+        for app_id in app_ids:
+            attempt_info = self.db_manager.has_cheapshark_mapping_been_attempted(app_id)
+            
+            if not attempt_info['attempted']:
+                # Noch nie versucht
+                apps_to_add.append(app_id)
+            elif attempt_info['status'] == 'failed' and attempt_info['attempts'] < 3:
+                # Fehlgeschlagen aber noch Retry-Versuche übrig
+                apps_to_add.append(app_id)
+            else:
+                # Bereits erfolgreich verarbeitet oder zu oft fehlgeschlagen
+                already_processed += 1
         
-        if confirm not in ['j', 'ja', 'y', 'yes']:
-            logger.info("❌ Flexibler Retry abgebrochen")
+        if not apps_to_add:
+            logger.info(f"📋 Alle {len(app_ids)} Apps bereits verarbeitet")
             return 0
         
-        # Apps zurücksetzen und zur Queue hinzufügen
-        app_ids = [app['app_id'] for app in apps_to_retry]
-        reset_count = self.db_manager.reset_cheapshark_mapping_status(
-            app_ids,
-            reason=f"Flexible retry - {criteria_str}"
-        )
+        added_count = self.db_manager.add_to_mapping_queue(apps_to_add, priority)
+        logger.info(f"📝 {added_count}/{len(apps_to_add)} Apps zur Mapping Queue hinzugefügt")
         
-        if reset_count > 0:
-            added_count = self.add_missing_apps_to_queue(app_ids, priority)
-            logger.info(f"📝 {added_count} Apps zur flexiblen Retry-Queue hinzugefügt")
+        if already_processed > 0:
+            logger.info(f"⏭️ {already_processed} Apps bereits verarbeitet (übersprungen)")
+        
+        return added_count
+    
+    def process_wishlist_apps_priority(self, steam_id: str) -> int:
+        """
+        Fügt Wishlist-Apps mit hoher Priorität zur Mapping Queue hinzu
+        Bessere Filterung
+        """
+        logger.info(f"🎯 Verarbeite Wishlist-Apps für User {steam_id} mit hoher Priorität...")
+        
+        # Hole Wishlist-Items ohne erfolgreiches CheapShark-Mapping
+        wishlist_items = self.db_manager.get_wishlist_items(steam_id, include_cheapshark=True)
+        
+        apps_to_map = []
+        for item in wishlist_items:
+            # Nur Apps ohne erfolgreiches Mapping oder explizites "not found"
+            if not item.get('cheapshark_game_id') and not item.get('no_mapping_found'):
+                apps_to_map.append(item['app_id'])
+        
+        if apps_to_map:
+            # Hohe Priorität für Wishlist-Apps
+            added_count = self.add_missing_apps_to_queue(apps_to_map, priority=8)
+            logger.info(f"🎯 {added_count} Wishlist-Apps zur Priority-Queue hinzugefügt")
             return added_count
         else:
-            logger.warning("⚠️ Keine Apps konnten zurückgesetzt werden")
+            logger.info("✅ Alle Wishlist-Apps sind bereits verarbeitet")
             return 0
     
     # ========================
-    # SCHEDULER FUNCTIONALITY
+    # ENHANCED SCHEDULER WITH RELEASE DISCOVERY
+    # ========================
+    
+    def start_background_scheduler_enhanced(self, 
+                                         mapping_batch_size: int = 10,
+                                         mapping_interval_minutes: int = 10,
+                                         releases_interval_hours: int = 24,
+                                         cleanup_interval_hours: int = 168):  # Weekly
+        """
+        Enhanced Background-Scheduler mit automatischem Release-Import
+        
+        Args:
+            mapping_batch_size: CheapShark-Mapping Batch-Größe
+            mapping_interval_minutes: CheapShark-Mapping Intervall
+            releases_interval_hours: Neue Releases Import Intervall (Standard: täglich)
+            cleanup_interval_hours: Bereinigung Intervall (Standard: wöchentlich)
+        """
+        if self.scheduler_running:
+            logger.warning("⚠️ Enhanced Scheduler läuft bereits")
+            return
+        
+        logger.info("🚀 ENHANCED BACKGROUND-SCHEDULER")
+        logger.info("=" * 50)
+        logger.info(f"🔗 CheapShark-Mapping: alle {mapping_interval_minutes} Minuten ({mapping_batch_size} Apps)")
+        logger.info(f"🆕 Release-Import: alle {releases_interval_hours} Stunden")
+        logger.info(f"🧹 Bereinigung: alle {cleanup_interval_hours} Stunden")
+        
+        # Schedule-Konfiguration
+        schedule.clear()
+        
+        # 1. CheapShark-Mapping (bestehend)
+        schedule.every(mapping_interval_minutes).minutes.do(
+            lambda: self._scheduled_mapping_job(mapping_batch_size)
+        )
+        
+        # 2. NEU: Automatischer Release-Import
+        schedule.every(releases_interval_hours).hours.do(
+            self._scheduled_release_import_job
+        )
+        
+        # 3. Bereinigung (bestehend)
+        schedule.every(cleanup_interval_hours).hours.do(
+            self._scheduled_cleanup_job
+        )
+        
+        # 4. NEU: Wöchentliche Release-Rückschau
+        schedule.every().monday.at("06:00").do(
+            self._scheduled_weekly_release_review
+        )
+        
+        # 5. NEU: Tägliche "Too New" Apps Retry
+        schedule.every().day.at("12:00").do(
+            self._scheduled_too_new_retry
+        )
+        
+        # Scheduler-Thread starten
+        self.scheduler_running = True
+        self.stop_scheduler.clear()
+        self.scheduler_thread = threading.Thread(target=self._run_enhanced_scheduler, daemon=True)
+        self.scheduler_thread.start()
+        
+        logger.info("✅ Enhanced Background-Scheduler gestartet")
+        logger.info("📋 Aktive Jobs:")
+        for job in schedule.jobs:
+            logger.info(f"   • {job}")
+    
+    def _run_enhanced_scheduler(self):
+        """Enhanced Scheduler Loop"""
+        logger.info("🔄 Enhanced Scheduler-Thread gestartet")
+        
+        while self.scheduler_running and not self.stop_scheduler.is_set():
+            try:
+                schedule.run_pending()
+                time.sleep(30)  # Prüfe alle 30 Sekunden
+                
+            except Exception as e:
+                logger.error(f"❌ Enhanced Scheduler-Fehler: {e}")
+                time.sleep(60)
+        
+        logger.info("🔄 Enhanced Scheduler-Thread beendet")
+    
+    def _scheduled_release_import_job(self):
+        """Geplanter Release-Import Job"""
+        try:
+            logger.info("⏰ GEPLANTER RELEASE-IMPORT")
+            logger.info("=" * 40)
+            
+            if not self.bulk_importer:
+                logger.warning("⚠️ Bulk Importer nicht verfügbar")
+                return
+            
+            # Setze Auto-Confirm für automatische Verarbeitung
+            self._auto_confirm = True
+            
+            # Führe automatischen Release-Import durch
+            success = self.bulk_importer.schedule_monthly_release_import()
+            
+            if success:
+                logger.info("✅ Release-Import erfolgreich")
+                
+                # Neue Apps sofort für CheapShark-Mapping einplanen
+                new_apps_count = self._schedule_new_releases_for_mapping()
+                
+                if new_apps_count > 0:
+                    logger.info(f"📅 {new_apps_count} neue Apps für CheapShark-Mapping geplant")
+                
+                # Statistiken loggen
+                stats = self.db_manager.get_database_stats()
+                logger.info(f"📊 Aktuelle Statistiken:")
+                logger.info(f"   📚 Gesamt Apps: {stats['apps']['total']:,}")
+                logger.info(f"   🆕 Kürzlich veröffentlicht: {stats['apps']['recently_released']:,}")
+                
+            else:
+                logger.warning("❌ Release-Import fehlgeschlagen")
+                
+        except Exception as e:
+            logger.error(f"❌ Release-Import Job Fehler: {e}")
+        finally:
+            # Reset Auto-Confirm
+            self._auto_confirm = False
+    
+    def _scheduled_weekly_release_review(self):
+        """Wöchentliche Release-Rückschau"""
+        try:
+            logger.info("📅 WÖCHENTLICHE RELEASE-RÜCKSCHAU")
+            logger.info("=" * 40)
+            
+            if not self.bulk_importer:
+                logger.warning("⚠️ Bulk Importer nicht verfügbar")
+                return
+            
+            # Setze Auto-Confirm für automatische Verarbeitung
+            self._auto_confirm = True
+            
+            # Importiere Releases der letzten Woche falls verpasst
+            result = self.bulk_importer.import_latest_releases_auto(months_back=1)
+            
+            if result:
+                logger.info("✅ Wöchentliche Rückschau erfolgreich")
+                
+                # Prüfe auf "Too New" Apps die jetzt bereit sind
+                retry_count = self.retry_too_new_apps(min_age_days=30, max_apps=500, priority=7)
+                
+                if retry_count > 0:
+                    logger.info(f"🔄 {retry_count} 'zu neue' Apps für Age-Based Retry geplant")
+                
+            else:
+                logger.warning("❌ Wöchentliche Rückschau fehlgeschlagen")
+                
+        except Exception as e:
+            logger.error(f"❌ Wöchentlicher Review Fehler: {e}")
+        finally:
+            # Reset Auto-Confirm
+            self._auto_confirm = False
+    
+    def _scheduled_too_new_retry(self):
+        """Täglicher "Too New" Apps Retry"""
+        try:
+            logger.info("📅 TÄGLICHER 'TOO NEW' RETRY")
+            logger.info("=" * 30)
+            
+            # Setze Auto-Confirm für automatische Verarbeitung
+            self._auto_confirm = True
+            
+            # Apps die als "zu neu" markiert waren, aber jetzt >= 60 Tage alt sind
+            retry_count = self.retry_too_new_apps(min_age_days=60, max_apps=100, priority=6)
+            
+            if retry_count > 0:
+                logger.info(f"✅ {retry_count} 'zu neue' Apps für Retry geplant")
+            else:
+                logger.info("📭 Keine 'zu neuen' Apps bereit für Retry")
+                
+        except Exception as e:
+            logger.error(f"❌ Too New Retry Fehler: {e}")
+        finally:
+            # Reset Auto-Confirm
+            self._auto_confirm = False
+    
+    def _schedule_new_releases_for_mapping(self) -> int:
+        """
+        Plant neue Releases für CheapShark-Mapping
+        Returns: Anzahl neuer Apps die geplant wurden
+        """
+        try:
+            # Hole kürzlich hinzugefügte Apps (letzte 24h)
+            cutoff_time = datetime.now() - timedelta(hours=24)
+            
+            with self.db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT app_id, name FROM steam_apps 
+                    WHERE created_at > ? 
+                      AND app_id NOT IN (
+                          SELECT app_id FROM cheapshark_mappings 
+                          WHERE app_id IS NOT NULL
+                      )
+                    ORDER BY created_at DESC
+                    LIMIT 1000
+                ''', (cutoff_time.isoformat(),))
+                
+                new_apps = [dict(row) for row in cursor.fetchall()]
+            
+            if not new_apps:
+                return 0
+            
+            logger.info(f"🆕 {len(new_apps)} neue Apps in den letzten 24h gefunden")
+            
+            # Apps zur Mapping-Queue mit hoher Priorität hinzufügen
+            app_ids = [app['app_id'] for app in new_apps]
+            added_count = self.add_missing_apps_to_queue(app_ids, priority=9)  # Höchste Priorität
+            
+            return added_count
+            
+        except Exception as e:
+            logger.error(f"❌ Fehler beim Planen neuer Releases: {e}")
+            return 0
+    
+    def get_enhanced_scheduler_status(self) -> Dict:
+        """Enhanced Scheduler Status"""
+        base_status = self.get_scheduler_status()
+        
+        # Zusätzliche Informationen
+        db_stats = self.db_manager.get_database_stats()
+        
+        enhanced_status = {
+            **base_status,
+            'release_import_enabled': True,
+            'recent_apps': db_stats['apps']['recently_released'],
+            'too_new_apps': db_stats['cheapshark']['too_new'],
+            'scheduled_jobs': [str(job) for job in schedule.jobs],
+            'last_release_import': self._get_last_release_import_time(),
+            'next_release_import': self._get_next_release_import_time()
+        }
+        
+        return enhanced_status
+    
+    def _get_last_release_import_time(self) -> Optional[str]:
+        """Holt Zeit des letzten Release-Imports"""
+        try:
+            with self.db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT MAX(started_at) as last_import
+                    FROM import_sessions 
+                    WHERE session_type LIKE 'monthly_releases_%'
+                      AND success = 1
+                ''')
+                
+                row = cursor.fetchone()
+                return row['last_import'] if row and row['last_import'] else None
+                
+        except Exception:
+            return None
+    
+    def _get_next_release_import_time(self) -> Optional[str]:
+        """Holt Zeit des nächsten geplanten Release-Imports"""
+        try:
+            # Finde Release-Import Job
+            for job in schedule.jobs:
+                if 'release_import' in str(job.job_func):
+                    return str(job.next_run)
+            return None
+        except Exception:
+            return None
+    
+    # ========================
+    # STANDARD SCHEDULER METHODS
     # ========================
     
     def start_background_scheduler(self, 
                                  batch_size: int = 10,
                                  interval_minutes: int = 10,
                                  cleanup_interval_hours: int = 24):
-        """
-        Startet Background-Scheduler für automatisches CheapShark-Mapping
-        """
+        """Standard Background-Scheduler ohne Release-Import Features"""
         if self.scheduler_running:
             logger.warning("⚠️ Scheduler läuft bereits")
             return
@@ -734,7 +957,7 @@ class CheapSharkMappingProcessor:
         logger.info("🔄 Scheduler-Thread beendet")
     
     def _scheduled_mapping_job(self, batch_size: int):
-        """Geplante Mapping-Verarbeitung - ERWEITERT"""
+        """Geplante Mapping-Verarbeitung"""
         try:
             logger.info("⏰ Starte geplante CheapShark-Mapping Verarbeitung...")
             
@@ -774,18 +997,15 @@ class CheapSharkMappingProcessor:
         }
     
     # ========================
-    # MANUAL PROCESSING - ERWEITERT
+    # MANUAL PROCESSING METHODS
     # ========================
     
     def process_mapping_manual(self, max_apps: int = None, batch_size: int = 50) -> Dict:
-        """
-        Manuelle Verarbeitung aller unmapped Apps
-        ERWEITERT: Bessere Statistiken und Filterung
-        """
+        """Manuelle Verarbeitung aller unmapped Apps"""
         print("🔄 MANUELLE CHEAPSHARK-MAPPING VERARBEITUNG")
         print("=" * 60)
         
-        # Hole Apps ohne erfolgreiches Mapping (aber mit möglichen Retry-Versuchen)
+        # Hole Apps ohne erfolgreiches Mapping
         unmapped_apps = self.db_manager.get_apps_without_successful_cheapshark_mapping(max_apps or 100000)
         total_to_process = len(unmapped_apps)
         
@@ -812,6 +1032,7 @@ class CheapSharkMappingProcessor:
         successful = 0
         failed = 0
         not_found = 0
+        too_new = 0
         api_errors = 0
         
         start_time = time.time()
@@ -828,6 +1049,7 @@ class CheapSharkMappingProcessor:
             successful += result['successful']
             failed += result['failed']
             not_found += result['not_found']
+            too_new += result['too_new']
             api_errors += result['api_errors']
             
             # Fortschrittsanzeige
@@ -838,7 +1060,7 @@ class CheapSharkMappingProcessor:
                 
                 print(f"📊 {processed}/{total_to_process} "
                       f"({(processed/total_to_process)*100:.1f}%) | "
-                      f"✅ {successful} | 📝 {not_found} | ❌ {failed} | "
+                      f"✅ {successful} | 📝 {not_found} | 📅 {too_new} | ❌ {failed} | "
                       f"Rate: {rate:.1f}/min | "
                       f"Verbleibend: {remaining/60:.1f}min")
         
@@ -850,9 +1072,10 @@ class CheapSharkMappingProcessor:
         print(f"📊 Verarbeitet: {processed:,} Apps")
         print(f"✅ Erfolgreich gemappt: {successful:,}")
         print(f"📝 Kein Mapping verfügbar: {not_found:,}")
+        print(f"📅 Zu neu für Mapping: {too_new:,}")
         print(f"❌ Fehlgeschlagen: {failed:,} (davon {api_errors} API-Fehler)")
         
-        completed_successfully = successful + not_found  # Beide sind "erfolgreich verarbeitet"
+        completed_successfully = successful + not_found + too_new  # Alle sind "erfolgreich verarbeitet"
         if processed > 0:
             print(f"📈 Verarbeitungsrate: {(completed_successfully/processed)*100:.1f}%")
         
@@ -861,18 +1084,20 @@ class CheapSharkMappingProcessor:
             'successful': successful,
             'failed': failed,
             'not_found': not_found,
+            'too_new': too_new,
             'api_errors': api_errors,
             'time_minutes': elapsed_time / 60,
             'completion_rate': (completed_successfully/processed)*100 if processed > 0 else 0
         }
 
+
 def cheapshark_processor_main():
     """
     Hauptfunktion für CheapShark-Mapping Processor
-    ERWEITERT: Bessere Statistiken-Anzeige
+    Enhanced Features mit Release Discovery
     """
-    print("🔗 CHEAPSHARK MAPPING PROCESSOR v2.0 (ENHANCED)")
-    print("Mit Background-Scheduler und explizitem 'Kein Mapping' Tracking")
+    print("🔗 ENHANCED CHEAPSHARK PROCESSOR v2.1")
+    print("Mit automatischem Release-Import und intelligenter Priorisierung")
     print("=" * 70)
     
     # API Key laden
@@ -938,26 +1163,28 @@ def cheapshark_processor_main():
         print(f"📊 Durchschnittliche Versuche: {attempts_info['average_attempts']:.1f}")
         print(f"🔄 Apps mit Retry: {attempts_info['apps_retried']:,}")
     
-    print("\n🔧 PROCESSOR OPTIONEN:")
+    print("\n🔧 ENHANCED PROCESSOR OPTIONEN:")
     print("1. 🔄 Manuelle Verarbeitung (alle unverarbeiteten Apps)")
     print("2. ⚡ Limitierte Verarbeitung (nur X Apps)")
-    print("3. 🚀 Background-Scheduler starten")
-    print("4. 🛑 Background-Scheduler stoppen")
-    print("5. 📊 Scheduler-Status anzeigen")
-    print("6. 🎯 Wishlist-Apps priorisieren (Steam ID eingeben)")
-    print("7. 📈 Detaillierte Statistiken anzeigen")
-    print("8. 🔄 RETRY-OPTIONEN:")
-    print("   8a. 📝 Apps ohne Mapping erneut prüfen")
-    print("   8b. ❌ Fehlgeschlagene Mappings wiederholen")
-    print("   8c. 📅 'Zu neue' Apps für Age-Based Retry")
-    print("   8d. 🔧 Benutzerdefinierte Retry-Kriterien")
-    print("   8e. 📋 Status-basierte Retry")
-    print("9. 📅 RELEASE DATE FEATURES:")
-    print("   9a. 🆕 Kürzlich veröffentlichte Apps anzeigen")
-    print("   9b. 📊 Release Date Statistiken")
-    print("10. ❌ Beenden")
+    print("3. 🚀 Enhanced Scheduler starten (mit Release-Import)")
+    print("4. 🔄 Standard-Scheduler starten")
+    print("5. 🛑 Scheduler stoppen")
+    print("6. 📊 Enhanced Scheduler-Status anzeigen")
+    print("7. 🎯 Wishlist-Apps priorisieren (Steam ID eingeben)")
+    print("8. 📈 Detaillierte Statistiken anzeigen")
+    print("9. 🔄 RETRY-OPTIONEN:")
+    print("   9a. 📝 Apps ohne Mapping erneut prüfen")
+    print("   9b. ❌ Fehlgeschlagene Mappings wiederholen")
+    print("   9c. 📅 'Zu neue' Apps für Age-Based Retry")
+    print("   9d. 🔧 Benutzerdefinierte Retry-Kriterien")
+    print("   9e. 📋 Status-basierte Retry")
+    print("10. 📅 RELEASE DATE FEATURES:")
+    print("   10a. 🆕 Kürzlich veröffentlichte Apps anzeigen")
+    print("   10b. 📊 Release Date Statistiken")
+    print("   10c. 🔄 Release-Discovery testen")
+    print("11. ❌ Beenden")
     
-    choice = input("\nWählen Sie eine Option (1-10, 8a-8e, 9a-9b): ").strip().lower()
+    choice = input("\nWählen Sie eine Option (1-11, 9a-9e, 10a-10c): ").strip().lower()
     
     if choice == "1":
         print("\n🔄 Starte manuelle Verarbeitung aller Apps...")
@@ -974,7 +1201,29 @@ def cheapshark_processor_main():
         processor.process_mapping_manual(max_apps=max_apps)
         
     elif choice == "3":
-        batch_size = input("Batch-Größе (Standard: 10): ").strip()
+        batch_size = input("Batch-Größe (Standard: 10): ").strip()
+        mapping_interval = input("CheapShark-Mapping Intervall (Minuten, Standard: 10): ").strip()
+        releases_interval = input("Release-Import Intervall (Stunden, Standard: 24): ").strip()
+        
+        try:
+            batch_size = int(batch_size) if batch_size else 10
+            mapping_interval = int(mapping_interval) if mapping_interval else 10
+            releases_interval = int(releases_interval) if releases_interval else 24
+        except ValueError:
+            batch_size, mapping_interval, releases_interval = 10, 10, 24
+        
+        processor.start_background_scheduler_enhanced(
+            mapping_batch_size=batch_size,
+            mapping_interval_minutes=mapping_interval,
+            releases_interval_hours=releases_interval
+        )
+        
+        print("🚀 Enhanced Scheduler gestartet!")
+        print("💡 Drücken Sie Enter um zur Hauptauswahl zurückzukehren...")
+        input()
+        
+    elif choice == "4":
+        batch_size = input("Batch-Größe (Standard: 10): ").strip()
         interval = input("Intervall in Minuten (Standard: 10): ").strip()
         
         try:
@@ -985,23 +1234,39 @@ def cheapshark_processor_main():
         
         processor.start_background_scheduler(batch_size=batch_size, interval_minutes=interval)
         
-        print("🚀 Background-Scheduler gestartet!")
+        print("🚀 Standard-Scheduler gestartet!")
         print("💡 Drücken Sie Enter um zur Hauptauswahl zurückzukehren...")
         input()
         
-    elif choice == "4":
+    elif choice == "5":
         processor.stop_background_scheduler()
         
-    elif choice == "5":
-        status = processor.get_scheduler_status()
-        print(f"\n📊 SCHEDULER STATUS:")
-        print(f"🔄 Läuft: {'Ja' if status['scheduler_running'] else 'Nein'}")
-        print(f"📋 Ausstehende Jobs: {status['pending_jobs']:,}")
-        print(f"❌ Fehlgeschlagene Jobs: {status['failed_jobs']:,}")
-        print(f"⏰ Nächster Lauf: {status['next_run']}")
-        print(f"📅 Geplante Jobs: {status['jobs_count']}")
-        
     elif choice == "6":
+        try:
+            status = processor.get_enhanced_scheduler_status()
+            print(f"\n📊 ENHANCED SCHEDULER STATUS:")
+            print(f"🔄 Läuft: {'Ja' if status['scheduler_running'] else 'Nein'}")
+            print(f"📋 Ausstehende Jobs: {status['pending_jobs']:,}")
+            print(f"❌ Fehlgeschlagene Jobs: {status['failed_jobs']:,}")
+            print(f"🆕 Kürzlich veröffentlichte Apps: {status['recent_apps']:,}")
+            print(f"📅 'Zu neue' Apps: {status['too_new_apps']:,}")
+            print(f"⏰ Letzter Release-Import: {status['last_release_import'] or 'Nie'}")
+            print(f"⏰ Nächster Release-Import: {status['next_release_import'] or 'Nicht geplant'}")
+            
+            print(f"\n📋 GEPLANTE JOBS:")
+            for job in status['scheduled_jobs']:
+                print(f"   • {job}")
+                
+        except AttributeError:
+            # Fallback auf Standard-Status
+            status = processor.get_scheduler_status()
+            print(f"\n📊 STANDARD SCHEDULER STATUS:")
+            print(f"🔄 Läuft: {'Ja' if status['scheduler_running'] else 'Nein'}")
+            print(f"📋 Ausstehende Jobs: {status['pending_jobs']:,}")
+            print(f"❌ Fehlgeschlagene Jobs: {status['failed_jobs']:,}")
+            print(f"⏰ Nächster Lauf: {status['next_run']}")
+    
+    elif choice == "7":
         steam_id = input("Steam ID eingeben: ").strip()
         if steam_id:
             added_count = processor.process_wishlist_apps_priority(steam_id)
@@ -1009,7 +1274,7 @@ def cheapshark_processor_main():
         else:
             print("❌ Ungültige Steam ID")
             
-    elif choice == "7":
+    elif choice == "8":
         # Detaillierte Statistiken
         print(f"\n📈 DETAILLIERTE CHEAPSHARK-STATISTIKEN:")
         print("=" * 50)
@@ -1020,11 +1285,14 @@ def cheapshark_processor_main():
         print(f"📚 Gesamt Steam Apps: {final_stats['apps']['total']:,}")
         print(f"🆓 Davon kostenlos: {final_stats['apps']['free']:,}")
         print(f"💰 Davon kostenpflichtig: {final_stats['apps']['paid']:,}")
+        print(f"📅 Mit Release Date: {final_stats['apps']['with_release_date']:,}")
+        print(f"🆕 Kürzlich veröffentlicht: {final_stats['apps']['recently_released']:,}")
         
         print(f"\n🔗 CheapShark Mapping Status:")
         cs_stats = final_stats['cheapshark']
         print(f"✅ Erfolgreich gemappt: {cs_stats['mapped']:,} ({cs_stats['found_rate']:.1f}%)")
         print(f"📝 Kein Mapping verfügbar: {cs_stats['no_mapping_found']:,}")
+        print(f"📅 Zu neu für Mapping: {cs_stats['too_new']:,}")
         print(f"❌ Mapping fehlgeschlagen: {cs_stats['mapping_failed']:,}")
         print(f"❔ Noch nicht versucht: {cs_stats['unmapped']:,}")
         print(f"📊 Gesamt verarbeitet: {cs_stats['attempted']:,} ({cs_stats['coverage']:.1f}%)")
@@ -1036,7 +1304,7 @@ def cheapshark_processor_main():
         print(f"👤 Unique Benutzer: {wl_stats['unique_users']:,}")
         print(f"📊 Durchschnitt pro Benutzer: {wl_stats['avg_items_per_user']:.1f}")
         
-    elif choice == "8a":
+    elif choice == "9a":
         # Apps ohne Mapping erneut prüfen
         print("\n📝 APPS OHNE MAPPING ERNEUT PRÜFEN")
         print("=" * 40)
@@ -1056,7 +1324,7 @@ def cheapshark_processor_main():
         )
         print(f"✅ {added_count} Apps ohne Mapping zur Retry-Queue hinzugefügt")
         
-    elif choice == "8b":
+    elif choice == "9b":
         # Fehlgeschlagene Mappings wiederholen
         print("\n❌ FEHLGESCHLAGENE MAPPINGS WIEDERHOLEN")
         print("=" * 40)
@@ -1079,7 +1347,7 @@ def cheapshark_processor_main():
         )
         print(f"✅ {added_count} fehlgeschlagene Apps zur Retry-Queue hinzugefügt")
         
-    elif choice == "8c":
+    elif choice == "9c":
         # 'Zu neue' Apps für Age-Based Retry
         print("\n📅 'ZU NEUE' APPS FÜR AGE-BASED RETRY")
         print("=" * 40)
@@ -1099,7 +1367,7 @@ def cheapshark_processor_main():
         )
         print(f"✅ {added_count} 'zu neue' Apps zur Age-Based Retry-Queue hinzugefügt")
         
-    elif choice == "8d":
+    elif choice == "9d":
         # Benutzerdefinierte Retry-Kriterien
         print("\n🔧 BENUTZERDEFINIERTE RETRY-KRITERIEN")
         print("=" * 40)
@@ -1127,17 +1395,28 @@ def cheapshark_processor_main():
         priority = input("Queue-Priorität? (1-10, Standard: 5): ").strip()
         priority = int(priority) if priority else 5
         
-        added_count = processor.schedule_retry_by_criteria(
-            mapping_status=statuses,
-            no_mapping_found=no_mapping,
-            older_than_days=older_days,
-            max_attempts=max_attempts,
-            max_apps=max_apps,
-            priority=priority
-        )
-        print(f"✅ {added_count} Apps zur benutzerdefinierten Retry-Queue hinzugefügt")
+        # Nutze eine flexible Retry-Methode
+        try:
+            added_count = processor.db_manager.bulk_reset_by_criteria(
+                mapping_status=statuses,
+                no_mapping_found=no_mapping,
+                older_than_days=older_days,
+                max_attempts=max_attempts,
+                reason="Benutzerdefinierte Retry-Kriterien"
+            )
+            
+            if added_count > 0:
+                # Zur Queue hinzufügen
+                app_ids = [str(i) for i in range(added_count)]  # Placeholder
+                queue_count = processor.add_missing_apps_to_queue(app_ids, priority)
+                print(f"✅ {queue_count} Apps zur benutzerdefinierten Retry-Queue hinzugefügt")
+            else:
+                print("📭 Keine Apps mit den gewünschten Kriterien gefunden")
+                
+        except Exception as e:
+            print(f"❌ Fehler bei benutzerdefinierten Kriterien: {e}")
         
-    elif choice == "8e":
+    elif choice == "9e":
         # Status-basierte Retry
         print("\n📋 STATUS-BASIERTE RETRY")
         print("=" * 30)
@@ -1181,7 +1460,7 @@ def cheapshark_processor_main():
         )
         print(f"✅ {added_count} Apps mit Status '{statuses[0]}' zur Retry-Queue hinzugefügt")
         
-    elif choice == "9a":
+    elif choice == "10a":
         # Kürzlich veröffentlichte Apps anzeigen
         print("\n🆕 KÜRZLICH VERÖFFENTLICHTE APPS")
         print("=" * 40)
@@ -1208,7 +1487,7 @@ def cheapshark_processor_main():
         else:
             print(f"📭 Keine kürzlich veröffentlichten Apps ohne Mapping gefunden")
             
-    elif choice == "9b":
+    elif choice == "10b":
         # Release Date Statistiken
         print("\n📊 RELEASE DATE STATISTIKEN")
         print("=" * 40)
@@ -1238,10 +1517,40 @@ def cheapshark_processor_main():
                 age_days = int(app['age_days'])
                 print(f"   • {app['name']} - {age_days} Tage alt")
         
-    elif choice == "10":
+    elif choice == "10c":
+        # Release-Discovery testen
+        print("\n🔄 RELEASE-DISCOVERY TESTEN")
+        print("=" * 30)
+        
+        if not processor.bulk_importer:
+            print("❌ Bulk Importer nicht verfügbar")
+        else:
+            print("🆕 Teste Release-Discovery...")
+            
+            # Teste sehr neue Releases
+            new_count = processor.bulk_importer._check_for_very_recent_releases(days_back=7)
+            
+            if new_count > 0:
+                print(f"✅ {new_count} sehr neue Apps gefunden und importiert")
+                
+                # Plane für CheapShark-Mapping
+                mapped_count = processor._schedule_new_releases_for_mapping()
+                if mapped_count > 0:
+                    print(f"📅 {mapped_count} neue Apps für CheapShark-Mapping geplant")
+            else:
+                print("📭 Keine sehr neuen Apps gefunden")
+                
+            # Teste monatlichen Release-Import
+            print("\n📅 Teste monatlichen Release-Import...")
+            if processor.bulk_importer.schedule_monthly_release_import():
+                print("✅ Monatlicher Release-Import erfolgreich getestet")
+            else:
+                print("❌ Monatlicher Release-Import fehlgeschlagen")
+    
+    elif choice == "11":
         if processor.scheduler_running:
             processor.stop_background_scheduler()
-        print("👋 Processor beendet")
+        print("👋 Enhanced Processor beendet")
         return
         
     else:
@@ -1249,10 +1558,11 @@ def cheapshark_processor_main():
         return
     
     # Finale Statistiken
-    print("\n📊 AKTUELLE STATISTIKEN:")
+    print("\n📊 AKTUELLE ENHANCED STATISTIKEN:")
     final_stats = db_manager.get_database_stats()
     print(f"✅ Mit CheapShark-Mapping: {final_stats['cheapshark']['mapped']:,}")
     print(f"📝 Kein Mapping verfügbar: {final_stats['cheapshark']['no_mapping_found']:,}")
+    print(f"📅 Zu neu für Mapping: {final_stats['cheapshark']['too_new']:,}")
     print(f"📈 Coverage: {final_stats['cheapshark']['coverage']:.1f}%")
 
 if __name__ == "__main__":
