@@ -642,17 +642,18 @@ class CheapSharkMappingProcessor:
             True wenn erfolgreich gestartet
         """
         try:
-            # Prüfe ob scheduler_runner.py existiert
-            runner_file = Path("scheduler_runner.py")
+            # Prüfe ob processor_runner.py existiert
+            runner_file = Path("processor_runner.py")
             if not runner_file.exists():
-                print("❌ scheduler_runner.py nicht gefunden!")
+                print("❌ processor_runner.py nicht gefunden!")
                 print("💡 Erstellen Sie zuerst die Datei:")
                 print("   1. Kopieren Sie den Code aus der Anleitung")
-                print("   2. Speichern Sie als 'scheduler_runner.py'")
+                print("   2. Speichern Sie als 'processor_runner.py'")
                 return False
             
             # Parameter für den Runner
             args = [
+                "scheduler",
                 str(mapping_batch_size),
                 str(mapping_interval_minutes),
                 str(releases_interval_hours)
@@ -665,22 +666,22 @@ class CheapSharkMappingProcessor:
             
             if system == "windows":
                 # Windows: Neues CMD-Fenster
-                cmd = ["start", "cmd", "/k", f"python scheduler_runner.py {' '.join(args)}"]
+                cmd = ["start", "cmd", "/k", f"python processor_runner.py {' '.join(args)}"]
                 subprocess.Popen(cmd, shell=True)
                 
             elif system == "darwin":  # macOS
                 # macOS: Neues Terminal-Tab/Fenster
-                script = f"cd '{os.getcwd()}' && python scheduler_runner.py {' '.join(args)}"
+                script = f"cd '{os.getcwd()}' && python processor_runner.py {' '.join(args)}"
                 cmd = ["osascript", "-e", f'tell app "Terminal" to do script "{script}"']
                 subprocess.Popen(cmd)
                 
             else:  # Linux
                 # Linux: Versuche gängige Terminals
                 terminals_to_try = [
-                    ["gnome-terminal", "--", "python", "scheduler_runner.py"] + args,
-                    ["konsole", "-e", "python", "scheduler_runner.py"] + args,
-                    ["xfce4-terminal", "-e", f"python scheduler_runner.py {' '.join(args)}"],
-                    ["xterm", "-e", f"python scheduler_runner.py {' '.join(args)}"]
+                    ["gnome-terminal", "--", "python", "processor_runner.py"] + args,
+                    ["konsole", "-e", "python", "processor_runner.py"] + args,
+                    ["xfce4-terminal", "-e", f"python processor_runner.py {' '.join(args)}"],
+                    ["xterm", "-e", f"python processor_runner.py {' '.join(args)}"]
                 ]
                 
                 success = False
