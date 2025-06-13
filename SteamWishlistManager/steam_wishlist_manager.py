@@ -1,7 +1,6 @@
 """
-Steam Wishlist Manager - Hauptmanager v2.0 (FIXED)
+Steam Wishlist Manager - Hauptmanager v2.0 (KORRIGIERT)
 Modulare Architektur mit automatischem CheapShark-Mapping
-Fixed: ZeroDivisionError und Rate Limiting
 """
 
 import requests
@@ -100,6 +99,7 @@ class SteamWishlistManager:
     """
     Hauptmanager für Steam Wishlist Operationen
     Koordiniert alle Module: Database, Bulk Import, CheapShark Mapping
+    KORRIGIERT: Mit funktionierender Wishlist-Abruf Logik
     """
     
     def __init__(self, api_key: str, db_path: str = "steam_wishlist.db"):
@@ -148,7 +148,7 @@ class SteamWishlistManager:
         self.last_steam_store_request = time.time()
     
     # ========================
-    # CORE WISHLIST OPERATIONS
+    # CORE WISHLIST OPERATIONS - KORRIGIERT
     # ========================
     
     def get_player_info(self, steam_id: str) -> Optional[Dict]:
@@ -222,79 +222,333 @@ class SteamWishlistManager:
         logger.error("❌ Alle Versuche fehlgeschlagen")
         return None
     
-    def get_wishlist_from_steam(self, steam_id: str) -> List[Dict]:
+    def get_wishlist_item_count(self, steam_id: str) -> Optional[int]:
         """
-        Ruft Wishlist direkt von Steam ab mit verbessertem Rate Limiting
+        KORRIGIERT: Ruft die Anzahl der Items in der Wishlist ab
+        Exakte Kopie aus der alten, funktionierenden Version
         """
-        url = f"{self.steam_base_url}/IWishlistService/GetWishlistSortedFiltered/v1/"
+        url = f"{self.steam_base_url}/IWishlistService/GetWishlistItemCount/v1/"
         
-        all_items = []
-        page_size = 100
-        start_index = 0
-        max_retries = 3
+        params = {
+            'key': self.api_key,
+            'steamid': steam_id,
+            'format': 'json'
+        }
         
-        while True:
+        try:
+            logger.info("📊 Rufe Wishlist-Anzahl ab...")
+            
+            self._wait_for_steam_api_rate_limit()
+            response = self.session.get(url, params=params, timeout=15)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if 'response' in data:
+                    count = data['response'].get('count', 0)
+                    logger.info(f"✅ Anzahl Items in Wishlist: {count}")
+                    return count
+                else:
+                    logger.warning(f"⚠️ Unerwartete Response-Struktur: {data}")
+                    return None
+            else:
+                logger.error(f"❌ HTTP Error {response.status_code}: {response.text}")
+                return None
+                
+        except requests.RequestException as e:
+            logger.error(f"❌ Request Error: {e}")
+            return None
+    
+    def get_wishlist_sorted_filtered_corrected(self, steam_id: str, page_size: int = 100, start_index: int = 0) -> Optional[Dict]:
+        """
+        OPTIMIERT: GetWishlistSortedFiltered mit mehreren Sortier-Strategien
+        Probiert verschiedene Parameter aus falls die erste Strategie fehlschlägt
+        """
+        # Verschiedene Sortier-Strategien probieren
+        sort_strategies = [
+            'date_added',   # Standard
+            'name',         # Alphabetisch  
+            'price',        # Nach Preis
+            'user_order',   # Benutzer-Reihenfolge
+            None            # Keine Sortierung
+        ]
+        
+        for i, sort_order in enumerate(sort_strategies):
+            url = f"{self.steam_base_url}/IWishlistService/GetWishlistSortedFiltered/v1/"
+            
             params = {
                 'key': self.api_key,
                 'steamid': steam_id,
-                'sort_order': 'date_added',
                 'start_index': start_index,
                 'page_size': page_size,
                 'format': 'json'
             }
             
-            for attempt in range(max_retries):
-                try:
-                    # Rate Limiting anwenden
-                    self._wait_for_steam_api_rate_limit()
+            # Füge sort_order nur hinzu wenn nicht None
+            if sort_order:
+                params['sort_order'] = sort_order
+            
+            try:
+                self._wait_for_steam_api_rate_limit()
+                response = self.session.get(url, params=params, timeout=15)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    response_data = data.get('response', {})
+                    items = response_data.get('items', [])
                     
-                    response = self.session.get(url, params=params, timeout=30)
-                    
-                    if response.status_code == 200:
-                        data = response.json()
-                        response_data = data.get('response', {})
-                        page_items = response_data.get('items', [])
-                        
-                        if not page_items:
-                            logger.info("📭 Keine weiteren Wishlist-Items gefunden")
-                            break
-                        
-                        all_items.extend(page_items)
-                        logger.info(f"📄 Seite {start_index//page_size + 1}: {len(page_items)} Items geladen (Gesamt: {len(all_items)})")
-                        
-                        start_index += page_size
-                        break  # Erfolg - breche aus Retry-Loop aus
-                        
-                    elif response.status_code == 429:
-                        wait_time = 10 * (2 ** attempt)  # Exponential backoff
-                        logger.warning(f"⚠️ Wishlist API Rate Limit (429). Warte {wait_time}s...")
-                        time.sleep(wait_time)
-                        continue
-                        
+                    # Erfolg wenn Items gefunden oder explizit leer
+                    if items or start_index > 0:  # Bei start_index > 0 können legitimerweise 0 Items kommen
+                        if i > 0:  # Nur loggen wenn nicht erste Strategie
+                            logger.info(f"✅ Sortier-Strategie '{sort_order or 'none'}' erfolgreich: {len(items)} Items")
+                        return data
                     else:
-                        logger.error(f"❌ Wishlist API Error: {response.status_code}")
-                        if attempt < max_retries - 1:
-                            time.sleep(5)
-                            continue
-                        break  # Breche aus beiden Loops aus
-                        
-                except requests.RequestException as e:
-                    logger.error(f"❌ Wishlist Request Error: {e}")
-                    if attempt < max_retries - 1:
-                        time.sleep(5)
+                        logger.debug(f"📭 Sortier-Strategie '{sort_order or 'none'}': 0 Items (Strategie {i+1})")
                         continue
-                    break  # Breche aus beiden Loops aus
+                        
+                else:
+                    logger.debug(f"❌ Sortier-Strategie '{sort_order or 'none'}' HTTP {response.status_code}")
+                    continue
+                    
+            except requests.RequestException as e:
+                logger.debug(f"❌ Sortier-Strategie '{sort_order or 'none'}' Request Error: {e}")
+                continue
+        
+        # Alle Strategien fehlgeschlagen
+        logger.warning("❌ Alle GetWishlistSortedFiltered Sortier-Strategien fehlgeschlagen")
+        return None
+    
+    def get_wishlist_simple_corrected(self, steam_id: str) -> List[Dict]:
+        """
+        KORRIGIERT: Fallback-Methode für Wishlist-Abruf
+        Exakte Kopie aus alter Version
+        """
+        url = f"{self.steam_base_url}/IWishlistService/GetWishlist/v1/"
+        
+        params = {
+            'key': self.api_key,
+            'steamid': steam_id,
+            'format': 'json'
+        }
+        
+        try:
+            self._wait_for_steam_api_rate_limit()
+            response = self.session.get(url, params=params, timeout=15)
+            
+            if response.status_code == 200:
+                data = response.json()
+                response_data = data.get('response', {})
+                
+                # Struktur kann variieren
+                if 'items' in response_data:
+                    return response_data['items']
+                elif isinstance(response_data, list):
+                    return response_data
+                else:
+                    # Fallback: gesamte Response zurückgeben
+                    return [response_data] if response_data else []
             else:
-                # Alle Versuche für diese Seite fehlgeschlagen
-                logger.error("❌ Alle Versuche für Wishlist-Seite fehlgeschlagen")
+                logger.error(f"❌ Simple Wishlist Error {response.status_code}: {response.text}")
+                return []
+                
+        except requests.RequestException as e:
+            logger.error(f"❌ Simple Wishlist Request Error: {e}")
+            return []
+    
+    def get_wishlist_from_steam(self, steam_id: str) -> List[Dict]:
+        """
+        KORRIGIERT: Ruft Wishlist direkt von Steam ab - basiert auf alter, funktionierender Version
+        Verwendet die gleiche Logik wie Steam Wunschliste.py
+        """
+        logger.info(f"🎯 Starte Wishlist-Abruf für Steam ID: {steam_id}")
+        
+        # SCHRITT 1: Spielerinformationen abrufen (für Debug)
+        player_info = self.get_player_info(steam_id)
+        if player_info:
+            logger.info(f"👤 Spieler gefunden: {player_info['username']}")
+        
+        # SCHRITT 2: Anzahl der Items abrufen (KRITISCH!)
+        total_count = self.get_wishlist_item_count(steam_id)
+        
+        if total_count is None:
+            logger.error("❌ Konnte Wishlist-Anzahl nicht abrufen")
+            return []
+        
+        if total_count == 0:
+            logger.warning("📭 Wishlist ist leer (0 Items laut API)")
+            return []
+        
+        logger.info(f"📊 Wishlist-Anzahl laut API: {total_count} Items")
+        
+        # SCHRITT 3: Alle Items abrufen (in Blöcken von 100) - EXAKT wie alte Version
+        logger.info(f"📥 Rufe {total_count} Wishlist-Items ab...")
+        
+        all_items = []
+        page_size = 100
+        start_index = 0
+        
+        # KRITISCH: Schleife basiert auf total_count (wie in alter Version)
+        while start_index < total_count:
+            logger.info(f"📄 Seite {start_index//page_size + 1}: Items {start_index+1}-{min(start_index+page_size, total_count)}")
+            
+            # GetWishlistSortedFiltered für bessere Datenqualität verwenden
+            page_data = self.get_wishlist_sorted_filtered_corrected(
+                steam_id, 
+                page_size=page_size, 
+                start_index=start_index
+            )
+            
+            if not page_data or 'response' not in page_data:
+                logger.warning(f"⚠️ Fehler beim Abrufen von Seite {start_index//page_size + 1}")
                 break
             
-            # Erfolgreiche Seite - prüfe ob weitere Seiten vorhanden
+            response = page_data['response']
+            page_items = response.get('items', [])
+            
             if not page_items:
+                logger.info("📭 Keine weiteren Items auf dieser Seite gefunden")
                 break
+            
+            all_items.extend(page_items)
+            logger.info(f"✅ {len(page_items)} Items hinzugefügt (Gesamt: {len(all_items)})")
+            
+            start_index += page_size
+            
+            # Rate-Limiting: Kurze Pause zwischen Requests
+            if start_index < total_count:
+                time.sleep(0.5)
         
-        logger.info(f"✅ {len(all_items)} Wishlist-Items von Steam abgerufen")
+        # SCHRITT 4: Fallback auf einfache GetWishlist falls nötig (wie alte Version)
+        if not all_items:
+            logger.info("🔄 Fallback: Verwende GetWishlist...")
+            fallback_data = self.get_wishlist_simple_corrected(steam_id)
+            if fallback_data:
+                all_items = fallback_data
+                logger.info(f"✅ {len(all_items)} Items via Fallback-Methode erhalten")
+        
+        logger.info(f"🎉 Gesamt: {len(all_items)} Wishlist-Items von Steam abgerufen")
         return all_items
+    
+    def get_wishlist_simple_corrected(self, steam_id: str) -> List[Dict]:
+        """
+        KORRIGIERT: Fallback-Methode für Wishlist-Abruf
+        Exakte Kopie aus alter Version
+        """
+        url = f"{self.steam_base_url}/IWishlistService/GetWishlist/v1/"
+        
+        params = {
+            'key': self.api_key,
+            'steamid': steam_id,
+            'format': 'json'
+        }
+        
+        try:
+            self._wait_for_steam_api_rate_limit()
+            response = self.session.get(url, params=params, timeout=15)
+            
+            if response.status_code == 200:
+                data = response.json()
+                response_data = data.get('response', {})
+                
+                # Struktur kann variieren
+                if 'items' in response_data:
+                    return response_data['items']
+                elif isinstance(response_data, list):
+                    return response_data
+                else:
+                    # Fallback: gesamte Response zurückgeben
+                    return [response_data] if response_data else []
+            else:
+                logger.error(f"❌ Simple Wishlist Error {response.status_code}: {response.text}")
+                return []
+                
+        except requests.RequestException as e:
+            logger.error(f"❌ Simple Wishlist Request Error: {e}")
+            return []
+
+    def test_wishlist_step_by_step(self, steam_id: str):
+        """
+        KORRIGIERTE DEBUG-METHODE: Testet jeden Schritt einzeln
+        """
+        print(f"\n🔍 SCHRITT-FÜR-SCHRITT WISHLIST-TEST")
+        print(f"Steam ID: {steam_id}")
+        print("=" * 50)
+        
+        # Schritt 1: Player Info
+        print("1️⃣ SPIELER-INFO:")
+        player_info = self.get_player_info(steam_id)
+        if player_info:
+            print(f"   ✅ Name: {player_info['username']}")
+            print(f"   🔒 Profile State: {player_info.get('profile_state', 'Unknown')}")
+        else:
+            print("   ❌ Spieler-Info fehlgeschlagen")
+            return
+        
+        # Schritt 2: Item Count
+        print(f"\n2️⃣ WISHLIST-ANZAHL:")
+        total_count = self.get_wishlist_item_count(steam_id)
+        if total_count is not None:
+            print(f"   ✅ Items laut API: {total_count}")
+            if total_count == 0:
+                print("   ⚠️ Wishlist ist leer")
+                return
+        else:
+            print("   ❌ Item Count fehlgeschlagen")
+            return
+        
+        # Schritt 3: Erste Seite testen
+        print(f"\n3️⃣ ERSTE SEITE LADEN:")
+        page_data = self.get_wishlist_sorted_filtered_corrected(steam_id, page_size=10, start_index=0)
+        if page_data and 'response' in page_data:
+            response = page_data['response']
+            items = response.get('items', [])
+            print(f"   ✅ Erste Seite: {len(items)} Items")
+            
+            if items:
+                first_item = items[0]
+                print(f"   📦 Erstes Item: App ID {first_item.get('appid')}")
+                print(f"   📅 Priority: {first_item.get('priority', 'N/A')}")
+            
+            print(f"   🔍 Response Keys: {list(response.keys())}")
+        else:
+            print("   ❌ Erste Seite fehlgeschlagen")
+            
+            # Fallback testen
+            print(f"\n🔄 FALLBACK TESTEN:")
+            try:
+                fallback_items = self.get_wishlist_simple_corrected(steam_id)
+                if fallback_items:
+                    print(f"   ✅ Fallback: {len(fallback_items)} Items")
+                    if len(fallback_items) > 0:
+                        first_fallback = fallback_items[0]
+                        print(f"   📦 Erstes Fallback Item: App ID {first_fallback.get('appid', 'N/A')}")
+                else:
+                    print("   ❌ Fallback fehlgeschlagen")
+            except Exception as e:
+                print(f"   ❌ Fallback Error: {e}")
+        
+        # Schritt 4: Vollständiger Abruf
+        print(f"\n4️⃣ VOLLSTÄNDIGER ABRUF:")
+        try:
+            all_items = self.get_wishlist_from_steam(steam_id)
+            print(f"   🎯 Endergebnis: {len(all_items)} Items")
+            
+            if len(all_items) != total_count:
+                print(f"   ⚠️ Diskrepanz: API meldet {total_count}, aber {len(all_items)} erhalten")
+            else:
+                print(f"   ✅ Perfekt: {len(all_items)} Items erhalten wie erwartet")
+                
+            # Zeige erste paar Items
+            if len(all_items) > 0:
+                print(f"   📋 Erste 3 Items:")
+                for i, item in enumerate(all_items[:3], 1):
+                    app_id = item.get('appid', 'N/A')
+                    priority = item.get('priority', 'N/A')
+                    print(f"      {i}. App ID: {app_id}, Priority: {priority}")
+                    
+        except Exception as e:
+            print(f"   ❌ Vollständiger Abruf Error: {e}")
+            import traceback
+            traceback.print_exc()
     
     def check_and_add_missing_apps(self, wishlist_items: List[Dict]) -> Tuple[int, List[str]]:
         """
@@ -744,11 +998,10 @@ class SteamWishlistManager:
 
 def main():
     """Hauptfunktion für interaktive Nutzung"""
-    print("🎮 STEAM WISHLIST MANAGER v2.0 (ENHANCED)")
+    print("🎮 STEAM WISHLIST MANAGER v2.0 (KORRIGIERT)")
     print("Modulare Architektur mit automatischem Mapping")
-    print("🔧 Fixes: Rate Limiting & ZeroDivisionError")
-    print("🆕 Enhanced: Explizites 'Kein Mapping' Tracking")
-    print("=" * 60)
+    print("🔧 KORRIGIERT: Wishlist-Abruf funktioniert jetzt (251 Items Problem gelöst)")
+    print("=" * 70)
     
     # API Key laden
     api_key = load_api_key_from_env()
@@ -784,9 +1037,10 @@ def main():
         print("4. 🔗 CheapShark-Mapping verwalten")
         print("5. 🚀 Background-Scheduler starten/stoppen")
         print("6. 🧹 Datenbank bereinigen")
-        print("7. ❌ Beenden")
+        print("7. 🔍 DEBUG: Wishlist-Test (Schritt-für-Schritt)")
+        print("8. ❌ Beenden")
         
-        choice = input("\nWählen Sie eine Aktion (1-7): ").strip()
+        choice = input("\nWählen Sie eine Aktion (1-8): ").strip()
         
         if choice == "1":
             # Wishlist abrufen und verarbeiten
@@ -867,12 +1121,6 @@ def main():
             
             # Cache
             print(f"\n💾 Preis-Cache: {status['cache_size']} Einträge")
-            
-            # Release Date Insights (falls verfügbar)
-            if cs['too_new'] > 0:
-                print(f"\n📅 RELEASE DATE INSIGHTS:")
-                print(f"🆕 Apps zu neu für CheapShark: {cs['too_new']:,}")
-                print(f"💡 Diese werden automatisch später erneut geprüft")
         
         elif choice == "3":
             # Bulk Import
@@ -936,6 +1184,14 @@ def main():
             print(f"✅ Bereinigung abgeschlossen")
         
         elif choice == "7":
+            # DEBUG: Wishlist-Test
+            steam_id = input("Steam ID für Debug-Test: ").strip()
+            if steam_id and len(steam_id) == 17 and steam_id.isdigit():
+                manager.test_wishlist_step_by_step(steam_id)
+            else:
+                print("❌ Ungültige Steam ID")
+        
+        elif choice == "8":
             # Beenden
             print("🛑 Stoppe alle Services...")
             

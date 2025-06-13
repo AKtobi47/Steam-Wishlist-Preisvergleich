@@ -956,7 +956,6 @@ def bulk_import_main():
         importer.enhanced_import_with_release_dates(apps_to_update)
     elif choice == "7":
         # Monatliche Top-Releases
-        from monthly_releases_main import monthly_releases_main
         monthly_releases_main()
     elif choice == "8":
         # Automatischer Release-Import
