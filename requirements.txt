@@ -1,0 +1,32 @@
+# Steam Price Tracker - Python Dependencies
+
+# Core HTTP requests für CheapShark und Steam APIs
+requests>=2.31.0
+
+# Scheduling für automatische Preisabfragen
+schedule>=1.2.0
+
+# Environment variable handling
+python-dotenv>=1.0.0
+
+# Optional: Enhanced logging und Output
+colorlog>=6.7.0
+rich>=13.7.0
+
+# Optional: Progress bars für lange Operationen
+tqdm>=4.66.0
+
+# Optional: Für CSV-Export (ist standardmäßig in Python enthalten)
+# csv - built-in
+
+# Optional: Für JSON-Verarbeitung (ist standardmäßig in Python enthalten)  
+# json - built-in
+
+# Development dependencies (optional)
+pytest>=7.4.0
+black>=23.0.0
+flake8>=6.0.0
+
+# Optional: Für Datenanalyse und Charts (falls gewünscht)
+# pandas>=2.0.0
+# matplotlib>=3.7.0
