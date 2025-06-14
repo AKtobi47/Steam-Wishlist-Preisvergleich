@@ -1,6 +1,6 @@
 """
-Steam Price Tracker - Vollständige Implementation
-CheapShark API Integration mit automatischem Scheduler
+Steam Price Tracker - Vollständige Enhanced Implementation
+CheapShark API Integration mit automatischem Scheduler und App-Namen Updates
 """
 
 import requests
@@ -19,8 +19,8 @@ logger = logging.getLogger(__name__)
 
 class SteamPriceTracker:
     """
-    Steam Preis-Tracker mit CheapShark API
-    Vollständige Implementation mit Scheduler und Batch-Processing
+    Enhanced Steam Preis-Tracker mit CheapShark API
+    Vollständige Implementation mit Scheduler, Batch-Processing und Namen-Updates
     """
     
     # Store-Konfiguration basierend auf Projekt_SteamGoG.ipynb
@@ -40,7 +40,7 @@ class SteamPriceTracker:
         self.db_manager = db_manager or DatabaseManager()
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'SteamPriceTracker/1.0'
+            'User-Agent': 'SteamPriceTracker/1.1'
         })
         
         # Rate Limiting für CheapShark API
@@ -58,7 +58,7 @@ class SteamPriceTracker:
         self.retry_delay = 5.0  # Sekunden
         self.processing_active = False
         
-        logger.info("✅ Steam Price Tracker initialisiert")
+        logger.info("✅ Enhanced Steam Price Tracker initialisiert")
     
     def _wait_for_cheapshark_rate_limit(self):
         """Wartet für CheapShark API Rate Limiting"""
@@ -71,6 +71,277 @@ class SteamPriceTracker:
             time.sleep(wait_time)
         
         self.last_cheapshark_request = time.time()
+    
+    # ========================
+    # APP NAME UPDATE FUNCTIONS
+    # ========================
+    
+    def update_app_names_from_steam(self, app_ids: List[str] = None, api_key: str = None) -> Dict:
+        """
+        Aktualisiert App-Namen von Steam API
+        
+        Args:
+            app_ids: Liste von Steam App IDs (None = alle Apps mit generischen Namen)
+            api_key: Steam API Key
+            
+        Returns:
+            Dict mit Update-Statistiken
+        """
+        if api_key is None:
+            from steam_wishlist_manager import load_api_key_from_env
+            api_key = load_api_key_from_env()
+        
+        if not api_key:
+            logger.error("❌ Kein Steam API Key verfügbar für Namen-Update")
+            return {
+                'success': False,
+                'error': 'No Steam API key available',
+                'updated': 0,
+                'failed': 0,
+                'total': 0
+            }
+        
+        # Apps bestimmen die aktualisiert werden sollen
+        if app_ids is None:
+            # Hole Apps mit generischen Namen
+            apps_to_update = self.db_manager.get_apps_with_generic_names()
+            app_ids = [app['steam_app_id'] for app in apps_to_update]
+            logger.info(f"🔍 Aktualisiere Namen für {len(app_ids)} Apps mit generischen Namen")
+        else:
+            logger.info(f"🔍 Aktualisiere Namen für {len(app_ids)} spezifische Apps")
+        
+        if not app_ids:
+            logger.info("✅ Keine Apps für Namen-Update gefunden")
+            return {
+                'success': True,
+                'updated': 0,
+                'failed': 0,
+                'total': 0,
+                'message': 'No apps found for name update'
+            }
+        
+        # Steam Wishlist Manager für Namen-Abfrage
+        try:
+            from steam_wishlist_manager import SteamWishlistManager
+            steam_manager = SteamWishlistManager(api_key)
+            
+            # Namen bulk abrufen
+            logger.info(f"📥 Hole Namen von Steam API...")
+            name_mapping = steam_manager.get_multiple_app_names(app_ids)
+            
+            # Namen in Datenbank aktualisieren
+            updated = 0
+            failed = 0
+            
+            for app_id in app_ids:
+                if app_id in name_mapping:
+                    new_name = name_mapping[app_id]
+                    
+                    if self.db_manager.update_app_name(app_id, new_name, 'steam_api'):
+                        updated += 1
+                        logger.debug(f"✅ {app_id}: {new_name}")
+                    else:
+                        failed += 1
+                        logger.warning(f"⚠️ Datenbankfehler für {app_id}")
+                else:
+                    failed += 1
+                    logger.warning(f"⚠️ Kein Name gefunden für {app_id}")
+            
+            success_rate = (updated / len(app_ids)) * 100 if app_ids else 0
+            
+            logger.info(f"✅ Namen-Update abgeschlossen:")
+            logger.info(f"   📊 {updated}/{len(app_ids)} erfolgreich ({success_rate:.1f}%)")
+            logger.info(f"   ❌ {failed} fehlgeschlagen")
+            
+            return {
+                'success': True,
+                'updated': updated,
+                'failed': failed,
+                'total': len(app_ids),
+                'success_rate': success_rate
+            }
+            
+        except ImportError:
+            logger.error("❌ SteamWishlistManager nicht verfügbar")
+            return {
+                'success': False,
+                'error': 'SteamWishlistManager not available',
+                'updated': 0,
+                'failed': 0,
+                'total': len(app_ids)
+            }
+        except Exception as e:
+            logger.error(f"❌ Fehler beim Namen-Update: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'updated': 0,
+                'failed': 0,
+                'total': len(app_ids)
+            }
+    
+    def update_single_app_name(self, app_id: str, api_key: str = None) -> bool:
+        """
+        Aktualisiert Namen einer einzelnen App
+        
+        Args:
+            app_id: Steam App ID
+            api_key: Steam API Key
+            
+        Returns:
+            True wenn erfolgreich
+        """
+        result = self.update_app_names_from_steam([app_id], api_key)
+        return result.get('updated', 0) > 0
+    
+    def update_names_for_apps_with_generic_names(self, api_key: str = None) -> Dict:
+        """
+        Aktualisiert Namen für alle Apps mit generischen Namen
+        
+        Args:
+            api_key: Steam API Key
+            
+        Returns:
+            Update-Statistiken
+        """
+        return self.update_app_names_from_steam(None, api_key)
+    
+    def get_name_update_candidates(self) -> List[Dict]:
+        """
+        Gibt Apps zurück die Namen-Updates benötigen
+        
+        Returns:
+            Liste von Apps mit generischen Namen
+        """
+        return self.db_manager.get_apps_with_generic_names()
+    
+    def schedule_periodic_name_updates(self, interval_hours: int = 168, api_key: str = None):
+        """
+        Startet periodische Namen-Updates (wöchentlich empfohlen)
+        
+        Args:
+            interval_hours: Intervall in Stunden (Standard: 168 = wöchentlich)
+            api_key: Steam API Key
+        """
+        if not api_key:
+            from steam_wishlist_manager import load_api_key_from_env
+            api_key = load_api_key_from_env()
+        
+        if not api_key:
+            logger.error("❌ Kein Steam API Key für periodische Namen-Updates")
+            return
+        
+        def periodic_name_update():
+            logger.info("🔄 Starte periodisches Namen-Update...")
+            result = self.update_names_for_apps_with_generic_names(api_key)
+            if result['success']:
+                logger.info(f"✅ Periodisches Namen-Update: {result['updated']}/{result['total']} Apps aktualisiert")
+            else:
+                logger.error(f"❌ Periodisches Namen-Update fehlgeschlagen: {result.get('error')}")
+        
+        # Job zum Scheduler hinzufügen
+        schedule.every(interval_hours).hours.do(periodic_name_update)
+        logger.info(f"📅 Periodische Namen-Updates geplant (alle {interval_hours}h)")
+    
+    # ========================
+    # ENHANCED WISHLIST IMPORT
+    # ========================
+    
+    def import_steam_wishlist(self, steam_id: str, api_key: str, update_names: bool = True) -> Dict:
+        """
+        Enhanced Steam Wishlist Import mit Namen-Updates
+        
+        Args:
+            steam_id: Steam ID des Benutzers
+            api_key: Steam API Key
+            update_names: Ob Namen von Steam API aktualisiert werden sollen
+            
+        Returns:
+            Dict mit Import-Statistiken
+        """
+        try:
+            from steam_wishlist_manager import SteamWishlistManager
+            
+            wishlist_manager = SteamWishlistManager(api_key)
+            wishlist_data = wishlist_manager.get_simple_wishlist(steam_id)
+            
+            if not wishlist_data:
+                return {'success': False, 'error': 'Wishlist konnte nicht abgerufen werden'}
+            
+            imported = 0
+            skipped_existing = 0
+            names_updated = 0
+            errors = []
+            
+            for item in wishlist_data:
+                try:
+                    app_id = item['steam_app_id']
+                    name = item['name']
+                    
+                    # Prüfe ob bereits vorhanden
+                    existing_apps = self.get_tracked_apps()
+                    existing_app = next((app for app in existing_apps if app['steam_app_id'] == app_id), None)
+                    
+                    if existing_app:
+                        skipped_existing += 1
+                        
+                        # Namen-Update für bestehende App falls gewünscht
+                        if update_names and (
+                            existing_app['name'].startswith('Game ') or 
+                            existing_app['name'].startswith('Unknown Game') or
+                            existing_app['name'] != name
+                        ):
+                            if self.db_manager.update_app_name(app_id, name, 'wishlist_import'):
+                                names_updated += 1
+                                logger.debug(f"🔄 Name aktualisiert: {existing_app['name']} → {name}")
+                        
+                        continue
+                    
+                    # Zur Datenbank hinzufügen
+                    if self.add_app_to_tracking(app_id, name):
+                        imported += 1
+                        logger.debug(f"✅ App {name} hinzugefügt")
+                    else:
+                        errors.append(f"Database error for {app_id}: {name}")
+                        logger.warning(f"⚠️ Konnte App {name} nicht hinzufügen")
+                        
+                except Exception as e:
+                    errors.append(f"Error processing {item}: {str(e)}")
+                    logger.error(f"❌ Fehler bei Wishlist-Item: {e}")
+            
+            # Import-Statistiken
+            import_stats = {
+                'success': True,
+                'imported': imported,
+                'skipped_existing': skipped_existing,
+                'names_updated': names_updated,
+                'total_items': len(wishlist_data),
+                'errors': errors,
+                'import_completed_at': datetime.now().isoformat()
+            }
+            
+            logger.info(f"📥 Enhanced Wishlist-Import abgeschlossen:")
+            logger.info(f"   ✅ {imported} neue Apps hinzugefügt")
+            logger.info(f"   ⏭️ {skipped_existing} bereits vorhanden")
+            logger.info(f"   🔄 {names_updated} Namen aktualisiert")
+            logger.info(f"   📊 {imported + skipped_existing}/{len(wishlist_data)} Apps verarbeitet")
+            
+            if errors:
+                logger.warning(f"   ⚠️ {len(errors)} Fehler aufgetreten")
+            
+            return import_stats
+            
+        except ImportError:
+            logger.error("❌ SteamWishlistManager nicht verfügbar")
+            return {'success': False, 'error': 'SteamWishlistManager nicht verfügbar'}
+        except Exception as e:
+            logger.error(f"❌ Fehler beim Enhanced Wishlist-Import: {e}")
+            return {
+                'success': False,
+                'imported': 0,
+                'total_items': 0,
+                'error': str(e)
+            }
     
     # ========================
     # CORE PRICE FETCHING
@@ -497,7 +768,7 @@ class SteamPriceTracker:
     # ========================
     
     def get_statistics(self) -> Dict:
-        """Gibt Tracker-Statistiken zurück"""
+        """Gibt erweiterte Tracker-Statistiken zurück"""
         return self.db_manager.get_statistics()
     
     def get_price_history(self, steam_app_id: str, days_back: int = 30) -> List[Dict]:
@@ -582,82 +853,3 @@ class SteamPriceTracker:
         
         logger.info(f"✅ CSV Export erstellt: {output_path}")
         return str(output_path)
-    
-    def import_steam_wishlist(self, steam_id: str, api_key: str) -> Dict:
-        """
-        Importiert Steam Wishlist (vereinfacht)
-        
-        Args:
-            steam_id: Steam ID des Benutzers
-            api_key: Steam API Key
-            
-        Returns:
-            Dict mit Import-Statistiken
-        """
-        try:
-            from steam_wishlist_manager import SteamWishlistManager
-            
-            wishlist_manager = SteamWishlistManager(api_key)
-            wishlist_data = wishlist_manager.get_simple_wishlist(steam_id)
-            
-            if not wishlist_data:
-                return {'success': False, 'error': 'Wishlist konnte nicht abgerufen werden'}
-            
-            imported = 0
-            skipped_existing = 0
-            errors = []
-            
-            for item in wishlist_data:
-                try:
-                    app_id = item['steam_app_id']
-                    name = item['name']
-                    
-                    # Prüfe ob bereits vorhanden
-                    existing_apps = self.get_tracked_apps()
-                    if any(app['steam_app_id'] == app_id for app in existing_apps):
-                        skipped_existing += 1
-                        continue
-                    
-                    # Zur Datenbank hinzufügen
-                    if self.add_app_to_tracking(app_id, name):
-                        imported += 1
-                        logger.debug(f"✅ App {name} hinzugefügt")
-                    else:
-                        errors.append(f"Database error for {app_id}: {name}")
-                        logger.warning(f"⚠️ Konnte App {name} nicht hinzufügen")
-                        
-                except Exception as e:
-                    errors.append(f"Error processing {item}: {str(e)}")
-                    logger.error(f"❌ Fehler bei Wishlist-Item: {e}")
-            
-            # Import-Statistiken
-            import_stats = {
-                'success': True,
-                'imported': imported,
-                'skipped_existing': skipped_existing,
-                'total_items': len(wishlist_data),
-                'errors': errors,
-                'import_completed_at': datetime.now().isoformat()
-            }
-            
-            logger.info(f"📥 Wishlist-Import abgeschlossen:")
-            logger.info(f"   ✅ {imported} neue Apps hinzugefügt")
-            logger.info(f"   ⏭️ {skipped_existing} bereits vorhanden")
-            logger.info(f"   📊 {imported + skipped_existing}/{len(wishlist_data)} Apps verarbeitet")
-            
-            if errors:
-                logger.warning(f"   ⚠️ {len(errors)} Fehler aufgetreten")
-            
-            return import_stats
-            
-        except ImportError:
-            logger.error("❌ SteamWishlistManager nicht verfügbar")
-            return {'success': False, 'error': 'SteamWishlistManager nicht verfügbar'}
-        except Exception as e:
-            logger.error(f"❌ Fehler beim Wishlist-Import: {e}")
-            return {
-                'success': False,
-                'imported': 0,
-                'total_items': 0,
-                'error': str(e)
-            }

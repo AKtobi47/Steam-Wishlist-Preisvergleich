@@ -1,6 +1,6 @@
 """
 Database Manager für Steam Price Tracker
-Vollständige Implementation für Preis-Tracking
+Vollständige Implementation für Preis-Tracking mit App-Namen Updates
 """
 
 import sqlite3
@@ -45,7 +45,22 @@ class DatabaseManager:
                             name TEXT NOT NULL,
                             added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                             last_price_update TIMESTAMP,
+                            last_name_update TIMESTAMP,
+                            name_update_attempts INTEGER DEFAULT 0,
                             active BOOLEAN DEFAULT 1
+                        )
+                    ''')
+                    
+                    # Name Update History für Tracking
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS app_name_history (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            steam_app_id TEXT NOT NULL,
+                            old_name TEXT,
+                            new_name TEXT NOT NULL,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            update_source TEXT DEFAULT 'manual',
+                            FOREIGN KEY (steam_app_id) REFERENCES tracked_apps (steam_app_id)
                         )
                     ''')
                     
@@ -103,6 +118,19 @@ class DatabaseManager:
                     cursor.execute('CREATE INDEX IF NOT EXISTS idx_price_snapshots_timestamp ON price_snapshots(timestamp)')
                     cursor.execute('CREATE INDEX IF NOT EXISTS idx_tracked_apps_active ON tracked_apps(active)')
                     cursor.execute('CREATE INDEX IF NOT EXISTS idx_price_alerts_active ON price_alerts(active)')
+                    cursor.execute('CREATE INDEX IF NOT EXISTS idx_name_history_app_id ON app_name_history(steam_app_id)')
+                    cursor.execute('CREATE INDEX IF NOT EXISTS idx_tracked_apps_name_update ON tracked_apps(last_name_update)')
+                    
+                    # Upgrade bestehende Tabelle falls neue Spalten fehlen
+                    try:
+                        cursor.execute('ALTER TABLE tracked_apps ADD COLUMN last_name_update TIMESTAMP')
+                    except sqlite3.OperationalError:
+                        pass
+                    
+                    try:
+                        cursor.execute('ALTER TABLE tracked_apps ADD COLUMN name_update_attempts INTEGER DEFAULT 0')
+                    except sqlite3.OperationalError:
+                        pass
                     
                     conn.commit()
                     logger.info("✅ Price Tracker Datenbank initialisiert")
@@ -110,6 +138,216 @@ class DatabaseManager:
                 except sqlite3.Error as e:
                     conn.rollback()
                     raise Exception(f"Datenbank-Initialisierung fehlgeschlagen: {e}")
+    
+    # ========================
+    # APP NAME UPDATE FUNCTIONS
+    # ========================
+    
+    def update_app_name(self, steam_app_id: str, new_name: str, update_source: str = 'manual') -> bool:
+        """
+        Aktualisiert den Namen einer App in der Datenbank
+        
+        Args:
+            steam_app_id: Steam App ID
+            new_name: Neuer Name der App
+            update_source: Quelle des Updates (manual, steam_api, wishlist, etc.)
+            
+        Returns:
+            True wenn erfolgreich aktualisiert
+        """
+        with self.lock:
+            try:
+                with self.get_connection() as conn:
+                    cursor = conn.cursor()
+                    
+                    # Aktuellen Namen abrufen
+                    cursor.execute('SELECT name FROM tracked_apps WHERE steam_app_id = ?', (steam_app_id,))
+                    result = cursor.fetchone()
+                    
+                    if not result:
+                        logger.warning(f"⚠️ App {steam_app_id} nicht in Datenbank gefunden")
+                        return False
+                    
+                    old_name = result['name']
+                    
+                    # Nur aktualisieren wenn Name wirklich unterschiedlich ist
+                    if old_name.strip() == new_name.strip():
+                        logger.debug(f"ℹ️ Name für {steam_app_id} unverändert: {new_name}")
+                        return True
+                    
+                    # App-Namen aktualisieren
+                    cursor.execute('''
+                        UPDATE tracked_apps 
+                        SET name = ?, 
+                            last_name_update = CURRENT_TIMESTAMP,
+                            name_update_attempts = name_update_attempts + 1
+                        WHERE steam_app_id = ?
+                    ''', (new_name, steam_app_id))
+                    
+                    # Historie-Eintrag erstellen
+                    cursor.execute('''
+                        INSERT INTO app_name_history (steam_app_id, old_name, new_name, update_source)
+                        VALUES (?, ?, ?, ?)
+                    ''', (steam_app_id, old_name, new_name, update_source))
+                    
+                    conn.commit()
+                    logger.info(f"✅ Name aktualisiert für {steam_app_id}: '{old_name}' → '{new_name}'")
+                    return True
+                    
+            except sqlite3.Error as e:
+                logger.error(f"❌ Fehler beim Aktualisieren des App-Namens {steam_app_id}: {e}")
+                return False
+    
+    def get_apps_needing_name_update(self, hours_threshold: int = 168) -> List[Dict]:
+        """
+        Gibt Apps zurück die ein Namen-Update benötigen
+        
+        Args:
+            hours_threshold: Apps älter als X Stunden (Standard: 1 Woche)
+            
+        Returns:
+            Liste von Apps die Namen-Updates benötigen
+        """
+        cutoff_time = datetime.now() - timedelta(hours=hours_threshold)
+        
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT steam_app_id, name, added_at, last_name_update, name_update_attempts
+                FROM tracked_apps
+                WHERE active = 1 
+                AND (
+                    last_name_update IS NULL 
+                    OR last_name_update < ?
+                    OR name LIKE 'Game %'
+                    OR name LIKE 'Unknown Game %'
+                    OR name = ''
+                )
+                ORDER BY 
+                    CASE 
+                        WHEN name LIKE 'Game %' OR name LIKE 'Unknown Game %' OR name = '' THEN 0
+                        WHEN last_name_update IS NULL THEN 1 
+                        ELSE 2 
+                    END,
+                    last_name_update ASC
+            ''', (cutoff_time.isoformat(),))
+            
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def get_apps_with_generic_names(self) -> List[Dict]:
+        """
+        Gibt Apps mit generischen Namen zurück (Game XXXXX, Unknown Game, etc.)
+        
+        Returns:
+            Liste von Apps mit generischen Namen
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT steam_app_id, name, added_at, last_name_update, name_update_attempts
+                FROM tracked_apps
+                WHERE active = 1 
+                AND (
+                    name LIKE 'Game %'
+                    OR name LIKE 'Unknown Game %'
+                    OR name = ''
+                    OR name IS NULL
+                )
+                ORDER BY added_at DESC
+            ''')
+            
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def get_name_update_history(self, steam_app_id: str = None, limit: int = 50) -> List[Dict]:
+        """
+        Gibt Historie der Namen-Updates zurück
+        
+        Args:
+            steam_app_id: Optionale Filterung nach App ID
+            limit: Maximale Anzahl Ergebnisse
+            
+        Returns:
+            Liste von Namen-Update Einträgen
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            if steam_app_id:
+                cursor.execute('''
+                    SELECT anh.*, ta.name as current_name
+                    FROM app_name_history anh
+                    LEFT JOIN tracked_apps ta ON anh.steam_app_id = ta.steam_app_id
+                    WHERE anh.steam_app_id = ?
+                    ORDER BY anh.updated_at DESC
+                    LIMIT ?
+                ''', (steam_app_id, limit))
+            else:
+                cursor.execute('''
+                    SELECT anh.*, ta.name as current_name
+                    FROM app_name_history anh
+                    LEFT JOIN tracked_apps ta ON anh.steam_app_id = ta.steam_app_id
+                    ORDER BY anh.updated_at DESC
+                    LIMIT ?
+                ''', (limit,))
+            
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def get_name_update_statistics(self) -> Dict:
+        """
+        Gibt Statistiken zu Namen-Updates zurück
+        
+        Returns:
+            Dict mit Namen-Update Statistiken
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Apps mit generischen Namen
+            cursor.execute('''
+                SELECT COUNT(*) FROM tracked_apps 
+                WHERE active = 1 AND (
+                    name LIKE 'Game %' OR 
+                    name LIKE 'Unknown Game %' OR 
+                    name = '' OR 
+                    name IS NULL
+                )
+            ''')
+            apps_with_generic_names = cursor.fetchone()[0]
+            
+            # Apps die noch nie Namen-Update hatten
+            cursor.execute('''
+                SELECT COUNT(*) FROM tracked_apps 
+                WHERE active = 1 AND last_name_update IS NULL
+            ''')
+            apps_never_updated = cursor.fetchone()[0]
+            
+            # Gesamt Namen-Updates
+            cursor.execute('SELECT COUNT(*) FROM app_name_history')
+            total_name_updates = cursor.fetchone()[0]
+            
+            # Namen-Updates letzte 24h
+            yesterday = datetime.now() - timedelta(hours=24)
+            cursor.execute('''
+                SELECT COUNT(*) FROM app_name_history 
+                WHERE updated_at >= ?
+            ''', (yesterday.isoformat(),))
+            updates_last_24h = cursor.fetchone()[0]
+            
+            # Apps mit fehlgeschlagenen Updates (>3 Versuche)
+            cursor.execute('''
+                SELECT COUNT(*) FROM tracked_apps 
+                WHERE active = 1 AND name_update_attempts > 3
+                AND (name LIKE 'Game %' OR name LIKE 'Unknown Game %')
+            ''')
+            failed_updates = cursor.fetchone()[0]
+            
+            return {
+                'apps_with_generic_names': apps_with_generic_names,
+                'apps_never_updated': apps_never_updated,
+                'total_name_updates': total_name_updates,
+                'updates_last_24h': updates_last_24h,
+                'failed_updates': failed_updates
+            }
     
     # ========================
     # TRACKED APPS OPERATIONS
@@ -151,7 +389,7 @@ class DatabaseManager:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT steam_app_id, name, added_at, last_price_update, active
+                SELECT steam_app_id, name, added_at, last_price_update, last_name_update, name_update_attempts, active
                 FROM tracked_apps
                 WHERE active = 1
                 ORDER BY added_at DESC
@@ -342,7 +580,7 @@ class DatabaseManager:
     # ========================
     
     def get_statistics(self) -> Dict:
-        """Gibt Tracker-Statistiken zurück"""
+        """Gibt erweiterte Tracker-Statistiken zurück"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             
@@ -366,12 +604,16 @@ class DatabaseManager:
             cursor.execute("SELECT MIN(timestamp), MAX(timestamp) FROM price_snapshots")
             oldest, newest = cursor.fetchone()
             
+            # Namen-Update Statistiken
+            name_stats = self.get_name_update_statistics()
+            
             return {
                 'tracked_apps': tracked_apps,
                 'total_snapshots': total_snapshots,
                 'stores_tracked': stores_with_data,
                 'oldest_snapshot': oldest,
-                'newest_snapshot': newest
+                'newest_snapshot': newest,
+                'name_update_stats': name_stats
             }
     
     def get_total_price_snapshots(self) -> int:
@@ -429,4 +671,49 @@ class DatabaseManager:
             
         except Exception as e:
             logger.error(f"❌ Backup fehlgeschlagen: {e}")
+            return None
+    
+    def export_all_price_data(self, output_file: str = None) -> Optional[str]:
+        """Exportiert alle Preisdaten als JSON"""
+        if output_file is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_file = f"exports/all_price_data_{timestamp}.json"
+        
+        try:
+            Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+            
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Alle Daten sammeln
+                export_data = {
+                    'export_timestamp': datetime.now().isoformat(),
+                    'tracked_apps': [],
+                    'price_snapshots': [],
+                    'name_history': []
+                }
+                
+                # Tracked Apps
+                cursor.execute('SELECT * FROM tracked_apps WHERE active = 1')
+                export_data['tracked_apps'] = [dict(row) for row in cursor.fetchall()]
+                
+                # Price Snapshots (nur letzte 90 Tage)
+                cutoff_date = datetime.now() - timedelta(days=90)
+                cursor.execute('SELECT * FROM price_snapshots WHERE timestamp >= ? ORDER BY timestamp DESC', 
+                              (cutoff_date.isoformat(),))
+                export_data['price_snapshots'] = [dict(row) for row in cursor.fetchall()]
+                
+                # Name History
+                cursor.execute('SELECT * FROM app_name_history ORDER BY updated_at DESC LIMIT 1000')
+                export_data['name_history'] = [dict(row) for row in cursor.fetchall()]
+            
+            # JSON Export schreiben
+            with open(output_file, 'w', encoding='utf-8') as f:
+                json.dump(export_data, f, indent=2, ensure_ascii=False)
+            
+            logger.info(f"✅ Vollständiger Datenexport erstellt: {output_file}")
+            return output_file
+            
+        except Exception as e:
+            logger.error(f"❌ Export fehlgeschlagen: {e}")
             return None

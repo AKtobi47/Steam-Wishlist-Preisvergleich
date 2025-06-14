@@ -1,37 +1,3 @@
-"""
-Steam Price Tracker - Hauptanwendung
-Vollständige CLI-Implementation mit allen Funktionen
-"""
-
-import os
-import sys
-from pathlib import Path
-from datetime import datetime
-import logging
-
-# Logging Setup
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-def load_api_key_from_env(env_file: str = ".env") -> str:
-    """Lädt Steam API Key aus .env-Datei"""
-    env_path = Path(env_file)
-    
-    if not env_path.exists():
-        return None
-    
-    try:
-        with open(env_path, 'r', encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith('#') and '=' in line:
-                    key, value = line.split('=', 1)
-                    if key.strip() == 'STEAM_API_KEY':
-                        api_key = value.strip().strip('"').strip("'")
-                        if api_key and api_key != 'your_steam_api_key_here':
-                            return api_key
-        return None
-    except Exception as e:
         logger.error(f"❌ Fehler beim Lesen der .env-Datei: {e}")
         return None
 
@@ -110,9 +76,9 @@ def safe_stop_scheduler(price_tracker):
         return False
 
 def main():
-    """Hauptfunktion für Steam Price Tracker"""
-    print("💰 STEAM PRICE TRACKER v1.0")
-    print("Direktes CheapShark-Preis-Tracking ohne Mapping-Komplexität")
+    """Enhanced Hauptfunktion für Steam Price Tracker"""
+    print("💰 STEAM PRICE TRACKER v1.1 - ENHANCED")
+    print("Mit App-Namen Updates und erweiterten Funktionen")
     print("=" * 70)
     
     # API Key laden
@@ -141,7 +107,7 @@ def main():
         db_manager = DatabaseManager()
         price_tracker = SteamPriceTracker(db_manager)
         wishlist_manager = SteamWishlistManager(api_key)
-        print("✅ Steam Price Tracker initialisiert")
+        print("✅ Enhanced Steam Price Tracker initialisiert")
     except Exception as e:
         print(f"❌ Fehler beim Initialisieren: {e}")
         return
@@ -158,6 +124,13 @@ def main():
             total_snapshots = stats.get('total_snapshots', 0)
             print(f"📈 Gesamt Preis-Snapshots: {total_snapshots:,}")
             print(f"🏪 Stores: {', '.join(stats['stores_tracked'])}")
+            
+            # Namen-Update Statistiken
+            if 'name_update_stats' in stats:
+                name_stats = stats['name_update_stats']
+                if name_stats['apps_with_generic_names'] > 0:
+                    print(f"🔤 Apps mit generischen Namen: {name_stats['apps_with_generic_names']}")
+                print(f"📝 Namen-Updates (24h): {name_stats['updates_last_24h']}")
             
             if scheduler_status['scheduler_running']:
                 print(f"🚀 Automatisches Tracking: AKTIV ✅")
@@ -188,9 +161,12 @@ def main():
         print("9. 🗑️ App aus Tracking entfernen")
         print("10. 📄 CSV-Export für App erstellen")
         print("11. 📊 Detaillierte Statistiken")
-        print("12. 👋 Beenden")
+        print("12. 🔤 App-Namen von Steam aktualisieren")
+        print("13. 📝 Namen-Update Historie anzeigen")
+        print("14. 🔍 Apps mit generischen Namen finden")
+        print("15. 👋 Beenden")
         
-        choice = input("\nWählen Sie eine Aktion (1-12): ").strip()
+        choice = input("\nWählen Sie eine Aktion (1-15): ").strip()
         
         if choice == "1":
             # App manuell hinzufügen
@@ -208,6 +184,15 @@ def main():
             
             if price_tracker.add_app_to_tracking(app_id, name):
                 print(f"✅ {name} ({app_id}) zum Tracking hinzugefügt")
+                
+                # Namen von Steam abrufen?
+                if name.startswith("Game "):
+                    fetch_name = input("Namen von Steam API abrufen? (j/n): ").lower().strip()
+                    if fetch_name in ['j', 'ja', 'y', 'yes']:
+                        if price_tracker.update_single_app_name(app_id, api_key):
+                            print("✅ Name von Steam API aktualisiert")
+                        else:
+                            print("⚠️ Name konnte nicht von Steam abgerufen werden")
                 
                 # Sofort Preise abrufen?
                 fetch_now = input("Preise sofort abrufen? (j/n): ").lower().strip()
@@ -230,12 +215,13 @@ def main():
                 continue
             
             print("🔍 Importiere Wishlist...")
-            result = price_tracker.import_steam_wishlist(steam_id, api_key)
+            result = price_tracker.import_steam_wishlist(steam_id, api_key, update_names=True)
             
             if result['success']:
-                print(f"✅ Wishlist-Import erfolgreich:")
+                print(f"✅ Enhanced Wishlist-Import erfolgreich:")
                 print(f"   📥 {result['imported']} neue Apps hinzugefügt")
                 print(f"   ⏭️ {result.get('skipped_existing', 0)} bereits vorhanden")
+                print(f"   🔄 {result.get('names_updated', 0)} Namen aktualisiert")
                 print(f"   📊 {result['total_items']} Apps insgesamt")
                 
                 if result.get('errors'):
@@ -245,8 +231,7 @@ def main():
                     fetch_all = input("Preise für alle neuen Apps abrufen? (j/n): ").lower().strip()
                     if fetch_all in ['j', 'ja', 'y', 'yes']:
                         print("🔄 Hole Preise für alle neuen Apps...")
-                        # Dies könnte eine Weile dauern
-                        batch_result = price_tracker.process_all_pending_apps_optimized(hours_threshold=999)  # Alle Apps
+                        batch_result = price_tracker.process_all_pending_apps_optimized(hours_threshold=999)
                         if batch_result.get('success'):
                             print(f"✅ Preise für {batch_result['total_successful']} Apps abgerufen")
                         else:
@@ -498,8 +483,17 @@ def main():
                     if last_update and last_update != 'Nie':
                         last_update = last_update[:19]
                     
-                    print(f"{i:3d}. {app['name']}")
-                    print(f"      ID: {app['steam_app_id']} | Hinzugefügt: {app['added_at'][:10]} | Letztes Update: {last_update}")
+                    last_name_update = app.get('last_name_update', 'Nie')
+                    if last_name_update and last_name_update != 'Nie':
+                        last_name_update = last_name_update[:19]
+                    
+                    name_marker = ""
+                    if app['name'].startswith('Game ') or app['name'].startswith('Unknown Game'):
+                        name_marker = " 🔤"
+                    
+                    print(f"{i:3d}. {app['name']}{name_marker}")
+                    print(f"      ID: {app['steam_app_id']} | Hinzugefügt: {app['added_at'][:10]}")
+                    print(f"      Preisupdate: {last_update} | Namensupdate: {last_name_update}")
             else:
                 print("❌ Keine Apps im Tracking")
         
@@ -595,14 +589,205 @@ def main():
                 else:
                     print("📅 Neuester Snapshot: N/A")
                 
+                # Namen-Update Statistiken
+                if 'name_update_stats' in stats:
+                    name_stats = stats['name_update_stats']
+                    print(f"\n🔤 NAMEN-UPDATE STATISTIKEN:")
+                    print(f"📝 Apps mit generischen Namen: {name_stats['apps_with_generic_names']}")
+                    print(f"❓ Apps ohne Namen-Update: {name_stats['apps_never_updated']}")
+                    print(f"🔄 Gesamt Namen-Updates: {name_stats['total_name_updates']}")
+                    print(f"📊 Namen-Updates (24h): {name_stats['updates_last_24h']}")
+                    print(f"❌ Fehlgeschlagene Updates: {name_stats['failed_updates']}")
+                
                 # Weitere Details aus Datenbank
                 total_snapshots = price_tracker.db_manager.get_total_price_snapshots()
-                print(f"🗄️ Datenbank Snapshots: {total_snapshots:,}")
+                print(f"\n🗄️ Datenbank Snapshots: {total_snapshots:,}")
                 
             except Exception as e:
                 print(f"❌ Fehler beim Laden der Statistiken: {e}")
         
         elif choice == "12":
+            # App-Namen von Steam aktualisieren
+            print("\n🔤 APP-NAMEN VON STEAM AKTUALISIEREN")
+            print("=" * 40)
+            
+            print("Welche Apps sollen aktualisiert werden?")
+            print("1. Alle Apps mit generischen Namen (Game XXXXX, Unknown Game)")
+            print("2. Alle Apps (kann lange dauern)")
+            print("3. Spezifische Apps auswählen")
+            print("4. Zurück zum Hauptmenü")
+            
+            name_choice = input("Auswahl (1-4): ").strip()
+            
+            if name_choice == "1":
+                # Apps mit generischen Namen
+                candidates = price_tracker.get_name_update_candidates()
+                
+                if not candidates:
+                    print("✅ Alle Apps haben bereits korrekte Namen")
+                    continue
+                
+                print(f"🔍 {len(candidates)} Apps mit generischen Namen gefunden:")
+                for i, app in enumerate(candidates[:10], 1):
+                    print(f"   {i}. {app['name']} (ID: {app['steam_app_id']})")
+                
+                if len(candidates) > 10:
+                    print(f"   ... und {len(candidates) - 10} weitere")
+                
+                update_generic = input(f"Namen für {len(candidates)} Apps aktualisieren? (j/n): ").lower().strip()
+                if update_generic in ['j', 'ja', 'y', 'yes']:
+                    print("🔄 Aktualisiere Namen von Steam API...")
+                    result = price_tracker.update_names_for_apps_with_generic_names(api_key)
+                    
+                    if result['success']:
+                        print(f"✅ Namen-Update abgeschlossen:")
+                        print(f"   📊 {result['updated']}/{result['total']} erfolgreich ({result['success_rate']:.1f}%)")
+                        print(f"   ❌ {result['failed']} fehlgeschlagen")
+                    else:
+                        print(f"❌ Namen-Update fehlgeschlagen: {result.get('error')}")
+            
+            elif name_choice == "2":
+                # Alle Apps
+                tracked_apps = price_tracker.get_tracked_apps()
+                
+                if not tracked_apps:
+                    print("❌ Keine Apps im Tracking")
+                    continue
+                
+                print(f"⚠️ Namen für ALLE {len(tracked_apps)} Apps aktualisieren?")
+                print("   Das kann bei vielen Apps mehrere Minuten dauern.")
+                
+                update_all = input("Fortfahren? (j/n): ").lower().strip()
+                if update_all in ['j', 'ja', 'y', 'yes']:
+                    app_ids = [app['steam_app_id'] for app in tracked_apps]
+                    print(f"🔄 Aktualisiere Namen für {len(app_ids)} Apps von Steam API...")
+                    
+                    result = price_tracker.update_app_names_from_steam(app_ids, api_key)
+                    
+                    if result['success']:
+                        print(f"✅ Namen-Update abgeschlossen:")
+                        print(f"   📊 {result['updated']}/{result['total']} erfolgreich ({result['success_rate']:.1f}%)")
+                        print(f"   ❌ {result['failed']} fehlgeschlagen")
+                    else:
+                        print(f"❌ Namen-Update fehlgeschlagen: {result.get('error')}")
+            
+            elif name_choice == "3":
+                # Spezifische Apps
+                tracked_apps = price_tracker.get_tracked_apps()
+                
+                if not tracked_apps:
+                    print("❌ Keine Apps im Tracking")
+                    continue
+                
+                print(f"\n📋 GETRACKTE APPS ({len(tracked_apps)}):")
+                for i, app in enumerate(tracked_apps[:20], 1):
+                    marker = " 🔤" if app['name'].startswith('Game ') else ""
+                    print(f"{i:2d}. {app['name']}{marker} (ID: {app['steam_app_id']})")
+                
+                if len(tracked_apps) > 20:
+                    print(f"    ... und {len(tracked_apps) - 20} weitere")
+                
+                try:
+                    indices = input("App-Nummern eingeben (komma-getrennt): ").strip()
+                    if indices:
+                        selected_indices = [int(i.strip()) - 1 for i in indices.split(',')]
+                        selected_apps = [tracked_apps[i] for i in selected_indices if 0 <= i < len(tracked_apps)]
+                        
+                        if selected_apps:
+                            app_ids = [app['steam_app_id'] for app in selected_apps]
+                            print(f"🔄 Aktualisiere Namen für {len(app_ids)} ausgewählte Apps...")
+                            
+                            result = price_tracker.update_app_names_from_steam(app_ids, api_key)
+                            
+                            if result['success']:
+                                print(f"✅ Namen-Update abgeschlossen:")
+                                print(f"   📊 {result['updated']}/{result['total']} erfolgreich")
+                                print(f"   ❌ {result['failed']} fehlgeschlagen")
+                            else:
+                                print(f"❌ Namen-Update fehlgeschlagen: {result.get('error')}")
+                        else:
+                            print("❌ Keine gültigen Apps ausgewählt")
+                except ValueError:
+                    print("❌ Ungültige Eingabe")
+            
+            elif name_choice == "4":
+                continue
+            else:
+                print("❌ Ungültige Auswahl")
+        
+        elif choice == "13":
+            # Namen-Update Historie anzeigen
+            print("\n📝 NAMEN-UPDATE HISTORIE")
+            print("=" * 30)
+            
+            history = price_tracker.db_manager.get_name_update_history(limit=20)
+            
+            if history:
+                print(f"📋 Letzte {len(history)} Namen-Updates:")
+                print()
+                
+                for entry in history:
+                    date = entry['updated_at'][:19]
+                    app_id = entry['steam_app_id']
+                    old_name = entry['old_name'] or 'N/A'
+                    new_name = entry['new_name']
+                    source = entry['update_source']
+                    current_name = entry.get('current_name', new_name)
+                    
+                    print(f"📅 {date} | {source}")
+                    print(f"   🆔 App ID: {app_id}")
+                    print(f"   📝 {old_name} → {new_name}")
+                    if current_name != new_name:
+                        print(f"   🔄 Aktuell: {current_name}")
+                    print()
+            else:
+                print("❌ Keine Namen-Update Historie gefunden")
+        
+        elif choice == "14":
+            # Apps mit generischen Namen finden
+            print("\n🔍 APPS MIT GENERISCHEN NAMEN")
+            print("=" * 35)
+            
+            generic_apps = price_tracker.get_name_update_candidates()
+            
+            if generic_apps:
+                print(f"🔤 {len(generic_apps)} Apps mit generischen Namen gefunden:")
+                print()
+                
+                for i, app in enumerate(generic_apps, 1):
+                    update_attempts = app.get('name_update_attempts', 0)
+                    last_name_update = app.get('last_name_update', 'Nie')
+                    if last_name_update and last_name_update != 'Nie':
+                        last_name_update = last_name_update[:19]
+                    
+                    status = ""
+                    if update_attempts > 3:
+                        status = " ❌ (mehrfach fehlgeschlagen)"
+                    elif update_attempts > 0:
+                        status = f" ⚠️ ({update_attempts} Versuche)"
+                    
+                    print(f"{i:3d}. {app['name']}{status}")
+                    print(f"     🆔 App ID: {app['steam_app_id']}")
+                    print(f"     📅 Hinzugefügt: {app['added_at'][:10]} | Letztes Update: {last_name_update}")
+                    print()
+                
+                # Angebot zur sofortigen Aktualisierung
+                update_now = input("Namen jetzt von Steam abrufen? (j/n): ").lower().strip()
+                if update_now in ['j', 'ja', 'y', 'yes']:
+                    print("🔄 Aktualisiere Namen von Steam API...")
+                    result = price_tracker.update_names_for_apps_with_generic_names(api_key)
+                    
+                    if result['success']:
+                        print(f"✅ Namen-Update abgeschlossen:")
+                        print(f"   📊 {result['updated']}/{result['total']} erfolgreich")
+                        print(f"   ❌ {result['failed']} fehlgeschlagen")
+                    else:
+                        print(f"❌ Namen-Update fehlgeschlagen: {result.get('error')}")
+            else:
+                print("✅ Alle Apps haben korrekte Namen!")
+                print("💡 Keine Apps mit generischen Namen (Game XXXXX) gefunden")
+        
+        elif choice == "15":
             # Beenden
             print("\n👋 BEENDEN")
             print("=" * 10)
@@ -615,16 +800,50 @@ def main():
             
             print("💾 Datenbankverbindungen werden automatisch geschlossen...")
             
-            print("✅ Steam Price Tracker beendet. Auf Wiedersehen!")
+            print("✅ Enhanced Steam Price Tracker beendet. Auf Wiedersehen!")
             break
         
         else:
             print("❌ Ungültige Auswahl - bitte versuchen Sie es erneut")
         
         # Kleine Pause zwischen Aktionen
-        if choice != "12":
+        if choice != "15":
             print("\n" + "="*50)
             input("💡 Drücken Sie Enter um zum Hauptmenü zurückzukehren...")
 
 if __name__ == "__main__":
-    main()
+    main()"""
+Enhanced Steam Price Tracker - Hauptanwendung
+CLI mit erweiterten Funktionen für App-Namen Updates
+"""
+
+import os
+import sys
+from pathlib import Path
+from datetime import datetime
+import logging
+
+# Logging Setup
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+def load_api_key_from_env(env_file: str = ".env") -> str:
+    """Lädt Steam API Key aus .env-Datei"""
+    env_path = Path(env_file)
+    
+    if not env_path.exists():
+        return None
+    
+    try:
+        with open(env_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    if key.strip() == 'STEAM_API_KEY':
+                        api_key = value.strip().strip('"').strip("'")
+                        if api_key and api_key != 'your_steam_api_key_here':
+                            return api_key
+        return None
+    except Exception as e:
+        logger.error

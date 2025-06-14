@@ -1,6 +1,6 @@
 """
-Steam Wishlist Manager - Vereinfachte Version für Preis-Tracking
-Fokussiert auf Steam API Integration ohne CheapShark-Mapping
+Steam Wishlist Manager - Enhanced Version für Preis-Tracking
+Fokussiert auf Steam API Integration mit optimierten Namen-Abfragen
 """
 
 import requests
@@ -48,8 +48,8 @@ def load_api_key_from_env(env_file: str = ".env") -> Optional[str]:
 
 class SteamWishlistManager:
     """
-    Vereinfachter Steam Wishlist Manager
-    Fokussiert auf Steam API Integration für Preis-Tracking
+    Enhanced Steam Wishlist Manager
+    Fokussiert auf Steam API Integration für Preis-Tracking und Namen-Updates
     """
     
     def __init__(self, api_key: str):
@@ -62,7 +62,7 @@ class SteamWishlistManager:
         self.api_key = api_key
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'SteamPriceTracker/1.0'
+            'User-Agent': 'SteamPriceTracker/1.1'
         })
         
         # Rate Limiting für Steam API
@@ -265,6 +265,78 @@ class SteamWishlistManager:
             logger.error(f"❌ Request Fehler für App {app_id}: {e}")
             return None
     
+    def get_app_name_only(self, app_id: str) -> Optional[str]:
+        """
+        Holt nur den Namen einer Steam App (optimiert)
+        
+        Args:
+            app_id: Steam App ID
+            
+        Returns:
+            App-Name oder None
+        """
+        app_details = self.get_app_details(app_id)
+        
+        if app_details and app_details.get('name'):
+            return app_details['name'].strip()
+        
+        return None
+    
+    def get_multiple_app_names(self, app_ids: List[str], max_batch_size: int = 100) -> Dict[str, str]:
+        """
+        Holt Namen für mehrere Apps optimiert
+        
+        Args:
+            app_ids: Liste von Steam App IDs
+            max_batch_size: Maximale Anzahl Apps pro Batch (für Rate Limiting)
+            
+        Returns:
+            Dict mit app_id -> name Mapping
+        """
+        if not app_ids:
+            return {}
+        
+        logger.info(f"🔍 Hole Namen für {len(app_ids)} Apps...")
+        
+        results = {}
+        failed_apps = []
+        
+        # Apps in Batches verarbeiten
+        for i in range(0, len(app_ids), max_batch_size):
+            batch = app_ids[i:i + max_batch_size]
+            batch_num = (i // max_batch_size) + 1
+            total_batches = (len(app_ids) + max_batch_size - 1) // max_batch_size
+            
+            logger.info(f"📦 Batch {batch_num}/{total_batches}: {len(batch)} Apps")
+            
+            for app_id in batch:
+                try:
+                    app_name = self.get_app_name_only(app_id)
+                    
+                    if app_name:
+                        results[app_id] = app_name
+                        logger.debug(f"✅ {app_id}: {app_name}")
+                    else:
+                        failed_apps.append(app_id)
+                        logger.warning(f"⚠️ Kein Name für App {app_id}")
+                        
+                except Exception as e:
+                    failed_apps.append(app_id)
+                    logger.error(f"❌ Fehler bei App {app_id}: {e}")
+            
+            # Pause zwischen Batches
+            if i + max_batch_size < len(app_ids):
+                logger.debug("⏳ Pause zwischen Batches...")
+                time.sleep(2)
+        
+        success_rate = len(results) / len(app_ids) * 100 if app_ids else 0
+        logger.info(f"✅ Namen-Abruf abgeschlossen: {len(results)}/{len(app_ids)} erfolgreich ({success_rate:.1f}%)")
+        
+        if failed_apps:
+            logger.warning(f"⚠️ {len(failed_apps)} Apps fehlgeschlagen: {failed_apps[:5]}{'...' if len(failed_apps) > 5 else ''}")
+        
+        return results
+    
     def validate_api_key(self) -> bool:
         """
         Validiert Steam API Key
@@ -359,8 +431,63 @@ class SteamWishlistManager:
         except requests.RequestException as e:
             logger.error(f"❌ Request Fehler bei Benutzerinfo: {e}")
             return None
+    
+    def get_owned_games(self, steam_id: str, include_appinfo: bool = True) -> List[Dict]:
+        """
+        Holt Liste der besessenen Spiele für Steam ID
+        
+        Args:
+            steam_id: Steam ID
+            include_appinfo: Ob App-Informationen inkludiert werden sollen
+            
+        Returns:
+            Liste der besessenen Spiele
+        """
+        steam_id_64 = self.get_steam_id_64(steam_id)
+        
+        if not steam_id_64:
+            return []
+        
+        self._wait_for_rate_limit()
+        
+        url = "https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/"
+        params = {
+            'key': self.api_key,
+            'steamid': steam_id_64,
+            'include_appinfo': 1 if include_appinfo else 0,
+            'format': 'json'
+        }
+        
+        try:
+            response = self.session.get(url, params=params, timeout=15)
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                if 'response' in data and 'games' in data['response']:
+                    games = data['response']['games']
+                    logger.info(f"✅ {len(games)} besessene Spiele für {steam_id} gefunden")
+                    
+                    return [{
+                        'steam_app_id': str(game['appid']),
+                        'name': game.get('name', f'Game {game["appid"]}'),
+                        'playtime_forever': game.get('playtime_forever', 0),
+                        'playtime_2weeks': game.get('playtime_2weeks', 0)
+                    } for game in games]
+                else:
+                    logger.warning(f"⚠️ Keine Spiele für {steam_id} gefunden oder Profil privat")
+                    return []
+            else:
+                logger.error(f"❌ Steam API Fehler bei besessenen Spielen: {response.status_code}")
+                return []
+                
+        except requests.RequestException as e:
+            logger.error(f"❌ Request Fehler bei besessenen Spielen: {e}")
+            return []
 
-# Utility-Funktionen für einfache Nutzung
+# ========================
+# CONVENIENCE FUNCTIONS
+# ========================
 
 def create_env_template(env_file: str = ".env") -> bool:
     """
@@ -423,3 +550,65 @@ def quick_wishlist_import(steam_id: str, api_key: str = None) -> List[Dict]:
     
     manager = SteamWishlistManager(api_key)
     return manager.get_simple_wishlist(steam_id)
+
+def bulk_get_app_names(app_ids: List[str], api_key: str = None) -> Dict[str, str]:
+    """
+    Bulk-Abfrage für App-Namen
+    
+    Args:
+        app_ids: Liste von Steam App IDs
+        api_key: Steam API Key (optional, falls in .env)
+        
+    Returns:
+        Dict mit app_id -> name Mapping
+    """
+    if api_key is None:
+        api_key = load_api_key_from_env()
+    
+    if not api_key:
+        logger.error("❌ Kein Steam API Key verfügbar")
+        return {}
+    
+    manager = SteamWishlistManager(api_key)
+    return manager.get_multiple_app_names(app_ids)
+
+def validate_steam_api_key(api_key: str = None) -> bool:
+    """
+    Validiert Steam API Key
+    
+    Args:
+        api_key: Steam API Key (optional, falls in .env)
+        
+    Returns:
+        True wenn gültig
+    """
+    if api_key is None:
+        api_key = load_api_key_from_env()
+    
+    if not api_key:
+        logger.error("❌ Kein Steam API Key verfügbar")
+        return False
+    
+    manager = SteamWishlistManager(api_key)
+    return manager.validate_api_key()
+
+def get_user_profile(steam_id: str, api_key: str = None) -> Optional[Dict]:
+    """
+    Holt Steam Benutzerprofil
+    
+    Args:
+        steam_id: Steam ID
+        api_key: Steam API Key (optional, falls in .env)
+        
+    Returns:
+        Benutzerinformationen oder None
+    """
+    if api_key is None:
+        api_key = load_api_key_from_env()
+    
+    if not api_key:
+        logger.error("❌ Kein Steam API Key verfügbar")
+        return None
+    
+    manager = SteamWishlistManager(api_key)
+    return manager.get_user_info(steam_id)

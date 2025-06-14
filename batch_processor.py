@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Batch Processor CLI - Erweiterte Verwaltung für Steam Price Tracker
-Bietet spezialisierte Befehle für Batch-Verarbeitung und Wartung
+Enhanced Batch Processor CLI - Erweiterte Verwaltung für Steam Price Tracker
+Mit App-Namen Updates und erweiterten Wartungsfunktionen
 """
 
 import sys
@@ -74,6 +74,65 @@ def cmd_run_specific(args):
     except Exception as e:
         print(f"❌ Fehler: {e}")
 
+def cmd_update_names(args):
+    """Aktualisiert App-Namen von Steam API"""
+    try:
+        from price_tracker import SteamPriceTracker
+        from steam_wishlist_manager import load_api_key_from_env
+        
+        # API Key laden
+        api_key = load_api_key_from_env()
+        if not api_key:
+            print("❌ Kein Steam API Key in .env gefunden")
+            print("💡 Füge STEAM_API_KEY=dein_key zu .env hinzu")
+            return
+        
+        tracker = SteamPriceTracker()
+        
+        if args.all:
+            # Alle Apps
+            tracked_apps = tracker.get_tracked_apps()
+            if not tracked_apps:
+                print("❌ Keine Apps im Tracking")
+                return
+            
+            app_ids = [app['steam_app_id'] for app in tracked_apps]
+            print(f"🔤 Aktualisiere Namen für ALLE {len(app_ids)} Apps...")
+            
+            result = tracker.update_app_names_from_steam(app_ids, api_key)
+        
+        elif args.generic_only:
+            # Nur Apps mit generischen Namen
+            print("🔤 Aktualisiere Namen für Apps mit generischen Namen...")
+            result = tracker.update_names_for_apps_with_generic_names(api_key)
+        
+        elif args.app_ids:
+            # Spezifische App IDs
+            app_ids = [app_id.strip() for app_id in args.app_ids.split(',') if app_id.strip()]
+            if not app_ids:
+                print("❌ Keine gültigen App IDs angegeben")
+                return
+            
+            print(f"🔤 Aktualisiere Namen für {len(app_ids)} spezifische Apps...")
+            result = tracker.update_app_names_from_steam(app_ids, api_key)
+        
+        else:
+            # Standard: nur generische Namen
+            print("🔤 Aktualisiere Namen für Apps mit generischen Namen...")
+            result = tracker.update_names_for_apps_with_generic_names(api_key)
+        
+        if result['success']:
+            print(f"✅ Namen-Update abgeschlossen:")
+            print(f"   📊 {result['updated']}/{result['total']} Apps erfolgreich ({result.get('success_rate', 0):.1f}%)")
+            print(f"   ❌ {result['failed']} Apps fehlgeschlagen")
+        else:
+            print(f"❌ Namen-Update fehlgeschlagen: {result.get('error', 'Unbekannter Fehler')}")
+            
+    except ImportError:
+        print("❌ Erforderliche Module nicht gefunden")
+    except Exception as e:
+        print(f"❌ Fehler beim Namen-Update: {e}")
+
 def cmd_show_pending(args):
     """Zeigt Apps die Updates benötigen"""
     try:
@@ -86,7 +145,7 @@ def cmd_show_pending(args):
             print("✅ Alle Apps sind aktuell!")
             return
         
-        print(f"⚠️ {len(apps)} Apps benötigen Update:")
+        print(f"⚠️ {len(apps)} Apps benötigen Preis-Update:")
         
         for i, app in enumerate(apps[:20], 1):  # Nur erste 20 anzeigen
             last_update = app.get('last_price_update', 'Nie')
@@ -97,6 +156,101 @@ def cmd_show_pending(args):
         
         if len(apps) > 20:
             print(f"   ... und {len(apps) - 20} weitere Apps")
+            
+    except ImportError:
+        print("❌ price_tracker Modul nicht gefunden")
+    except Exception as e:
+        print(f"❌ Fehler: {e}")
+
+def cmd_show_name_candidates(args):
+    """Zeigt Apps die Namen-Updates benötigen"""
+    try:
+        from price_tracker import SteamPriceTracker
+        tracker = SteamPriceTracker()
+        
+        # Apps mit generischen Namen
+        generic_apps = tracker.get_name_update_candidates()
+        
+        if not generic_apps:
+            print("✅ Alle Apps haben korrekte Namen!")
+            return
+        
+        print(f"🔤 {len(generic_apps)} Apps mit generischen Namen:")
+        
+        for i, app in enumerate(generic_apps, 1):
+            attempts = app.get('name_update_attempts', 0)
+            last_update = app.get('last_name_update', 'Nie')
+            if last_update and last_update != 'Nie':
+                last_update = last_update[:19]
+            
+            status = ""
+            if attempts > 3:
+                status = " ❌"
+            elif attempts > 0:
+                status = f" ⚠️({attempts})"
+            
+            print(f"{i:3d}. {app['name']}{status}")
+            print(f"     🆔 {app['steam_app_id']} | Hinzugefügt: {app['added_at'][:10]} | Update: {last_update}")
+        
+        # Apps die nie Namen-Updates hatten
+        if hasattr(tracker.db_manager, 'get_apps_needing_name_update'):
+            name_pending = tracker.db_manager.get_apps_needing_name_update(hours_threshold=168)  # 1 Woche
+            if name_pending:
+                print(f"\n⏰ {len(name_pending)} Apps benötigen Namen-Updates (>1 Woche alt):")
+                for app in name_pending[:10]:
+                    print(f"   • {app['name']} (ID: {app['steam_app_id']})")
+                if len(name_pending) > 10:
+                    print(f"   ... und {len(name_pending) - 10} weitere")
+            
+    except ImportError:
+        print("❌ price_tracker Modul nicht gefunden")
+    except Exception as e:
+        print(f"❌ Fehler: {e}")
+
+def cmd_show_name_history(args):
+    """Zeigt Namen-Update Historie"""
+    try:
+        from price_tracker import SteamPriceTracker
+        tracker = SteamPriceTracker()
+        
+        if not hasattr(tracker.db_manager, 'get_name_update_history'):
+            print("❌ Namen-Update Historie nicht verfügbar")
+            print("💡 Aktualisiere auf die neueste Version")
+            return
+        
+        history = tracker.db_manager.get_name_update_history(
+            steam_app_id=args.app_id,
+            limit=args.limit
+        )
+        
+        if not history:
+            if args.app_id:
+                print(f"❌ Keine Namen-Historie für App {args.app_id} gefunden")
+            else:
+                print("❌ Keine Namen-Update Historie gefunden")
+            return
+        
+        if args.app_id:
+            print(f"📝 Namen-Historie für App {args.app_id}:")
+        else:
+            print(f"📝 Letzte {len(history)} Namen-Updates:")
+        
+        print()
+        
+        for entry in history:
+            date = entry['updated_at'][:19]
+            app_id = entry['steam_app_id']
+            old_name = entry['old_name'] or 'N/A'
+            new_name = entry['new_name']
+            source = entry['update_source']
+            current_name = entry.get('current_name', new_name)
+            
+            print(f"📅 {date} | {source}")
+            print(f"   🆔 App ID: {app_id}")
+            print(f"   📝 {old_name} → {new_name}")
+            if current_name != new_name:
+                print(f"   🔄 Aktuell: {current_name}")
+            print()
             
     except ImportError:
         print("❌ price_tracker Modul nicht gefunden")
@@ -119,8 +273,44 @@ def cmd_test_single(args):
     except Exception as e:
         print(f"❌ Fehler: {e}")
 
+def cmd_test_name_fetch(args):
+    """Testet Namen-Abruf für eine einzelne App"""
+    try:
+        from steam_wishlist_manager import load_api_key_from_env, SteamWishlistManager
+        
+        # API Key laden
+        api_key = load_api_key_from_env()
+        if not api_key:
+            print("❌ Kein Steam API Key in .env gefunden")
+            return
+        
+        print(f"🧪 Teste Namen-Abruf für App ID: {args.app_id}")
+        
+        steam_manager = SteamWishlistManager(api_key)
+        app_name = steam_manager.get_app_name_only(args.app_id)
+        
+        if app_name:
+            print(f"✅ Name gefunden: {app_name}")
+            
+            # In Datenbank aktualisieren?
+            if args.update_db:
+                from price_tracker import SteamPriceTracker
+                tracker = SteamPriceTracker()
+                
+                if tracker.db_manager.update_app_name(args.app_id, app_name, 'manual_test'):
+                    print(f"✅ Name in Datenbank aktualisiert")
+                else:
+                    print(f"⚠️ Fehler beim Aktualisieren in Datenbank")
+        else:
+            print(f"❌ Kein Name für App {args.app_id} gefunden")
+            
+    except ImportError:
+        print("❌ Erforderliche Module nicht gefunden")
+    except Exception as e:
+        print(f"❌ Fehler: {e}")
+
 def cmd_maintenance(args):
-    """Führt Wartungsaufgaben aus"""
+    """Führt erweiterte Wartungsaufgaben aus"""
     try:
         from price_tracker import SteamPriceTracker
         from database_manager import DatabaseManager
@@ -128,7 +318,7 @@ def cmd_maintenance(args):
         tracker = SteamPriceTracker()
         db = tracker.db_manager
         
-        print("🔧 Starte Wartungsaufgaben...")
+        print("🔧 Starte erweiterte Wartungsaufgaben...")
         
         # Alte Snapshots bereinigen
         print("🧹 Bereinige alte Snapshots (>90 Tage)...")
@@ -151,12 +341,22 @@ def cmd_maintenance(args):
         else:
             print("   ❌ Backup fehlgeschlagen")
         
-        # Statistiken anzeigen
-        print("\n📊 Aktuelle Statistiken:")
+        # Erweiterte Statistiken anzeigen
+        print("\n📊 Erweiterte Statistiken:")
         stats = db.get_statistics()
         print(f"   📚 Getrackte Apps: {stats['tracked_apps']}")
         print(f"   📈 Gesamt Snapshots: {stats['total_snapshots']:,}")
         print(f"   🏪 Stores: {len(stats['stores_tracked'])}")
+        
+        # Namen-Update Statistiken
+        if 'name_update_stats' in stats:
+            name_stats = stats['name_update_stats']
+            print(f"\n🔤 Namen-Update Statistiken:")
+            print(f"   📝 Apps mit generischen Namen: {name_stats['apps_with_generic_names']}")
+            print(f"   ❓ Apps ohne Namen-Update: {name_stats['apps_never_updated']}")
+            print(f"   🔄 Gesamt Namen-Updates: {name_stats['total_name_updates']}")
+            print(f"   📊 Namen-Updates (24h): {name_stats['updates_last_24h']}")
+            print(f"   ❌ Fehlgeschlagene Updates: {name_stats['failed_updates']}")
         
     except ImportError:
         print("❌ Benötigte Module nicht gefunden")
@@ -242,7 +442,17 @@ def cmd_stats(args):
         
         # Apps die Updates benötigen
         pending_apps = tracker.get_apps_needing_price_update(args.hours)
-        print(f"\n⏰ Apps die Updates benötigen (>{args.hours}h): {len(pending_apps)}")
+        print(f"\n⏰ Apps die Preis-Updates benötigen (>{args.hours}h): {len(pending_apps)}")
+        
+        # Namen-Update Statistiken
+        if 'name_update_stats' in stats:
+            name_stats = stats['name_update_stats']
+            print(f"\n🔤 NAMEN-UPDATE STATISTIKEN:")
+            print(f"   📝 Apps mit generischen Namen: {name_stats['apps_with_generic_names']}")
+            print(f"   ❓ Apps ohne Namen-Update: {name_stats['apps_never_updated']}")
+            print(f"   🔄 Gesamt Namen-Updates: {name_stats['total_name_updates']}")
+            print(f"   📊 Namen-Updates (24h): {name_stats['updates_last_24h']}")
+            print(f"   ❌ Fehlgeschlagene Updates: {name_stats['failed_updates']}")
         
         # Beste Deals
         deals = tracker.get_current_best_deals(limit=5)
@@ -267,7 +477,7 @@ def cmd_stats(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Steam Price Tracker - Batch Processing CLI",
+        description="Enhanced Steam Price Tracker - Batch Processing CLI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Beispiele:
@@ -275,6 +485,11 @@ Beispiele:
   %(prog)s specific --app-ids "413150,105600"  - Update für spezifische Apps
   %(prog)s pending --hours 12        - Zeige Apps die Updates benötigen
   %(prog)s test --app-id 413150       - Teste Preisabfrage für eine App
+  %(prog)s update-names --generic-only - Namen für Apps mit generischen Namen
+  %(prog)s update-names --all         - Namen für ALLE Apps aktualisieren
+  %(prog)s name-candidates            - Apps mit generischen Namen anzeigen
+  %(prog)s name-history --limit 20    - Namen-Update Historie anzeigen
+  %(prog)s test-name --app-id 413150  - Teste Namen-Abruf für eine App
   %(prog)s maintenance                - Wartungsaufgaben ausführen
   %(prog)s export-all                 - Alle Apps als CSV exportieren
   %(prog)s stats --hours 24           - Detaillierte Statistiken anzeigen
@@ -295,6 +510,29 @@ Beispiele:
                                 help='Komma-getrennte Liste von Steam App IDs')
     specific_parser.set_defaults(func=cmd_run_specific)
     
+    # Name Update Commands
+    name_parser = subparsers.add_parser('update-names', help='App-Namen von Steam aktualisieren')
+    name_group = name_parser.add_mutually_exclusive_group()
+    name_group.add_argument('--all', action='store_true', 
+                           help='Namen für ALLE Apps aktualisieren')
+    name_group.add_argument('--generic-only', action='store_true',
+                           help='Nur Apps mit generischen Namen aktualisieren')
+    name_group.add_argument('--app-ids', 
+                           help='Komma-getrennte Liste von Steam App IDs')
+    name_parser.set_defaults(func=cmd_update_names)
+    
+    # Name Candidates Command
+    candidates_parser = subparsers.add_parser('name-candidates', 
+                                            help='Apps mit generischen Namen anzeigen')
+    candidates_parser.set_defaults(func=cmd_show_name_candidates)
+    
+    # Name History Command
+    history_parser = subparsers.add_parser('name-history', help='Namen-Update Historie anzeigen')
+    history_parser.add_argument('--app-id', help='App ID für spezifische Historie')
+    history_parser.add_argument('--limit', type=int, default=50,
+                               help='Anzahl Einträge (Standard: 50)')
+    history_parser.set_defaults(func=cmd_show_name_history)
+    
     # Pending Command
     pending_parser = subparsers.add_parser('pending', help='Zeige Apps die Updates benötigen')
     pending_parser.add_argument('--hours', type=int, default=6,
@@ -307,8 +545,16 @@ Beispiele:
                            help='Steam App ID zum Testen')
     test_parser.set_defaults(func=cmd_test_single)
     
+    # Test Name Command
+    test_name_parser = subparsers.add_parser('test-name', help='Teste Namen-Abruf für eine App')
+    test_name_parser.add_argument('--app-id', required=True,
+                                 help='Steam App ID zum Testen')
+    test_name_parser.add_argument('--update-db', action='store_true',
+                                 help='Namen in Datenbank aktualisieren')
+    test_name_parser.set_defaults(func=cmd_test_name_fetch)
+    
     # Maintenance Command
-    maintenance_parser = subparsers.add_parser('maintenance', help='Wartungsaufgaben ausführen')
+    maintenance_parser = subparsers.add_parser('maintenance', help='Erweiterte Wartungsaufgaben')
     maintenance_parser.set_defaults(func=cmd_maintenance)
     
     # Export Command
@@ -335,7 +581,7 @@ Beispiele:
         print("\n⏹️ Abgebrochen durch Benutzer")
     except Exception as e:
         print(f"❌ Unerwarteter Fehler: {e}")
-        logger.exception("Unerwarteter Fehler in batch_processor")
+        logger.exception("Unerwarteter Fehler in enhanced_batch_processor")
 
 if __name__ == "__main__":
     main()
