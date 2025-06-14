@@ -2,6 +2,7 @@
 **/.env
 **/.env.*
 **/.local
+/logs
 
 # Node.js
 **/node_modules/

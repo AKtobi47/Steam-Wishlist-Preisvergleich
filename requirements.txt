@@ -1,6 +1,7 @@
 # Steam Price Tracker - Python Dependencies
+# Core Requirements
 
-# Core HTTP requests für CheapShark und Steam APIs
+# HTTP requests für CheapShark und Steam APIs
 requests>=2.31.0
 
 # Scheduling für automatische Preisabfragen
@@ -9,6 +10,21 @@ schedule>=1.2.0
 # Environment variable handling
 python-dotenv>=1.0.0
 
+# Database (SQLite ist in Python enthalten, aber für erweiterte Features)
+# sqlite3 - built-in
+
+# JSON handling (built-in, aber für Validierung)
+# json - built-in
+
+# Date/Time handling (built-in)
+# datetime - built-in
+
+# Path handling (built-in)
+# pathlib - built-in
+
+# Threading (built-in)
+# threading - built-in
+
 # Optional: Enhanced logging und Output
 colorlog>=6.7.0
 rich>=13.7.0
@@ -16,17 +32,45 @@ rich>=13.7.0
 # Optional: Progress bars für lange Operationen
 tqdm>=4.66.0
 
-# Optional: Für CSV-Export (ist standardmäßig in Python enthalten)
-# csv - built-in
+# Optional: Für erweiterte CSV-Verarbeitung (csv ist built-in)
+pandas>=2.0.0
 
-# Optional: Für JSON-Verarbeitung (ist standardmäßig in Python enthalten)  
-# json - built-in
+# Optional: Für Konfigurationsvalidierung
+jsonschema>=4.17.0
 
-# Development dependencies (optional)
+# Development dependencies (nur für Entwicklung)
 pytest>=7.4.0
+pytest-cov>=4.1.0
 black>=23.0.0
 flake8>=6.0.0
+mypy>=1.5.0
 
-# Optional: Für Datenanalyse und Charts (falls gewünscht)
-# pandas>=2.0.0
-# matplotlib>=3.7.0
+# Optional: Für erweiterte API-Features
+httpx>=0.24.0
+aiohttp>=3.8.0
+
+# Optional: Für Datenanalyse und Charts
+matplotlib>=3.7.0
+seaborn>=0.12.0
+plotly>=5.15.0
+
+# Optional: Für erweiterte Datenverarbeitung
+numpy>=1.24.0
+scipy>=1.11.0
+
+# Optional: Für Backup und Kompression
+zipfile36>=0.1.3
+
+# Optional: Für erweiterte Logging
+structlog>=23.1.0
+
+# Optional: Für Performance Monitoring
+psutil>=5.9.0
+
+# Optional: Für Memory-effiziente Verarbeitung großer Datasets
+dask>=2023.7.0
+
+# Pinned versions für Stabilität (empfohlen für Produktion)
+# requests==2.31.0
+# schedule==1.2.0
+# python-dotenv==1.0.0

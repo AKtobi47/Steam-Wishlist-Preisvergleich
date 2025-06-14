@@ -1,44 +1,112 @@
 """
 Steam Price Tracker - Hauptanwendung
-Vereinfachtes System für direktes CheapShark-Preis-Tracking
-Basiert auf Steam-Wishlist-Manager aber fokussiert auf Preise
+Vollständige CLI-Implementation mit allen Funktionen
 """
 
+import os
 import sys
-import time
-from datetime import datetime
 from pathlib import Path
-from price_tracker import SteamPriceTracker
-from database_manager import DatabaseManager
-from steam_wishlist_manager import SteamWishlistManager, load_api_key_from_env
+from datetime import datetime
+import logging
 
-def create_env_template(env_file=".env") -> bool:
-    """Erstellt eine .env-Template-Datei falls sie nicht existiert"""
+# Logging Setup
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+def load_api_key_from_env(env_file: str = ".env") -> str:
+    """Lädt Steam API Key aus .env-Datei"""
     env_path = Path(env_file)
     
-    if env_path.exists():
+    if not env_path.exists():
+        return None
+    
+    try:
+        with open(env_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    if key.strip() == 'STEAM_API_KEY':
+                        api_key = value.strip().strip('"').strip("'")
+                        if api_key and api_key != 'your_steam_api_key_here':
+                            return api_key
+        return None
+    except Exception as e:
+        logger.error(f"❌ Fehler beim Lesen der .env-Datei: {e}")
+        return None
+
+def create_env_template() -> bool:
+    """Erstellt .env Template"""
+    env_file = Path(".env")
+    
+    if env_file.exists():
+        print("✅ .env-Datei bereits vorhanden")
         return False
     
     try:
-        template_content = """# Steam Price Tracker Konfiguration
-# Trage hier deinen Steam Web API Key ein
-# Erhältlich unter: https://steamcommunity.com/dev/apikey
+        template_content = """# Steam Price Tracker Configuration
+# Hole deinen Steam API Key von: https://steamcommunity.com/dev/apikey
+
 STEAM_API_KEY=your_steam_api_key_here
 
-# Beispiel:
-# STEAM_API_KEY=ABCD1234567890EFGH
+# Optional: Weitere Konfiguration
+TRACKER_DB_PATH=steam_price_tracker.db
+TRACKING_INTERVAL_HOURS=6
+CHEAPSHARK_RATE_LIMIT=1.5
 """
         
-        with open(env_path, 'w', encoding='utf-8') as f:
+        with open(env_file, 'w', encoding='utf-8') as f:
             f.write(template_content)
         
-        print(f"📝 .env-Template erstellt: {env_file}")
-        print("   Bitte trage deinen Steam API Key ein und starte das Programm erneut.")
+        print("✅ .env Template erstellt")
+        print("💡 WICHTIG: Trage deinen Steam API Key in die .env-Datei ein!")
+        print("🔗 API Key holen: https://steamcommunity.com/dev/apikey")
+        print("📝 Dann starte das Programm erneut")
         
         return True
         
     except Exception as e:
         print(f"❌ Fehler beim Erstellen der .env-Datei: {e}")
+        return False
+
+def safe_get_scheduler_status(price_tracker):
+    """Sichere Scheduler-Status Abfrage mit Fallback"""
+    try:
+        return price_tracker.get_scheduler_status()
+    except AttributeError:
+        # Fallback falls Methode nicht existiert
+        return {
+            'scheduler_running': getattr(price_tracker, 'scheduler_running', False),
+            'next_run': 'N/A',
+            'jobs_count': 0
+        }
+
+def safe_start_scheduler(price_tracker, interval_hours=6):
+    """Sicherer Scheduler-Start mit Fallback"""
+    try:
+        if hasattr(price_tracker, 'start_scheduler'):
+            price_tracker.start_scheduler(interval_hours)
+        elif hasattr(price_tracker, 'start_price_tracking_scheduler'):
+            price_tracker.start_price_tracking_scheduler(interval_hours=interval_hours)
+        else:
+            raise AttributeError("Keine Scheduler-Start-Methode gefunden")
+        return True
+    except Exception as e:
+        print(f"❌ Fehler beim Starten des Schedulers: {e}")
+        return False
+
+def safe_stop_scheduler(price_tracker):
+    """Sicherer Scheduler-Stop mit Fallback"""
+    try:
+        if hasattr(price_tracker, 'stop_scheduler'):
+            price_tracker.stop_scheduler()
+        elif hasattr(price_tracker, 'stop_price_tracking_scheduler'):
+            price_tracker.stop_price_tracking_scheduler()
+        else:
+            raise AttributeError("Keine Scheduler-Stop-Methode gefunden")
+        return True
+    except Exception as e:
+        print(f"❌ Fehler beim Stoppen des Schedulers: {e}")
         return False
 
 def main():
@@ -66,6 +134,10 @@ def main():
     
     # Komponenten initialisieren
     try:
+        from database_manager import DatabaseManager
+        from price_tracker import SteamPriceTracker
+        from steam_wishlist_manager import SteamWishlistManager
+        
         db_manager = DatabaseManager()
         price_tracker = SteamPriceTracker(db_manager)
         wishlist_manager = SteamWishlistManager(api_key)
@@ -79,12 +151,11 @@ def main():
         # Aktuelle Statistiken anzeigen
         try:
             stats = price_tracker.get_statistics()
-            scheduler_status = price_tracker.get_scheduler_status()
+            scheduler_status = safe_get_scheduler_status(price_tracker)
             
             print(f"\n📊 AKTUELLER STATUS:")
             print(f"📚 Getrackte Apps: {stats['tracked_apps']}")
-            # Korrigiert: verwende den richtigen Key
-            total_snapshots = stats.get('total_snapshots', stats.get('total_price_snapshots', 0))
+            total_snapshots = stats.get('total_snapshots', 0)
             print(f"📈 Gesamt Preis-Snapshots: {total_snapshots:,}")
             print(f"🏪 Stores: {', '.join(stats['stores_tracked'])}")
             
@@ -115,9 +186,9 @@ def main():
         print("7. 🚀 Automatisches Tracking starten/stoppen")
         print("8. 📋 Alle getrackte Apps anzeigen")
         print("9. 🗑️ App aus Tracking entfernen")
-        print("10. 📄 Preisverlauf als CSV exportieren")
-        print("11. 🔧 Datenbank-Wartung")
-        print("12. ❌ Beenden")
+        print("10. 📄 CSV-Export für App erstellen")
+        print("11. 📊 Detaillierte Statistiken")
+        print("12. 👋 Beenden")
         
         choice = input("\nWählen Sie eine Aktion (1-12): ").strip()
         
@@ -126,139 +197,215 @@ def main():
             print("\n📱 APP MANUELL HINZUFÜGEN")
             print("=" * 30)
             
-            # Option 1: Steam App ID direkt
-            print("Option 1: Steam App ID direkt eingeben")
-            app_id = input("Steam App ID eingeben (oder Enter für Suche): ").strip()
+            app_id = input("Steam App ID eingeben: ").strip()
+            if not app_id:
+                print("❌ Keine App ID angegeben")
+                continue
             
-            if app_id and app_id.isdigit():
-                app_name = input("App Name eingeben (optional): ").strip()
-                if not app_name:
-                    app_name = f"App_{app_id}"
+            name = input("App Name (optional): ").strip()
+            if not name:
+                name = f"Game {app_id}"
+            
+            if price_tracker.add_app_to_tracking(app_id, name):
+                print(f"✅ {name} ({app_id}) zum Tracking hinzugefügt")
                 
-                if price_tracker.add_app_to_tracking(app_id, app_name):
-                    print(f"✅ App {app_name} zum Tracking hinzugefügt")
-                else:
-                    print(f"❌ Konnte App nicht hinzufügen")
-            else:
-                # Option 2: Steam App suchen
-                print("\nOption 2: Nach Steam App suchen")
-                search_term = input("App Name zum Suchen eingeben: ").strip()
-                
-                if search_term:
-                    search_results = wishlist_manager.search_steam_app(search_term)
-                    
-                    if search_results:
-                        print(f"\n🔍 Gefundene Apps ({len(search_results)}):")
-                        for i, app in enumerate(search_results, 1):
-                            print(f"{i:2d}. {app['name']} (ID: {app['appid']})")
-                        
-                        try:
-                            choice_idx = int(input("Wählen Sie eine App (Nummer): ").strip()) - 1
-                            if 0 <= choice_idx < len(search_results):
-                                selected_app = search_results[choice_idx]
-                                
-                                if price_tracker.add_app_to_tracking(str(selected_app['appid']), selected_app['name']):
-                                    print(f"✅ App {selected_app['name']} zum Tracking hinzugefügt")
-                                else:
-                                    print(f"❌ Konnte App nicht hinzufügen")
-                            else:
-                                print("❌ Ungültige Auswahl")
-                        except ValueError:
-                            print("❌ Ungültige Eingabe")
+                # Sofort Preise abrufen?
+                fetch_now = input("Preise sofort abrufen? (j/n): ").lower().strip()
+                if fetch_now in ['j', 'ja', 'y', 'yes']:
+                    if price_tracker.track_single_app_price(app_id):
+                        print("✅ Preise erfolgreich abgerufen")
                     else:
-                        print("❌ Keine Apps gefunden")
+                        print("❌ Preisabruf fehlgeschlagen")
+            else:
+                print("❌ Fehler beim Hinzufügen der App")
         
         elif choice == "2":
             # Steam Wishlist importieren
             print("\n📥 STEAM WISHLIST IMPORTIEREN")
             print("=" * 35)
             
-            steam_id = input("Steam ID (17 Ziffern) eingeben: ").strip()
-            
-            if not steam_id or len(steam_id) != 17 or not steam_id.isdigit():
-                print("❌ Ungültige Steam ID")
+            steam_id = input("Steam ID oder Custom URL eingeben: ").strip()
+            if not steam_id:
+                print("❌ Keine Steam ID angegeben")
                 continue
             
-            print(f"🔄 Importiere Wishlist für Steam ID {steam_id}...")
+            print("🔍 Importiere Wishlist...")
             result = price_tracker.import_steam_wishlist(steam_id, api_key)
             
-            if result.get('success'):
-                print(f"✅ {result['imported']}/{result['total_items']} Apps importiert")
+            if result['success']:
+                print(f"✅ Wishlist-Import erfolgreich:")
+                print(f"   📥 {result['imported']} neue Apps hinzugefügt")
+                print(f"   ⏭️ {result.get('skipped_existing', 0)} bereits vorhanden")
+                print(f"   📊 {result['total_items']} Apps insgesamt")
+                
+                if result.get('errors'):
+                    print(f"   ⚠️ {len(result['errors'])} Fehler aufgetreten")
+                
+                if result['imported'] > 0:
+                    fetch_all = input("Preise für alle neuen Apps abrufen? (j/n): ").lower().strip()
+                    if fetch_all in ['j', 'ja', 'y', 'yes']:
+                        print("🔄 Hole Preise für alle neuen Apps...")
+                        # Dies könnte eine Weile dauern
+                        batch_result = price_tracker.process_all_pending_apps_optimized(hours_threshold=999)  # Alle Apps
+                        if batch_result.get('success'):
+                            print(f"✅ Preise für {batch_result['total_successful']} Apps abgerufen")
+                        else:
+                            print("❌ Fehler beim Abrufen der Preise")
             else:
-                print(f"❌ Import fehlgeschlagen: {result.get('error', 'Unbekannter Fehler')}")
+                print(f"❌ Wishlist-Import fehlgeschlagen: {result.get('error')}")
         
         elif choice == "3":
             # Preise für App anzeigen
-            print("\n🔍 AKTUELLE PREISE ANZEIGEN")
+            print("\n🔍 PREISE FÜR APP ANZEIGEN")
             print("=" * 30)
             
-            app_id = input("Steam App ID eingeben: ").strip()
+            tracked_apps = price_tracker.get_tracked_apps()
             
-            if app_id.isdigit():
-                price_tracker.print_price_summary(app_id)
-            else:
-                print("❌ Ungültige App ID")
+            if not tracked_apps:
+                print("❌ Keine Apps im Tracking")
+                continue
+            
+            print(f"\n📋 GETRACKTE APPS ({len(tracked_apps)}):")
+            for i, app in enumerate(tracked_apps[:20], 1):
+                print(f"{i:2d}. {app['name']} (ID: {app['steam_app_id']})")
+            
+            if len(tracked_apps) > 20:
+                print(f"    ... und {len(tracked_apps) - 20} weitere")
+            
+            try:
+                choice_idx = int(input("App auswählen (Nummer): ").strip()) - 1
+                if 0 <= choice_idx < len(tracked_apps):
+                    selected_app = tracked_apps[choice_idx]
+                    app_id = selected_app['steam_app_id']
+                    
+                    # Aktuelle Preise anzeigen
+                    latest_prices = price_tracker.get_latest_prices(app_id)
+                    
+                    if latest_prices:
+                        print(f"\n💰 AKTUELLE PREISE: {selected_app['name']}")
+                        print(f"Letzte Aktualisierung: {latest_prices['timestamp'][:19]}")
+                        print("=" * 50)
+                        
+                        stores = ['steam', 'greenmangaming', 'gog', 'humblestore', 'fanatical', 'gamesplanet']
+                        store_names = ['Steam', 'GreenManGaming', 'GOG', 'HumbleStore', 'Fanatical', 'GamesPlanet']
+                        
+                        for store, store_name in zip(stores, store_names):
+                            price_col = f"{store}_price"
+                            available_col = f"{store}_available"
+                            discount_col = f"{store}_discount_percent"
+                            
+                            if latest_prices.get(available_col):
+                                price = latest_prices.get(price_col, 0)
+                                discount = latest_prices.get(discount_col, 0)
+                                
+                                status = f"€{price:.2f}"
+                                if discount > 0:
+                                    status += f" (-{discount}%)"
+                                
+                                print(f"{store_name:15}: {status}")
+                            else:
+                                print(f"{store_name:15}: Nicht verfügbar")
+                    else:
+                        print("❌ Keine Preisdaten verfügbar")
+                        
+                        # Preise jetzt abrufen?
+                        fetch_now = input("Preise jetzt abrufen? (j/n): ").lower().strip()
+                        if fetch_now in ['j', 'ja', 'y', 'yes']:
+                            if price_tracker.track_single_app_price(app_id):
+                                print("✅ Preise erfolgreich abgerufen")
+                            else:
+                                print("❌ Preisabruf fehlgeschlagen")
+                else:
+                    print("❌ Ungültige Auswahl")
+            except ValueError:
+                print("❌ Ungültige Eingabe")
         
         elif choice == "4":
-            # Beste aktuelle Deals
+            # Beste aktuelle Deals anzeigen
             print("\n📊 BESTE AKTUELLE DEALS")
             print("=" * 25)
             
-            limit = input("Wie viele Deals anzeigen? (Standard: 10): ").strip()
-            try:
-                limit = int(limit) if limit else 10
-            except ValueError:
-                limit = 10
-            
-            deals = price_tracker.get_current_best_deals(limit)
+            deals = price_tracker.get_current_best_deals(limit=15)
             
             if deals:
-                print(f"\n🏆 TOP {len(deals)} DEALS:")
+                print(f"🏆 Top {len(deals)} Deals:")
+                print()
+                
                 for i, deal in enumerate(deals, 1):
-                    print(f"{i:2d}. {deal['game_title']}: €{deal['price']:.2f} "
-                          f"(-{deal['discount_percent']}%) bei {deal['store']}")
+                    print(f"{i:2d}. {deal['game_title']}")
+                    print(f"    💰 €{deal['best_price']:.2f} (-{deal['discount_percent']}%) bei {deal['best_store']}")
+                    print(f"    🆔 App ID: {deal['steam_app_id']}")
+                    print()
             else:
                 print("❌ Keine Deals gefunden")
+                print("💡 Führe zuerst Preisabfragen durch")
         
         elif choice == "5":
-            # Preisverlauf anzeigen
-            print("\n📈 PREISVERLAUF ANZEIGEN")
+            # Preisverlauf für App anzeigen
+            print("\n📈 PREISVERLAUF FÜR APP")
             print("=" * 25)
             
-            app_id = input("Steam App ID eingeben: ").strip()
+            tracked_apps = price_tracker.get_tracked_apps()
             
-            if app_id.isdigit():
-                days = input("Anzahl Tage zurück (Standard: 30): ").strip()
-                try:
-                    days = int(days) if days else 30
-                except ValueError:
-                    days = 30
-                
-                history = price_tracker.get_price_history(app_id, days_back=days)
-                
-                if history:
-                    app_name = history[0]['game_title']
-                    print(f"\n📈 PREISVERLAUF: {app_name}")
-                    print(f"📊 {len(history)} Snapshots in den letzten {days} Tagen")
+            if not tracked_apps:
+                print("❌ Keine Apps im Tracking")
+                continue
+            
+            print(f"\n📋 GETRACKTE APPS ({len(tracked_apps)}):")
+            for i, app in enumerate(tracked_apps[:10], 1):
+                print(f"{i:2d}. {app['name']} (ID: {app['steam_app_id']})")
+            
+            try:
+                choice_idx = int(input("App auswählen (Nummer): ").strip()) - 1
+                if 0 <= choice_idx < len(tracked_apps):
+                    selected_app = tracked_apps[choice_idx]
+                    app_id = selected_app['steam_app_id']
                     
-                    # Zeige die letzten 5 Snapshots
-                    for snapshot in history[:5]:
-                        date = snapshot['timestamp'][:10]
-                        print(f"\n📅 {date}:")
+                    days = input("Zeitraum in Tagen (Standard: 30): ").strip()
+                    try:
+                        days = int(days) if days else 30
+                    except ValueError:
+                        days = 30
+                    
+                    history = price_tracker.get_price_history(app_id, days_back=days)
+                    
+                    if history:
+                        print(f"\n📈 PREISVERLAUF: {selected_app['name']} (letzte {days} Tage)")
+                        print("=" * 60)
                         
-                        for store, price_info in snapshot['prices'].items():
-                            if price_info['available'] and price_info['price']:
-                                price = price_info['price']
-                                discount = price_info['discount_percent']
+                        # Zeige nur die letzten 10 Einträge
+                        for snapshot in history[:10]:
+                            date = snapshot['timestamp'][:10]
+                            time = snapshot['timestamp'][11:16]
+                            
+                            print(f"\n📅 {date} {time}:")
+                            
+                            stores = ['steam', 'greenmangaming', 'gog', 'humblestore', 'fanatical', 'gamesplanet']
+                            store_names = ['Steam', 'GreenManGaming', 'GOG', 'HumbleStore', 'Fanatical', 'GamesPlanet']
+                            
+                            for store, store_name in zip(stores, store_names):
+                                price_col = f"{store}_price"
+                                available_col = f"{store}_available"
+                                discount_col = f"{store}_discount_percent"
                                 
-                                if discount > 0:
-                                    print(f"   {store:15}: €{price:.2f} (-{discount}%)")
-                                else:
-                                    print(f"   {store:15}: €{price:.2f}")
+                                if snapshot.get(available_col):
+                                    price = snapshot.get(price_col, 0)
+                                    discount = snapshot.get(discount_col, 0)
+                                    
+                                    status = f"€{price:.2f}"
+                                    if discount > 0:
+                                        status += f" (-{discount}%)"
+                                    
+                                    print(f"  {store_name:15}: {status}")
+                        
+                        if len(history) > 10:
+                            print(f"\n... und {len(history) - 10} weitere Einträge")
+                    else:
+                        print("❌ Keine Preisverlauf-Daten verfügbar")
                 else:
-                    print("❌ Keine Preisdaten gefunden")
-            else:
-                print("❌ Ungültige App ID")
+                    print("❌ Ungültige Auswahl")
+            except ValueError:
+                print("❌ Ungültige Eingabe")
         
         elif choice == "6":
             # Preise manuell aktualisieren
@@ -312,15 +459,16 @@ def main():
             print("\n🚀 AUTOMATISCHES TRACKING")
             print("=" * 30)
             
-            scheduler_status = price_tracker.get_scheduler_status()
+            scheduler_status = safe_get_scheduler_status(price_tracker)
             
             if scheduler_status['scheduler_running']:
                 print("🔄 Automatisches Tracking läuft bereits")
+                print(f"   ⏰ Nächster Lauf: {scheduler_status.get('next_run', 'N/A')}")
                 stop = input("Tracking stoppen? (j/n): ").lower().strip()
                 
                 if stop in ['j', 'ja', 'y', 'yes']:
-                    price_tracker.stop_scheduler()
-                    print("⏹️ Automatisches Tracking gestoppt")
+                    if safe_stop_scheduler(price_tracker):
+                        print("⏹️ Automatisches Tracking gestoppt")
             else:
                 print("⏸️ Automatisches Tracking ist inaktiv")
                 start = input("Tracking starten? (j/n): ").lower().strip()
@@ -332,8 +480,8 @@ def main():
                     except ValueError:
                         interval_hours = 6
                     
-                    price_tracker.start_scheduler(interval_hours)
-                    print(f"▶️ Automatisches Tracking gestartet (alle {interval_hours}h)")
+                    if safe_start_scheduler(price_tracker, interval_hours):
+                        print(f"▶️ Automatisches Tracking gestartet (alle {interval_hours}h)")
         
         elif choice == "8":
             # Alle getrackte Apps anzeigen
@@ -378,7 +526,7 @@ def main():
                     confirm = input(f"'{selected_app['name']}' wirklich entfernen? (j/n): ").lower().strip()
                     if confirm in ['j', 'ja', 'y', 'yes']:
                         if price_tracker.remove_app_from_tracking(selected_app['steam_app_id']):
-                            print(f"✅ App {selected_app['name']} entfernt")
+                            print(f"✅ {selected_app['name']} aus Tracking entfernt")
                         else:
                             print("❌ Fehler beim Entfernen")
                 else:
@@ -387,9 +535,9 @@ def main():
                 print("❌ Ungültige Eingabe")
         
         elif choice == "10":
-            # CSV Export
-            print("\n📄 PREISVERLAUF CSV EXPORT")
-            print("=" * 30)
+            # CSV-Export für App erstellen
+            print("\n📄 CSV-EXPORT FÜR APP")
+            print("=" * 25)
             
             tracked_apps = price_tracker.get_tracked_apps()
             
@@ -397,8 +545,8 @@ def main():
                 print("❌ Keine Apps im Tracking")
                 continue
             
-            print(f"📋 GETRACKTE APPS ({len(tracked_apps)}):")
-            for i, app in enumerate(tracked_apps, 1):
+            print(f"\n📋 GETRACKTE APPS ({len(tracked_apps)}):")
+            for i, app in enumerate(tracked_apps[:10], 1):
                 print(f"{i:2d}. {app['name']} (ID: {app['steam_app_id']})")
             
             try:
@@ -407,85 +555,52 @@ def main():
                     selected_app = tracked_apps[choice_idx]
                     app_id = selected_app['steam_app_id']
                     
-                    print(f"📄 Exportiere Preisverlauf für {selected_app['name']}...")
-                    csv_file = price_tracker.export_price_history_csv(app_id)
+                    print(f"📄 Erstelle CSV-Export für {selected_app['name']}...")
+                    
+                    # Erstelle exports Verzeichnis falls nicht vorhanden
+                    Path("exports").mkdir(exist_ok=True)
+                    
+                    output_file = f"exports/price_history_{app_id}_{datetime.now().strftime('%Y%m%d')}.csv"
+                    csv_file = price_tracker.export_price_history_csv(app_id, output_file)
                     
                     if csv_file:
-                        print(f"✅ CSV exportiert: {csv_file}")
+                        print(f"✅ CSV-Export erstellt: {csv_file}")
                     else:
-                        print("❌ Export fehlgeschlagen")
+                        print("❌ CSV-Export fehlgeschlagen (keine Daten?)")
                 else:
                     print("❌ Ungültige Auswahl")
             except ValueError:
                 print("❌ Ungültige Eingabe")
         
         elif choice == "11":
-            # Datenbank-Wartung
-            print("\n🔧 DATENBANK-WARTUNG")
-            print("=" * 20)
+            # Detaillierte Statistiken
+            print("\n📊 DETAILLIERTE STATISTIKEN")
+            print("=" * 30)
             
-            print("1. 🧹 Alte Preisdaten bereinigen (>90 Tage)")
-            print("2. 💾 Datenbank-Backup erstellen")
-            print("3. 🔧 Datenbank optimieren (VACUUM)")
-            print("4. 📄 Alle Daten als JSON exportieren")
-            print("5. 📊 Detaillierte Statistiken")
-            
-            maintenance_choice = input("Wartungsoption wählen (1-5): ").strip()
-            
-            if maintenance_choice == "1":
-                print("🧹 Bereinige alte Preisdaten...")
-                db_manager.cleanup_old_prices(days=90)
-                print("✅ Bereinigung abgeschlossen")
-            
-            elif maintenance_choice == "2":
-                print("💾 Erstelle Datenbank-Backup...")
-                backup_file = db_manager.backup_database()
-                if backup_file:
-                    print(f"✅ Backup erstellt: {backup_file}")
+            try:
+                stats = price_tracker.get_statistics()
+                
+                print(f"📚 Getrackte Apps: {stats['tracked_apps']}")
+                print(f"📈 Gesamt Preis-Snapshots: {stats.get('total_snapshots', 0):,}")
+                print(f"🏪 Getrackte Stores: {len(stats['stores_tracked'])}")
+                print(f"    {', '.join(stats['stores_tracked'])}")
+                
+                if stats.get('oldest_snapshot'):
+                    print(f"📅 Ältester Snapshot: {stats['oldest_snapshot'][:19]}")
                 else:
-                    print("❌ Backup fehlgeschlagen")
-            
-            elif maintenance_choice == "3":
-                print("🔧 Optimiere Datenbank...")
-                db_manager.vacuum_database()
-                print("✅ Optimierung abgeschlossen")
-            
-            elif maintenance_choice == "4":
-                print("📄 Exportiere alle Daten...")
-                export_file = db_manager.export_all_price_data()
-                if export_file:
-                    print(f"✅ Export erstellt: {export_file}")
+                    print("📅 Ältester Snapshot: N/A")
+                
+                if stats.get('newest_snapshot'):
+                    print(f"📅 Neuester Snapshot: {stats['newest_snapshot'][:19]}")
                 else:
-                    print("❌ Export fehlgeschlagen")
-            
-            elif maintenance_choice == "5":
-                # Detaillierte Statistiken
-                try:
-                    detailed_stats = db_manager.get_tracking_statistics()
-                    
-                    print(f"\n📊 DETAILLIERTE STATISTIKEN:")
-                    print(f"=" * 30)
-                    print(f"📚 Getrackte Apps: {detailed_stats['tracked_apps']}")
-                    print(f"📈 Gesamt Snapshots: {detailed_stats['total_snapshots']:,}")
-                    print(f"📊 Snapshots (24h): {detailed_stats['snapshots_last_24h']}")
-                    
-                    if detailed_stats['oldest_snapshot']:
-                        print(f"📅 Ältester Snapshot: {detailed_stats['oldest_snapshot'][:19]}")
-                    else:
-                        print("📅 Ältester Snapshot: N/A")
-                        
-                    if detailed_stats['newest_snapshot']:
-                        print(f"📅 Neuester Snapshot: {detailed_stats['newest_snapshot'][:19]}")
-                    else:
-                        print("📅 Neuester Snapshot: N/A")
-                        
-                    print(f"🚨 Aktive Alerts: {detailed_stats['active_alerts']}")
-                    
-                except Exception as e:
-                    print(f"❌ Fehler beim Laden der Statistiken: {e}")
-            
-            else:
-                print("❌ Ungültige Auswahl")
+                    print("📅 Neuester Snapshot: N/A")
+                
+                # Weitere Details aus Datenbank
+                total_snapshots = price_tracker.db_manager.get_total_price_snapshots()
+                print(f"🗄️ Datenbank Snapshots: {total_snapshots:,}")
+                
+            except Exception as e:
+                print(f"❌ Fehler beim Laden der Statistiken: {e}")
         
         elif choice == "12":
             # Beenden
@@ -493,13 +608,12 @@ def main():
             print("=" * 10)
             
             # Scheduler stoppen falls aktiv
-            scheduler_status = price_tracker.get_scheduler_status()
+            scheduler_status = safe_get_scheduler_status(price_tracker)
             if scheduler_status['scheduler_running']:
                 print("⏹️ Stoppe automatisches Tracking...")
-                price_tracker.stop_scheduler()
+                safe_stop_scheduler(price_tracker)
             
             print("💾 Datenbankverbindungen werden automatisch geschlossen...")
-            # Hinweis: SQLite-Verbindungen werden über Context Manager automatisch geschlossen
             
             print("✅ Steam Price Tracker beendet. Auf Wiedersehen!")
             break
