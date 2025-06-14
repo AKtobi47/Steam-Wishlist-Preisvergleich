@@ -1,12 +1,14 @@
 """
-Steam Wishlist Manager - Vereinfacht für Preis-Tracking
-Nur Wishlist-Abruf ohne CheapShark-Mapping Komplexität
-Basiert auf dem funktionierenden steam_wishlist_manager.py
+Steam Wishlist Manager - Offizielle Steam Wishlist API
+Verwendet die saubere IWishlistService/GetWishlist API
+Basiert auf https://steamapi.xpaw.me/#IWishlistService/GetWishlist
+FINALE VERSION für das integrierte System
 """
 
 import requests
 import time
 import os
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -64,8 +66,8 @@ def load_api_key_from_env(env_file=".env") -> Optional[str]:
 
 class SteamWishlistManager:
     """
-    Vereinfachter Steam Wishlist Manager nur für Wishlist-Abruf
-    Ohne CheapShark-Mapping Komplexität
+    Steam Wishlist Manager mit offizieller Steam Wishlist API
+    Verwendet IWishlistService/GetWishlist für präzise Ergebnisse
     """
     
     def __init__(self, api_key: str):
@@ -82,7 +84,7 @@ class SteamWishlistManager:
         self.last_steam_api_request = 0
         self.steam_api_rate_limit = 1.0  # 1 Sekunde zwischen Requests
         
-        logger.info("✅ Steam Wishlist Manager (vereinfacht) initialisiert")
+        logger.info("✅ Steam Wishlist Manager (offizielle API) initialisiert")
     
     def _wait_for_steam_api_rate_limit(self):
         """Wartet für Steam API Rate Limiting"""
@@ -121,7 +123,8 @@ class SteamWishlistManager:
                         'profile_url': player.get('profileurl'),
                         'avatar_url': player.get('avatarfull'),
                         'country_code': player.get('loccountrycode'),
-                        'profile_state': player.get('profilestate')
+                        'profile_state': player.get('profilestate'),
+                        'community_visibility': player.get('communityvisibilitystate')
                     }
                     logger.info(f"✅ Spieler gefunden: {player_info['username']}")
                     return player_info
@@ -136,9 +139,15 @@ class SteamWishlistManager:
             logger.error(f"❌ Request Error: {e}")
             return None
     
-    def get_wishlist_item_count(self, steam_id: str) -> Optional[int]:
-        """Ruft die Anzahl der Items in der Wishlist ab"""
-        url = f"{self.steam_base_url}/IWishlistService/GetWishlistItemCount/v1/"
+    def get_wishlist_official(self, steam_id: str) -> List[Dict]:
+        """
+        Offizielle Steam Wishlist API - Die sauberste Methode
+        API: https://api.steampowered.com/IWishlistService/GetWishlist/v1/
+        Dokumentation: https://steamapi.xpaw.me/#IWishlistService/GetWishlist
+        """
+        logger.info("🎯 Verwende offizielle Steam Wishlist API...")
+        
+        url = f"{self.steam_base_url}/IWishlistService/GetWishlist/v1/"
         
         params = {
             'key': self.api_key,
@@ -147,60 +156,124 @@ class SteamWishlistManager:
         }
         
         try:
-            logger.info("📊 Rufe Wishlist-Anzahl ab...")
-            
             self._wait_for_steam_api_rate_limit()
-            response = self.session.get(url, params=params, timeout=15)
+            response = self.session.get(url, params=params, timeout=30)
+            
+            logger.info(f"📡 Wishlist API Response: {response.status_code}")
+            logger.info(f"📏 Response Size: {len(response.content)} bytes")
             
             if response.status_code == 200:
                 data = response.json()
-                if 'response' in data:
-                    count = data['response'].get('count', 0)
-                    logger.info(f"✅ Anzahl Items in Wishlist: {count}")
-                    return count
-                else:
-                    logger.warning(f"⚠️ Unerwartete Response-Struktur")
-                    return None
-            else:
-                logger.error(f"❌ HTTP Error {response.status_code}")
-                return None
+                logger.debug(f"📄 Response Keys: {list(data.keys())}")
                 
+                # Prüfe Response-Struktur
+                if 'response' in data:
+                    response_data = data['response']
+                    logger.debug(f"📄 Response Data Keys: {list(response_data.keys())}")
+                    
+                    # Die Wishlist sollte unter 'items' stehen
+                    if 'items' in response_data:
+                        items_data = response_data['items']
+                        logger.info(f"📋 Anzahl Wishlist Items: {len(items_data)}")
+                        
+                        items = []
+                        for item in items_data:
+                            # Extrahiere relevante Daten
+                            app_id = item.get('appid')
+                            name = item.get('name', f'Steam_App_{app_id}')
+                            priority = item.get('priority', 0)
+                            date_added = item.get('date_added')
+                            
+                            items.append({
+                                'appid': app_id,
+                                'name': name,
+                                'priority': priority,
+                                'date_added': date_added
+                            })
+                        
+                        logger.info(f"✅ {len(items)} Items via offizielle Wishlist API gefunden")
+                        return items
+                    
+                    else:
+                        logger.warning("⚠️ Keine 'items' in Response gefunden")
+                        logger.debug(f"📄 Verfügbare Keys: {list(response_data.keys())}")
+                        
+                        # Prüfe alternative Strukturen
+                        if 'wishlist' in response_data:
+                            wishlist_data = response_data['wishlist']
+                            logger.info(f"📋 Alternative Struktur: wishlist mit {len(wishlist_data)} Items")
+                            
+                            items = []
+                            for item in wishlist_data:
+                                items.append({
+                                    'appid': item.get('appid'),
+                                    'name': item.get('name', f'Steam_App_{item.get("appid")}'),
+                                    'priority': item.get('priority', 0)
+                                })
+                            
+                            return items
+                
+                else:
+                    logger.warning("⚠️ Keine 'response' in JSON gefunden")
+                    logger.debug(f"📄 Verfügbare Top-Level Keys: {list(data.keys())}")
+                    
+                    # Direkter Zugriff auf Items falls andere Struktur
+                    if isinstance(data, list):
+                        logger.info(f"📋 Direkte Liste mit {len(data)} Items")
+                        
+                        items = []
+                        for item in data:
+                            items.append({
+                                'appid': item.get('appid'),
+                                'name': item.get('name', f'Steam_App_{item.get("appid")}'),
+                                'priority': item.get('priority', 0)
+                            })
+                        
+                        return items
+                    
+                    elif 'items' in data:
+                        items_data = data['items']
+                        logger.info(f"📋 Direkte Items mit {len(items_data)} Einträgen")
+                        
+                        items = []
+                        for item in items_data:
+                            items.append({
+                                'appid': item.get('appid'),
+                                'name': item.get('name', f'Steam_App_{item.get("appid")}'),
+                                'priority': item.get('priority', 0)
+                            })
+                        
+                        return items
+                
+                logger.warning("⚠️ Konnte Wishlist-Items in Response nicht finden")
+                logger.debug(f"📄 Raw Response: {response.text[:500]}...")
+                return []
+                
+            elif response.status_code == 403:
+                logger.error("❌ HTTP 403: Zugriff verweigert - Wishlist möglicherweise privat")
+                return []
+                
+            elif response.status_code == 401:
+                logger.error("❌ HTTP 401: Unauthorized - API Key ungültig")
+                return []
+                
+            else:
+                logger.error(f"❌ HTTP {response.status_code}")
+                logger.debug(f"📄 Response Content: {response.text[:200]}...")
+                return []
+                
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ JSON Parse Error: {e}")
+            logger.debug(f"📄 Raw Response: {response.text[:200]}...")
+            return []
+            
         except requests.RequestException as e:
             logger.error(f"❌ Request Error: {e}")
-            return None
-    
-    def get_wishlist_page(self, steam_id: str, page_size: int = 100, start_index: int = 0) -> Optional[List[Dict]]:
-        """Ruft eine Seite der Wishlist ab"""
-        url = f"{self.steam_base_url}/IWishlistService/GetWishlistSortedFiltered/v1/"
-        
-        params = {
-            'key': self.api_key,
-            'steamid': steam_id,
-            'start_index': start_index,
-            'page_size': page_size,
-            'format': 'json'
-        }
-        
-        try:
-            self._wait_for_steam_api_rate_limit()
-            response = self.session.get(url, params=params, timeout=15)
-            
-            if response.status_code == 200:
-                data = response.json()
-                response_data = data.get('response', {})
-                items = response_data.get('items', [])
-                return items
-            else:
-                logger.error(f"❌ HTTP Error {response.status_code} bei Seite {start_index//page_size + 1}")
-                return None
-                
-        except requests.RequestException as e:
-            logger.error(f"❌ Request Error bei Seite {start_index//page_size + 1}: {e}")
-            return None
+            return []
     
     def get_simple_wishlist(self, steam_id: str) -> List[Dict]:
         """
-        Ruft die komplette Wishlist ab (vereinfacht)
+        Hauptmethode: Verwendet offizielle Steam Wishlist API
         
         Args:
             steam_id: Steam User ID
@@ -208,60 +281,36 @@ class SteamWishlistManager:
         Returns:
             Liste von Wishlist-Items mit appid und name
         """
-        logger.info(f"🎯 Starte vereinfachten Wishlist-Abruf für Steam ID: {steam_id}")
+        logger.info(f"🎯 Starte offiziellen Wishlist-Abruf für Steam ID: {steam_id}")
         
-        # Spielerinformationen abrufen (optional)
+        # Spielerinformationen abrufen für Validierung
         player_info = self.get_player_info(steam_id)
         if not player_info:
-            logger.warning("⚠️ Konnte Spielerinformationen nicht abrufen - versuche trotzdem Wishlist")
-        
-        # Anzahl der Items abrufen
-        total_count = self.get_wishlist_item_count(steam_id)
-        
-        if total_count is None:
-            logger.error("❌ Konnte Wishlist-Anzahl nicht abrufen")
+            logger.error("❌ Konnte Spielerinformationen nicht abrufen - ungültige Steam ID?")
             return []
         
-        if total_count == 0:
-            logger.warning("📭 Wishlist ist leer")
+        # Prüfe Profil-Sichtbarkeit
+        visibility = player_info.get('community_visibility', 1)
+        logger.info(f"👀 Profil-Sichtbarkeit: {visibility} (3=öffentlich)")
+        
+        if visibility != 3:
+            logger.warning("⚠️ Profil ist nicht öffentlich - Wishlist möglicherweise nicht zugänglich")
+        
+        # Verwende offizielle Wishlist API
+        wishlist_items = self.get_wishlist_official(steam_id)
+        
+        if wishlist_items:
+            logger.info(f"🎉 Gesamt: {len(wishlist_items)} Wishlist-Items via offizielle API abgerufen")
+            return wishlist_items
+        else:
+            logger.error("❌ Offizielle Wishlist API fehlgeschlagen")
+            logger.info("💡 Lösungsvorschläge:")
+            logger.info("   1. Stelle sicher, dass das Profil öffentlich ist")
+            logger.info("   2. Stelle sicher, dass die Wishlist öffentlich sichtbar ist")
+            logger.info("   3. Prüfe die Steam ID (sollte 17 Ziffern haben)")
+            logger.info("   4. Prüfe den API Key auf https://steamcommunity.com/dev/apikey")
+            
             return []
-        
-        logger.info(f"📊 Wishlist-Anzahl: {total_count} Items")
-        
-        # Alle Items in Blöcken abrufen
-        all_items = []
-        page_size = 100
-        start_index = 0
-        
-        while start_index < total_count:
-            logger.info(f"📄 Seite {start_index//page_size + 1}: Items {start_index+1}-{min(start_index+page_size, total_count)}")
-            
-            page_items = self.get_wishlist_page(steam_id, page_size, start_index)
-            
-            if not page_items:
-                logger.warning(f"⚠️ Keine Items auf Seite {start_index//page_size + 1} erhalten")
-                break
-            
-            # Vereinfache Items (nur appid und name extrahieren)
-            simplified_items = []
-            for item in page_items:
-                simplified_items.append({
-                    'appid': item.get('appid'),
-                    'name': item.get('name', f'App_{item.get("appid")}'),
-                    'priority': item.get('priority', 0)
-                })
-            
-            all_items.extend(simplified_items)
-            logger.info(f"✅ {len(simplified_items)} Items hinzugefügt (Gesamt: {len(all_items)})")
-            
-            start_index += page_size
-            
-            # Kurze Pause zwischen Seiten
-            if start_index < total_count:
-                time.sleep(0.5)
-        
-        logger.info(f"🎉 Gesamt: {len(all_items)} Wishlist-Items abgerufen")
-        return all_items
     
     def get_app_details(self, app_id: str) -> Optional[Dict]:
         """
@@ -389,7 +438,6 @@ class SteamWishlistManager:
         }
         
         try:
-            import json
             with open(output_path, 'w', encoding='utf-8') as f:
                 json.dump(export_data, f, indent=2, ensure_ascii=False)
             

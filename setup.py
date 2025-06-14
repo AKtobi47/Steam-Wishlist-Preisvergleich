@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
 """
-Steam Price Tracker - Setup und CLI
-Vereinfachtes Setup für das Preis-Tracking System
+Steam Price Tracker - Setup und CLI (Verbessert)
+Erweiterte Diagnostik für API Key Probleme
 """
 
 import sys
 import argparse
 import subprocess
+import requests
 from pathlib import Path
 import json
 from typing import Optional
 
 def check_python_version():
     """Prüft ob Python-Version kompatibel ist"""
-    if sys.version_info < (3, 8):  # <-- KORRIGIERT: (3, 8) statt (3.8)
+    if sys.version_info < (3, 8):
         print("❌ Python 3.8 oder höher erforderlich")
         print(f"   Aktuelle Version: {sys.version}")
         sys.exit(1)
@@ -51,6 +52,30 @@ def create_env_file():
     
     if env_file.exists():
         print("✅ .env-Datei bereits vorhanden")
+        
+        # Inhalt prüfen
+        try:
+            with open(env_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            if 'STEAM_API_KEY=' in content:
+                # Prüfe ob Key gesetzt ist
+                for line in content.split('\n'):
+                    if line.strip().startswith('STEAM_API_KEY=') and not line.strip().startswith('#'):
+                        key_value = line.split('=', 1)[1].strip()
+                        if key_value and key_value != 'your_steam_api_key_here':
+                            print(f"   🔑 API Key: {key_value[:8]}... (Länge: {len(key_value)})")
+                            if len(key_value) != 32:
+                                print("   ⚠️ Ungewöhnliche Key-Länge (erwartet: 32 Zeichen)")
+                        else:
+                            print("   ⚠️ API Key ist leer oder Platzhalter")
+                        break
+            else:
+                print("   ⚠️ Kein STEAM_API_KEY in .env gefunden")
+                
+        except Exception as e:
+            print(f"   ⚠️ Konnte .env nicht lesen: {e}")
+        
         return True
     
     # Kopiere .env.example falls vorhanden
@@ -63,15 +88,31 @@ def create_env_file():
         except Exception as e:
             print(f"⚠️ Konnte .env.example nicht kopieren: {e}")
     
-    # API Key abfragen
+    # API Key abfragen mit Validierung
     print("\n🔑 STEAM API KEY KONFIGURATION:")
     print("1. Gehe zu: https://steamcommunity.com/dev/apikey")
     print("2. Erstelle einen neuen API Key")
     print("3. Kopiere den Key hier rein")
+    print("💡 Der Key sollte 32 Zeichen lang sein (nur Buchstaben und Zahlen)")
     
     api_key = input("\nSteam API Key eingeben (Enter zum Überspringen): ").strip()
     
     if api_key:
+        # API Key validieren
+        if len(api_key) != 32:
+            print(f"⚠️ API Key hat {len(api_key)} Zeichen (erwartet: 32)")
+            confirm = input("Trotzdem verwenden? (j/n): ").lower().strip()
+            if confirm not in ['j', 'ja', 'y', 'yes']:
+                print("❌ API Key abgelehnt")
+                return False
+        
+        if not all(c.isalnum() for c in api_key):
+            print("⚠️ API Key enthält Sonderzeichen")
+            confirm = input("Trotzdem verwenden? (j/n): ").lower().strip()
+            if confirm not in ['j', 'ja', 'y', 'yes']:
+                print("❌ API Key abgelehnt")
+                return False
+        
         # .env-Datei erstellen/aktualisieren
         env_content = f"""# Steam Price Tracker Konfiguration
 STEAM_API_KEY={api_key}
@@ -128,10 +169,10 @@ def setup_directories():
         except Exception as e:
             print(f"⚠️ Konnte Verzeichnis {dir_name} nicht erstellen: {e}")
 
-def test_api_connection():
-    """Testet die Steam API Verbindung"""
+def test_api_connection_detailed():
+    """Erweiterte Steam API Verbindung mit detailliertem Debugging"""
     try:
-        from steam_wishlist_manager import load_api_key_from_env, SteamWishlistManager
+        from steam_wishlist_manager import load_api_key_from_env
         
         api_key = load_api_key_from_env()
         if not api_key:
@@ -139,18 +180,105 @@ def test_api_connection():
             return False
         
         print("🔌 Teste Steam API Verbindung...")
+        print(f"   🔑 API Key: {api_key[:8]}... (Länge: {len(api_key)})")
         
-        # Verwende eine bekannte Steam ID für Test
+        # Direkter API Test ohne SteamWishlistManager
         test_steam_id = "76561197960435530"  # Gabe Newell
+        url = "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/"
         
-        manager = SteamWishlistManager(api_key)
-        player_info = manager.get_player_info(test_steam_id)
+        params = {
+            'key': api_key,
+            'steamids': test_steam_id,
+            'format': 'json'
+        }
         
-        if player_info:
-            print(f"✅ Steam API funktioniert - Test-User: {player_info.get('username', 'Unknown')}")
-            return True
-        else:
-            print("❌ Steam API Test fehlgeschlagen")
+        session = requests.Session()
+        session.headers.update({
+            'User-Agent': 'SteamPriceTracker/1.0'
+        })
+        
+        print(f"   🌐 URL: {url}")
+        print(f"   👤 Test Steam ID: {test_steam_id}")
+        
+        try:
+            response = session.get(url, params=params, timeout=30)
+            
+            print(f"   📊 HTTP Status: {response.status_code}")
+            print(f"   📏 Response Size: {len(response.content)} bytes")
+            
+            if response.status_code == 200:
+                try:
+                    data = response.json()
+                    players = data.get('response', {}).get('players', [])
+                    
+                    if players and len(players) > 0:
+                        player = players[0]
+                        username = player.get('personaname', 'Unknown')
+                        print(f"✅ Steam API funktioniert - Test-User: {username}")
+                        return True
+                    else:
+                        print("❌ Steam API: Keine Spielerdaten erhalten")
+                        print(f"   Raw Response: {response.text[:200]}...")
+                        return False
+                        
+                except Exception as e:
+                    print(f"❌ JSON Parse Error: {e}")
+                    print(f"   Raw Response: {response.text[:200]}...")
+                    return False
+                    
+            elif response.status_code == 401:
+                print("❌ HTTP 401: Unauthorized")
+                print("   💡 API Key ist ungültig oder falsch")
+                print("   🔧 Lösung: Neuen API Key auf https://steamcommunity.com/dev/apikey erstellen")
+                return False
+                
+            elif response.status_code == 403:
+                print("❌ HTTP 403: Forbidden")
+                print("   💡 API Key hat keine Berechtigung für diesen Endpoint")
+                return False
+                
+            elif response.status_code == 429:
+                print("❌ HTTP 429: Too Many Requests")
+                print("   💡 Mögliche Ursachen:")
+                print("      - Rate Limiting aktiv")
+                print("      - API Key ist ungültig (Steam antwortet manchmal mit 429)")
+                print("      - Steam Server überlastet")
+                
+                # Teste einfacheren Endpoint ohne API Key
+                print("   🧪 Teste öffentlichen Endpoint...")
+                try:
+                    test_response = session.get(
+                        "https://api.steampowered.com/ISteamApps/GetAppList/v2/",
+                        params={'format': 'json'},
+                        timeout=15
+                    )
+                    
+                    if test_response.status_code == 200:
+                        print("   ✅ Öffentlicher Endpoint funktioniert - Problem liegt am API Key")
+                        print("   🔧 Lösung: API Key auf https://steamcommunity.com/dev/apikey überprüfen")
+                    else:
+                        print(f"   ❌ Auch öffentlicher Endpoint fehlgeschlagen: {test_response.status_code}")
+                        print("   💡 Möglicherweise Steam Server Problem")
+                        
+                except Exception as e:
+                    print(f"   ❌ Test des öffentlichen Endpoints fehlgeschlagen: {e}")
+                
+                return False
+                
+            else:
+                print(f"❌ HTTP {response.status_code}: Unbekannter Fehler")
+                try:
+                    print(f"   Content: {response.text[:200]}...")
+                except:
+                    pass
+                return False
+                
+        except requests.exceptions.Timeout:
+            print("❌ Request Timeout - Steam API antwortet nicht")
+            return False
+            
+        except requests.exceptions.ConnectionError:
+            print("❌ Connection Error - Keine Verbindung zu Steam API")
             return False
             
     except ImportError as e:
@@ -162,7 +290,7 @@ def test_api_connection():
 
 def setup_wizard():
     """Vollständiger Setup-Wizard"""
-    print("💰 STEAM PRICE TRACKER - SETUP WIZARD v1.0")
+    print("💰 STEAM PRICE TRACKER - SETUP WIZARD v1.1")
     print("=" * 60)
     
     success_steps = 0
@@ -196,9 +324,15 @@ def setup_wizard():
         success_steps += 1
     
     # Schritt 6: API-Verbindung testen
-    print("\n6️⃣ STEAM API TESTEN")
-    if test_api_connection():
+    print("\n6️⃣ STEAM API TESTEN (ERWEITERT)")
+    if test_api_connection_detailed():
         success_steps += 1
+    else:
+        print("\n💡 API TEST FEHLGESCHLAGEN - NÄCHSTE SCHRITTE:")
+        print("1. 🔗 Besuche: https://steamcommunity.com/dev/apikey")
+        print("2. 📝 Erstelle einen neuen API Key")
+        print("3. 📋 Kopiere den Key in deine .env-Datei")
+        print("4. 🔄 Führe 'python setup.py test-api' erneut aus")
     
     # Zusammenfassung
     print(f"\n🎉 SETUP ABGESCHLOSSEN!")
@@ -210,6 +344,10 @@ def setup_wizard():
         print("2. 📥 Importiere deine Steam Wishlist")
         print("3. 🔄 Aktiviere automatisches Preis-Tracking")
         print("4. 📊 Überwache Preisänderungen und Deals")
+        
+        if success_steps < 6:
+            print("\n⚠️ API Test fehlgeschlagen aber Setup funktional!")
+            print("💡 Du kannst das Programm trotzdem nutzen - API Problem später lösen")
         
         # Frage ob Hauptanwendung gestartet werden soll
         start_main = input("\nHauptanwendung jetzt starten? (j/n): ").lower().strip()
@@ -236,7 +374,7 @@ Beispiele:
   %(prog)s setup                    - Vollständiger Setup-Wizard
   %(prog)s install                  - Nur Abhängigkeiten installieren
   %(prog)s init-db                  - Nur Datenbank initialisieren
-  %(prog)s test-api                 - Nur Steam API testen
+  %(prog)s test-api                 - Nur Steam API testen (erweitert)
   %(prog)s run                      - Hauptanwendung starten
         """
     )
@@ -253,7 +391,10 @@ Beispiele:
     subparsers.add_parser('init-db', help='Datenbank initialisieren')
     
     # Test Commands
-    subparsers.add_parser('test-api', help='Steam API testen')
+    subparsers.add_parser('test-api', help='Steam API testen (erweitert)')
+    
+    # Debug Command
+    subparsers.add_parser('debug', help='Vollständige API Diagnostik')
     
     # Run Command
     subparsers.add_parser('run', help='Hauptanwendung starten')
@@ -281,7 +422,17 @@ Beispiele:
         initialize_database()
     
     elif args.command == 'test-api':
-        test_api_connection()
+        test_api_connection_detailed()
+    
+    elif args.command == 'debug':
+        # Führe das externe Debug-Tool aus
+        print("🔍 Starte erweiterte API Diagnostik...")
+        try:
+            exec(open('debug_steam_api.py').read())
+        except FileNotFoundError:
+            print("❌ debug_steam_api.py nicht gefunden")
+            print("💡 Führe stattdessen erweiterten API Test aus:")
+            test_api_connection_detailed()
     
     elif args.command == 'run':
         try:
@@ -311,7 +462,7 @@ def show_system_status():
             from steam_wishlist_manager import load_api_key_from_env
             api_key = load_api_key_from_env()
             if api_key and api_key != "your_steam_api_key_here":
-                print("✅ Steam API Key: Konfiguriert")
+                print(f"✅ Steam API Key: Konfiguriert ({api_key[:8]}...)")
             else:
                 print("❌ Steam API Key: Nicht konfiguriert")
         except:

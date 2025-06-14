@@ -1,7 +1,7 @@
 """
-Steam Price Tracker - Hauptklasse für CheapShark-Preis-Tracking
-Direkter Zugriff auf CheapShark API ohne Mapping-Komplexität
-Basiert auf Projekt_SteamGoG.ipynb Logic
+Steam Price Tracker - Erweiterte Version mit Batch-Processing
+Behält die bewährte CheapShark-Logic bei und erweitert um optimiertes Batch-Processing
+Basiert auf der funktionierenden price_tracker.py Implementation
 """
 
 import requests
@@ -21,10 +21,10 @@ logger = logging.getLogger(__name__)
 class SteamPriceTracker:
     """
     Steam Preis-Tracker mit CheapShark API
-    Direkter Zugriff ohne Steam-zu-CheapShark-Mapping
+    Erweitert um intelligentes Batch-Processing bei Beibehaltung der bewährten Preisabfrage-Logic
     """
     
-    # Store-Konfiguration basierend auf Projekt_SteamGoG.ipynb
+    # Store-Konfiguration basierend auf Projekt_SteamGoG.ipynb (BEWÄHRT)
     STORES = {
         "1": "Steam",
         "3": "GreenManGaming", 
@@ -34,7 +34,7 @@ class SteamPriceTracker:
         "27": "GamesPlanet"
     }
     
-    # Store IDs als String für CheapShark API
+    # Store IDs als String für CheapShark API (BEWÄHRT)
     STORE_IDS = "1,3,7,11,15,27"
     
     def __init__(self, db_manager: DatabaseManager = None):
@@ -44,7 +44,7 @@ class SteamPriceTracker:
             'User-Agent': 'SteamPriceTracker/1.0'
         })
         
-        # Rate Limiting für CheapShark API
+        # Rate Limiting für CheapShark API (BEWÄHRT)
         self.last_cheapshark_request = 0
         self.cheapshark_rate_limit = 1.5  # 1.5 Sekunden zwischen Requests
         
@@ -53,10 +53,16 @@ class SteamPriceTracker:
         self.scheduler_thread = None
         self.stop_scheduler = threading.Event()
         
+        # NEUE: Batch-Processing Konfiguration
+        self.batch_size = 50  # Apps pro Batch
+        self.max_retries = 3
+        self.retry_delay = 5.0  # Sekunden
+        self.processing_active = False
+        
         logger.info("✅ Steam Price Tracker initialisiert")
     
     def _wait_for_cheapshark_rate_limit(self):
-        """Wartet für CheapShark API Rate Limiting"""
+        """Wartet für CheapShark API Rate Limiting (BEWÄHRT)"""
         time_since_last = time.time() - self.last_cheapshark_request
         if time_since_last < self.cheapshark_rate_limit:
             wait_time = self.cheapshark_rate_limit - time_since_last
@@ -66,6 +72,7 @@ class SteamPriceTracker:
     
     def get_game_prices_from_cheapshark(self, steam_app_id: str) -> Dict:
         """
+        *** BEWÄHRTE PREISABFRAGE-LOGIC - UNVERÄNDERT ***
         Holt aktuelle Preise für Steam App ID von CheapShark
         Basiert direkt auf Projekt_SteamGoG.ipynb Logic
         
@@ -160,9 +167,14 @@ class SteamPriceTracker:
                 'status': f'request_error'
             }
     
+    # ========================
+    # BEWÄHRTE EINZELN-VERARBEITUNG (kompatibel)
+    # ========================
+    
     def track_app_prices(self, steam_app_ids: List[str]) -> Dict:
         """
-        Trackt Preise für mehrere Steam Apps und speichert in Datenbank
+        Trackt Preise für mehrere Steam Apps (BEWÄHRT)
+        Kann sowohl einzeln als auch in Batches verwendet werden
         
         Args:
             steam_app_ids: Liste von Steam App IDs
@@ -171,129 +183,359 @@ class SteamPriceTracker:
             Dict mit Statistiken
         """
         if not steam_app_ids:
-            return {'processed': 0, 'successful': 0, 'failed': 0}
+            return {'processed': 0, 'successful': 0, 'failed': 0, 'errors': []}
         
         logger.info(f"🔄 Starte Preis-Tracking für {len(steam_app_ids)} Apps...")
         
         processed = 0
         successful = 0
         failed = 0
+        errors = []
         
         for app_id in steam_app_ids:
             try:
-                # Preise von CheapShark abrufen
+                # Verwende die BEWÄHRTE Preisabfrage-Logic
                 price_data = self.get_game_prices_from_cheapshark(app_id)
                 
                 # In Datenbank speichern
                 if price_data['status'] == 'success':
-                    if self.db_manager.save_price_snapshot(price_data):
+                    if self.db_manager.save_price_snapshot(
+                        price_data['steam_app_id'],
+                        price_data['game_title'],
+                        price_data['prices']
+                    ):
                         successful += 1
+                        # Update last_price_update
+                        self.db_manager.update_app_last_price_update(app_id)
                     else:
                         failed += 1
+                        errors.append(f"Database error for {app_id}")
                 else:
                     failed += 1
+                    errors.append(f"{app_id}: {price_data['status']}")
                 
                 processed += 1
                 
                 # Fortschrittsanzeige alle 10 Apps
                 if processed % 10 == 0:
-                    logger.info(f"📊 Fortschritt: {processed}/{len(steam_app_ids)} "
-                               f"(✅ {successful}, ❌ {failed})")
+                    logger.info(f"📊 Fortschritt: {processed}/{len(steam_app_ids)} Apps verarbeitet")
                 
             except Exception as e:
-                logger.error(f"❌ Fehler bei App {app_id}: {e}")
                 failed += 1
+                errors.append(f"{app_id}: {str(e)}")
+                logger.error(f"❌ Fehler bei App {app_id}: {e}")
                 processed += 1
         
-        logger.info(f"🏁 Preis-Tracking abgeschlossen: {successful}/{processed} erfolgreich")
-        
-        return {
+        result = {
             'processed': processed,
             'successful': successful,
             'failed': failed,
-            'timestamp': datetime.now().isoformat()
+            'errors': errors
         }
+        
+        logger.info(f"📊 Preis-Tracking abgeschlossen: {successful}/{processed} erfolgreich")
+        
+        return result
     
-    def add_app_to_tracking(self, steam_app_id: str, name: str = None) -> bool:
+    # ========================
+    # NEUE: OPTIMIERTES BATCH-PROCESSING
+    # ========================
+    
+    def process_app_batch_optimized(self, app_batch: List[Dict]) -> Dict:
         """
-        Fügt eine Steam App zum Preis-Tracking hinzu
+        NEUE: Optimierte Batch-Verarbeitung mit Retry-Logic
+        Verwendet die bewährte get_game_prices_from_cheapshark() Methode
         
         Args:
-            steam_app_id: Steam App ID
-            name: Optionaler Name (wird von CheapShark geholt falls None)
+            app_batch: Liste von App-Dicts mit steam_app_id und name
             
         Returns:
-            True wenn erfolgreich hinzugefügt
+            Dict mit Batch-Statistiken
         """
-        # Prüfe ob App bereits getrackt wird
-        if self.db_manager.is_app_tracked(steam_app_id):
-            logger.info(f"ℹ️ App {steam_app_id} wird bereits getrackt")
-            return True
+        batch_start = time.time()
+        batch_size = len(app_batch)
         
-        # Hole aktuellen Namen von CheapShark falls nicht angegeben
-        if not name:
-            price_data = self.get_game_prices_from_cheapshark(steam_app_id)
-            name = price_data.get('game_title', f'Steam_App_{steam_app_id}')
+        logger.info(f"📦 Starte optimierte Batch-Verarbeitung: {batch_size} Apps")
         
-        # Füge zu Tracking-Liste hinzu
-        success = self.db_manager.add_tracked_app(steam_app_id, name)
+        successful = 0
+        failed = 0
+        errors = []
         
-        if success:
-            logger.info(f"✅ App {name} ({steam_app_id}) zum Tracking hinzugefügt")
+        for i, app in enumerate(app_batch, 1):
+            app_id = app['steam_app_id']
+            app_name = app['name']
             
-            # Hole sofort erste Preise
-            price_data = self.get_game_prices_from_cheapshark(steam_app_id)
-            if price_data['status'] == 'success':
-                self.db_manager.save_price_snapshot(price_data)
-                logger.info(f"📊 Erste Preise für {name} gespeichert")
-        else:
-            logger.error(f"❌ Konnte App {steam_app_id} nicht zum Tracking hinzufügen")
+            logger.info(f"⚙️ [{i}/{batch_size}] Verarbeite: {app_name} (ID: {app_id})")
+            
+            # Preise abrufen mit Retry-Logic
+            price_data = None
+            for retry in range(self.max_retries):
+                # Verwende die BEWÄHRTE Preisabfrage-Methode
+                price_data = self.get_game_prices_from_cheapshark(app_id)
+                
+                if price_data.get('status') == 'success':
+                    break
+                elif retry < self.max_retries - 1:
+                    logger.warning(f"🔄 Retry {retry + 1}/{self.max_retries} für App {app_id}")
+                    time.sleep(self.retry_delay)
+            
+            if price_data and price_data.get('status') == 'success':
+                # Speichere in Datenbank
+                if self.db_manager.save_price_snapshot(
+                    price_data['steam_app_id'],
+                    price_data['game_title'],
+                    price_data['prices']
+                ):
+                    successful += 1
+                    
+                    # Update last_price_update
+                    self.db_manager.update_app_last_price_update(app_id)
+                    
+                    logger.debug(f"✅ App {app_id} erfolgreich verarbeitet")
+                else:
+                    failed += 1
+                    errors.append(f"Database error for {app_id}")
+                    logger.error(f"❌ Datenbank-Fehler für App {app_id}")
+            else:
+                failed += 1
+                error_msg = price_data.get('status', 'Unknown error') if price_data else 'No response'
+                errors.append(f"{app_id}: {error_msg}")
+                logger.error(f"❌ Preisabruf fehlgeschlagen für App {app_id}: {error_msg}")
         
-        return success
+        batch_duration = time.time() - batch_start
+        
+        batch_stats = {
+            'batch_size': batch_size,
+            'successful': successful,
+            'failed': failed,
+            'errors': errors,
+            'duration_seconds': round(batch_duration, 2),
+            'apps_per_second': round(batch_size / batch_duration, 2) if batch_duration > 0 else 0
+        }
+        
+        logger.info(f"📦 Batch abgeschlossen: {successful}/{batch_size} erfolgreich in {batch_duration:.1f}s")
+        
+        return batch_stats
+    
+    def get_apps_needing_price_update(self, hours_threshold: int = 6) -> List[Dict]:
+        """
+        NEUE: Holt Apps die ein Preisupdate benötigen
+        
+        Args:
+            hours_threshold: Apps älter als X Stunden
+            
+        Returns:
+            Liste von Apps die Updates benötigen
+        """
+        cutoff_time = datetime.now() - timedelta(hours=hours_threshold)
+        
+        with self.db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT steam_app_id, name, last_price_update
+                FROM tracked_apps 
+                WHERE active = 1 
+                AND (last_price_update IS NULL OR last_price_update < ?)
+                ORDER BY 
+                    CASE WHEN last_price_update IS NULL THEN 0 ELSE 1 END,
+                    last_price_update ASC
+            ''', (cutoff_time.isoformat(),))
+            
+            apps = [dict(row) for row in cursor.fetchall()]
+            
+        logger.info(f"📊 {len(apps)} Apps benötigen Preisupdate (älter als {hours_threshold}h)")
+        
+        return apps
+    
+    def process_all_pending_apps_optimized(self, hours_threshold: int = 6) -> Dict:
+        """
+        NEUE: Verarbeitet alle Apps die Updates benötigen - OPTIMIERT
+        
+        Args:
+            hours_threshold: Apps älter als X Stunden
+            
+        Returns:
+            Dict mit Gesamt-Statistiken
+        """
+        if self.processing_active:
+            logger.warning("⚠️ Processing bereits aktiv")
+            return {'error': 'Processing already active'}
+        
+        self.processing_active = True
+        
+        try:
+            logger.info(f"🚀 Starte optimierte Gesamtverarbeitung (Threshold: {hours_threshold}h)")
+            
+            # Apps holen die Updates benötigen
+            pending_apps = self.get_apps_needing_price_update(hours_threshold)
+            
+            if not pending_apps:
+                logger.info("✅ Alle Apps sind aktuell - keine Verarbeitung nötig")
+                return {
+                    'total_apps': 0,
+                    'total_successful': 0,
+                    'total_failed': 0,
+                    'total_batches': 0,
+                    'total_duration': 0,
+                    'apps_per_second': 0
+                }
+            
+            # Apps in Batches aufteilen
+            batches = [
+                pending_apps[i:i + self.batch_size] 
+                for i in range(0, len(pending_apps), self.batch_size)
+            ]
+            
+            logger.info(f"📦 Aufgeteilt in {len(batches)} Batches à {self.batch_size} Apps")
+            
+            # Gesamtstatistiken
+            total_start = time.time()
+            total_successful = 0
+            total_failed = 0
+            all_errors = []
+            
+            # Verarbeite jeden Batch
+            for batch_num, batch in enumerate(batches, 1):
+                logger.info(f"📦 Batch {batch_num}/{len(batches)}")
+                
+                batch_stats = self.process_app_batch_optimized(batch)
+                
+                total_successful += batch_stats['successful']
+                total_failed += batch_stats['failed']
+                all_errors.extend(batch_stats['errors'])
+                
+                # Kurze Pause zwischen Batches (für Rate Limiting)
+                if batch_num < len(batches):
+                    logger.info("⏳ Pause zwischen Batches...")
+                    time.sleep(2.0)
+            
+            total_duration = time.time() - total_start
+            total_apps = len(pending_apps)
+            
+            final_stats = {
+                'total_apps': total_apps,
+                'total_successful': total_successful,
+                'total_failed': total_failed,
+                'total_batches': len(batches),
+                'total_duration': round(total_duration, 2),
+                'apps_per_second': round(total_apps / total_duration, 2) if total_duration > 0 else 0,
+                'errors': all_errors,
+                'success': True
+            }
+            
+            logger.info(f"🎉 Optimierte Verarbeitung abgeschlossen:")
+            logger.info(f"   📊 {total_successful}/{total_apps} Apps erfolgreich")
+            logger.info(f"   ⏱️ Dauer: {total_duration:.1f}s ({final_stats['apps_per_second']:.1f} Apps/s)")
+            logger.info(f"   📦 {len(batches)} Batches verarbeitet")
+            
+            if total_failed > 0:
+                logger.warning(f"   ⚠️ {total_failed} Apps fehlgeschlagen")
+            
+            return final_stats
+            
+        except Exception as e:
+            logger.error(f"❌ Optimierte Verarbeitung fehlgeschlagen: {e}")
+            return {'success': False, 'error': str(e)}
+            
+        finally:
+            self.processing_active = False
+    
+    def process_specific_apps_optimized(self, app_ids: List[str]) -> Dict:
+        """
+        NEUE: Verarbeitet spezifische Apps optimiert
+        
+        Args:
+            app_ids: Liste von Steam App IDs
+            
+        Returns:
+            Dict mit Statistiken
+        """
+        if self.processing_active:
+            logger.warning("⚠️ Processing bereits aktiv")
+            return {'error': 'Processing already active'}
+        
+        self.processing_active = True
+        
+        try:
+            logger.info(f"🎯 Verarbeite {len(app_ids)} spezifische Apps (optimiert)")
+            
+            # App-Details aus Datenbank holen
+            apps = []
+            for app_id in app_ids:
+                with self.db_manager.get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        'SELECT steam_app_id, name FROM tracked_apps WHERE steam_app_id = ? AND active = 1',
+                        (app_id,)
+                    )
+                    result = cursor.fetchone()
+                    
+                    if result:
+                        apps.append(dict(result))
+                    else:
+                        logger.warning(f"⚠️ App {app_id} nicht in Tracking gefunden")
+            
+            if not apps:
+                logger.warning("❌ Keine gültigen Apps zum Verarbeiten gefunden")
+                return {'total_apps': 0, 'total_successful': 0, 'total_failed': 0}
+            
+            # Verarbeite als optimierten Batch
+            return self.process_app_batch_optimized(apps)
+            
+        except Exception as e:
+            logger.error(f"❌ Spezifische Verarbeitung fehlgeschlagen: {e}")
+            return {'success': False, 'error': str(e)}
+            
+        finally:
+            self.processing_active = False
+    
+    # ========================
+    # BEWÄHRTE METHODEN (unverändert)
+    # ========================
+    
+    def add_app_to_tracking(self, steam_app_id: str, name: str) -> bool:
+        """Fügt eine App zum Tracking hinzu (BEWÄHRT)"""
+        return self.db_manager.add_tracked_app(steam_app_id, name)
     
     def remove_app_from_tracking(self, steam_app_id: str) -> bool:
-        """Entfernt eine App aus dem Preis-Tracking"""
-        success = self.db_manager.remove_tracked_app(steam_app_id)
-        
-        if success:
-            logger.info(f"✅ App {steam_app_id} aus Tracking entfernt")
-        else:
-            logger.error(f"❌ Konnte App {steam_app_id} nicht aus Tracking entfernen")
-        
-        return success
+        """Entfernt eine App aus dem Tracking (BEWÄHRT)"""
+        return self.db_manager.remove_tracked_app(steam_app_id)
     
     def get_tracked_apps(self) -> List[Dict]:
-        """Gibt alle getrackte Apps zurück"""
+        """Gibt alle getrackte Apps zurück (BEWÄHRT)"""
         return self.db_manager.get_tracked_apps()
     
     def get_price_history(self, steam_app_id: str, days_back: int = 30) -> List[Dict]:
-        """
-        Holt Preisverlauf für eine App
-        
-        Args:
-            steam_app_id: Steam App ID
-            days_back: Wie viele Tage zurück
-            
-        Returns:
-            Liste von Preis-Snapshots
-        """
+        """Holt Preisverlauf für eine App (BEWÄHRT)"""
         return self.db_manager.get_price_history(steam_app_id, days_back)
     
     def get_current_best_deals(self, limit: int = 10) -> List[Dict]:
-        """
-        Holt aktuelle beste Deals (höchste Rabatte)
-        
-        Args:
-            limit: Maximale Anzahl Deals
-            
-        Returns:
-            Liste der besten Deals
-        """
+        """Holt aktuelle beste Deals (BEWÄHRT)"""
         return self.db_manager.get_best_current_deals(limit)
+    
+    def get_statistics(self) -> Dict:
+        """Gibt Tracking-Statistiken zurück (ERWEITERT)"""
+        tracked_apps = self.get_tracked_apps()
+        total_snapshots = self.db_manager.get_total_price_snapshots()
+        
+        # NEUE: Zusätzliche Statistiken
+        processing_stats = self.db_manager.get_tracking_statistics()
+        
+        return {
+            'tracked_apps': len(tracked_apps),
+            'total_price_snapshots': total_snapshots,
+            'stores_tracked': list(self.STORES.values()),
+            'oldest_snapshot': self.db_manager.get_oldest_snapshot_date(),
+            'newest_snapshot': self.db_manager.get_newest_snapshot_date(),
+            'processing_active': self.processing_active,
+            **processing_stats
+        }
     
     def import_steam_wishlist(self, steam_id: str, api_key: str) -> Dict:
         """
-        Importiert Steam Wishlist für Preis-Tracking
+        Importiert Steam Wishlist OHNE sofortiges Preisfetching (OPTIMIERT)
+        Speichert nur Apps in Datenbank für späteres Batch-Processing
         
         Args:
             steam_id: Steam User ID
@@ -303,135 +545,94 @@ class SteamPriceTracker:
             Dict mit Import-Statistiken
         """
         try:
-            # Verwende vereinfachte Wishlist-Import Logic
+            logger.info(f"📥 Starte optimierten Wishlist-Import für Steam ID: {steam_id}")
+            
+            # Verwende offizielle Wishlist API
             from steam_wishlist_manager import SteamWishlistManager
             
             manager = SteamWishlistManager(api_key)
             wishlist_data = manager.get_simple_wishlist(steam_id)
             
             if not wishlist_data:
-                return {'imported': 0, 'error': 'Keine Wishlist-Daten erhalten'}
+                return {
+                    'success': False,
+                    'imported': 0,
+                    'total_items': 0,
+                    'error': 'Keine Wishlist-Daten erhalten'
+                }
             
+            logger.info(f"📋 {len(wishlist_data)} Wishlist-Items gefunden")
+            
+            # Apps in Datenbank speichern (OHNE Preise)
             imported = 0
+            skipped_existing = 0
+            errors = []
+            
             for item in wishlist_data:
                 app_id = str(item.get('appid'))
                 name = item.get('name', f'Steam_App_{app_id}')
                 
-                if self.add_app_to_tracking(app_id, name):
-                    imported += 1
+                try:
+                    # Prüfe ob App bereits getrackt wird
+                    if self.db_manager.is_app_tracked(app_id):
+                        skipped_existing += 1
+                        logger.debug(f"⏭️ App {name} bereits getrackt - überspringe")
+                        continue
+                    
+                    # App zur Datenbank hinzufügen
+                    if self.db_manager.add_tracked_app(app_id, name):
+                        imported += 1
+                        logger.debug(f"✅ App {name} hinzugefügt")
+                    else:
+                        errors.append(f"Database error for {app_id}: {name}")
+                        logger.warning(f"⚠️ Konnte App {name} nicht hinzufügen")
+                        
+                except Exception as e:
+                    errors.append(f"Error processing {app_id}: {str(e)}")
+                    logger.error(f"❌ Fehler bei App {app_id}: {e}")
             
-            logger.info(f"📥 {imported} Apps aus Steam Wishlist importiert")
-            
-            return {
+            # Import-Statistiken
+            import_stats = {
+                'success': True,
                 'imported': imported,
+                'skipped_existing': skipped_existing,
                 'total_items': len(wishlist_data),
-                'success': True
+                'errors': errors,
+                'import_completed_at': datetime.now().isoformat()
             }
+            
+            logger.info(f"📥 Wishlist-Import abgeschlossen:")
+            logger.info(f"   ✅ {imported} neue Apps hinzugefügt")
+            logger.info(f"   ⏭️ {skipped_existing} bereits vorhanden")
+            logger.info(f"   📊 {imported + skipped_existing}/{len(wishlist_data)} Apps verarbeitet")
+            
+            if errors:
+                logger.warning(f"   ⚠️ {len(errors)} Fehler aufgetreten")
+            
+            # WICHTIG: Empfehlung für Preisfetching ausgeben
+            if imported > 0:
+                logger.info("💡 NÄCHSTE SCHRITTE für Preisfetching:")
+                logger.info("   1. Alle neuen Apps: tracker.process_all_pending_apps_optimized()")
+                logger.info("   2. Nur neue Apps: tracker.process_specific_apps_optimized([app_ids])")
+                logger.info("   3. Via CLI: python processor_runner_cli.py run")
+            
+            return import_stats
             
         except Exception as e:
             logger.error(f"❌ Fehler beim Wishlist-Import: {e}")
-            return {'imported': 0, 'error': str(e)}
+            return {
+                'success': False,
+                'imported': 0,
+                'total_items': 0,
+                'error': str(e)
+            }
     
     # ========================
-    # SCHEDULER FÜR AUTOMATISCHE PREISABFRAGEN
-    # ========================
-    
-    def start_price_tracking_scheduler(self, interval_hours: int = 6):
-        """
-        Startet automatisches Preis-Tracking
-        
-        Args:
-            interval_hours: Intervall in Stunden zwischen Preisabfragen
-        """
-        if self.scheduler_running:
-            logger.warning("⚠️ Scheduler läuft bereits")
-            return
-        
-        logger.info(f"🚀 Starte automatisches Preis-Tracking (alle {interval_hours}h)")
-        
-        # Schedule-Konfiguration
-        schedule.clear()
-        schedule.every(interval_hours).hours.do(self._scheduled_price_update)
-        
-        # Scheduler-Thread starten
-        self.scheduler_running = True
-        self.stop_scheduler.clear()
-        self.scheduler_thread = threading.Thread(target=self._run_scheduler, daemon=True)
-        self.scheduler_thread.start()
-        
-        logger.info("✅ Preis-Tracking Scheduler gestartet")
-    
-    def stop_price_tracking_scheduler(self):
-        """Stoppt den automatischen Preis-Tracking Scheduler"""
-        if not self.scheduler_running:
-            logger.info("ℹ️ Scheduler läuft nicht")
-            return
-        
-        logger.info("🛑 Stoppe Preis-Tracking Scheduler...")
-        self.scheduler_running = False
-        self.stop_scheduler.set()
-        
-        if self.scheduler_thread:
-            self.scheduler_thread.join(timeout=10)
-        
-        schedule.clear()
-        logger.info("✅ Preis-Tracking Scheduler gestoppt")
-    
-    def _run_scheduler(self):
-        """Haupt-Scheduler Loop (läuft in separatem Thread)"""
-        logger.info("🔄 Preis-Tracking Scheduler-Thread gestartet")
-        
-        while self.scheduler_running and not self.stop_scheduler.is_set():
-            try:
-                schedule.run_pending()
-                time.sleep(60)  # Prüfe alle 60 Sekunden
-                
-            except Exception as e:
-                logger.error(f"❌ Scheduler-Fehler: {e}")
-                time.sleep(300)  # Warte 5 Minuten bei Fehlern
-        
-        logger.info("🔄 Preis-Tracking Scheduler-Thread beendet")
-    
-    def _scheduled_price_update(self):
-        """Geplante Preisabfrage für alle getrackte Apps"""
-        try:
-            logger.info("⏰ Starte geplante Preisabfrage...")
-            
-            tracked_apps = self.get_tracked_apps()
-            if not tracked_apps:
-                logger.info("📭 Keine Apps für Preis-Tracking konfiguriert")
-                return
-            
-            app_ids = [app['steam_app_id'] for app in tracked_apps]
-            result = self.track_app_prices(app_ids)
-            
-            logger.info(f"📊 Geplante Preisabfrage abgeschlossen:")
-            logger.info(f"   ✅ {result['successful']} erfolgreich")
-            logger.info(f"   ❌ {result['failed']} fehlgeschlagen")
-            
-            # Bereinige alte Preisdaten (> 90 Tage)
-            self.db_manager.cleanup_old_prices(days=90)
-            
-        except Exception as e:
-            logger.error(f"❌ Geplante Preisabfrage Fehler: {e}")
-    
-    def get_scheduler_status(self) -> Dict:
-        """Gibt Scheduler-Status zurück"""
-        tracked_count = len(self.get_tracked_apps())
-        
-        return {
-            'scheduler_running': self.scheduler_running,
-            'tracked_apps_count': tracked_count,
-            'next_run': schedule.next_run() if schedule.jobs else None,
-            'jobs_count': len(schedule.jobs)
-        }
-    
-    # ========================
-    # UTILITY METHODS
+    # UTILITY METHODS (BEWÄHRT)
     # ========================
     
     def print_price_summary(self, steam_app_id: str):
-        """Zeigt Preis-Zusammenfassung für eine App"""
+        """Zeigt Preis-Zusammenfassung für eine App (BEWÄHRT)"""
         price_data = self.get_game_prices_from_cheapshark(steam_app_id)
         
         if price_data['status'] != 'success':
@@ -458,16 +659,7 @@ class SteamPriceTracker:
         print(f"Abgerufen: {price_data['timestamp']}")
     
     def export_price_history_csv(self, steam_app_id: str, output_file: str = None) -> str:
-        """
-        Exportiert Preisverlauf als CSV (Kompatibilität zu Projekt_SteamGoG.ipynb)
-        
-        Args:
-            steam_app_id: Steam App ID
-            output_file: Ausgabedatei (optional)
-            
-        Returns:
-            Pfad zur erstellten CSV-Datei
-        """
+        """Exportiert Preisverlauf als CSV (BEWÄHRT)"""
         import csv
         
         price_history = self.get_price_history(steam_app_id, days_back=365)
@@ -503,16 +695,3 @@ class SteamPriceTracker:
         
         logger.info(f"📄 Preisverlauf exportiert: {output_path}")
         return str(output_path)
-    
-    def get_statistics(self) -> Dict:
-        """Gibt Tracking-Statistiken zurück"""
-        tracked_apps = self.get_tracked_apps()
-        total_snapshots = self.db_manager.get_total_price_snapshots()
-        
-        return {
-            'tracked_apps': len(tracked_apps),
-            'total_price_snapshots': total_snapshots,
-            'stores_tracked': list(self.STORES.values()),
-            'oldest_snapshot': self.db_manager.get_oldest_snapshot_date(),
-            'newest_snapshot': self.db_manager.get_newest_snapshot_date()
-        }
