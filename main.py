@@ -1,3 +1,37 @@
+"""
+Enhanced Steam Price Tracker - Hauptanwendung
+CLI mit erweiterten Funktionen für App-Namen Updates
+"""
+
+import os
+import sys
+from pathlib import Path
+from datetime import datetime
+import logging
+
+# Logging Setup
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+def load_api_key_from_env(env_file: str = ".env") -> str:
+    """Lädt Steam API Key aus .env-Datei"""
+    env_path = Path(env_file)
+    
+    if not env_path.exists():
+        return None
+    
+    try:
+        with open(env_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    if key.strip() == 'STEAM_API_KEY':
+                        api_key = value.strip().strip('"').strip("'")
+                        if api_key and api_key != 'your_steam_api_key_here':
+                            return api_key
+        return None
+    except Exception as e:
         logger.error(f"❌ Fehler beim Lesen der .env-Datei: {e}")
         return None
 
@@ -110,6 +144,10 @@ def main():
         print("✅ Enhanced Steam Price Tracker initialisiert")
     except Exception as e:
         print(f"❌ Fehler beim Initialisieren: {e}")
+        print("\n💡 FEHLERBEHEBUNG:")
+        print("1. Führe zuerst 'python setup.py setup' aus")
+        print("2. Stelle sicher, dass alle Dateien vorhanden sind")
+        print("3. Prüfe ob die requirements.txt installiert ist")
         return
     
     # Hauptmenü
@@ -812,38 +850,5 @@ def main():
             input("💡 Drücken Sie Enter um zum Hauptmenü zurückzukehren...")
 
 if __name__ == "__main__":
-    main()"""
-Enhanced Steam Price Tracker - Hauptanwendung
-CLI mit erweiterten Funktionen für App-Namen Updates
-"""
-
-import os
-import sys
-from pathlib import Path
-from datetime import datetime
-import logging
-
-# Logging Setup
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-def load_api_key_from_env(env_file: str = ".env") -> str:
-    """Lädt Steam API Key aus .env-Datei"""
-    env_path = Path(env_file)
-    
-    if not env_path.exists():
-        return None
-    
-    try:
-        with open(env_path, 'r', encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith('#') and '=' in line:
-                    key, value = line.split('=', 1)
-                    if key.strip() == 'STEAM_API_KEY':
-                        api_key = value.strip().strip('"').strip("'")
-                        if api_key and api_key != 'your_steam_api_key_here':
-                            return api_key
-        return None
-    except Exception as e:
-        logger.error
+    main()
+                
