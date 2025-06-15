@@ -17,6 +17,16 @@ TRACKER_DB_PATH=steam_price_tracker.db
 DB_CLEANUP_DAYS=90
 
 # ====================================
+# Charts-Service-Konfiguration
+# ====================================
+# Suchintervall (Stunden) neue Charts-Titel
+CHARTS_UPDATE_INTERVAL_HOURS=6
+# Intervall (Stunden) Preisabfrage Chrart-Titel
+CHARTS_PRICE_INTERVAL_HOURS=4
+# Anzahl Tage nach denen Titel, welche nicht mehr in den Charts sind, aus dem Preistracker entfernt werden
+CHARTS_CLEANUP_DAYS=30
+
+# ====================================
 # OPTIONAL: API Rate Limits
 # ====================================
 # Sekunden zwischen Steam API Requests
