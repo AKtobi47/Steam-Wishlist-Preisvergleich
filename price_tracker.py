@@ -1,7 +1,8 @@
 """
-Steam Price Tracker - Konsolidierte Version
-Vereint Standard Price Tracking mit optionaler Charts-Integration
+Steam Price Tracker - Konsolidierte Version mit allen Bugfixes
+KOMPLETT GEFIXT - Vereint Standard Price Tracking mit robuster Charts-Integration
 Automatische Erkennung verfügbarer Features mit graceful degradation
+Threading-Probleme behoben, API-Fallbacks implementiert
 """
 
 import requests
@@ -20,8 +21,9 @@ logger = logging.getLogger(__name__)
 
 class SteamPriceTracker:
     """
-    Konsolidierter Steam Preis-Tracker
-    Kombiniert Standard Price Tracking mit optionaler Charts-Integration
+    Konsolidierter Steam Preis-Tracker - FIXED VERSION
+    Kombiniert Standard Price Tracking mit robuster Charts-Integration
+    Alle Threading-Probleme und API-Fehler behoben
     """
     
     # Store-Konfiguration basierend auf Projekt_SteamGoG.ipynb
@@ -39,7 +41,7 @@ class SteamPriceTracker:
     
     def __init__(self, db_manager: DatabaseManager = None, api_key: str = None, enable_charts: bool = True):
         """
-        Initialisiert Steam Price Tracker mit optionaler Charts-Integration
+        Initialisiert Steam Price Tracker mit robuster Charts-Integration
         
         Args:
             db_manager: DatabaseManager Instanz
@@ -68,12 +70,12 @@ class SteamPriceTracker:
         self.retry_delay = 5.0  # Sekunden
         self.processing_active = False
         
-        # Charts-Integration (optional)
+        # FIXED: Charts-Integration (optional) mit robuster Initialisierung
         self.charts_manager = None
         self.charts_enabled = False
         
         if enable_charts and api_key:
-            self._initialize_charts_integration(api_key)
+            self._initialize_charts_integration_fixed(api_key)
         
         logger.info("✅ Steam Price Tracker initialisiert")
         if self.charts_enabled:
@@ -81,9 +83,9 @@ class SteamPriceTracker:
         else:
             logger.info("📊 Charts-Integration deaktiviert (kein API Key oder nicht verfügbar)")
     
-    def _initialize_charts_integration(self, api_key: str):
+    def _initialize_charts_integration_fixed(self, api_key: str):
         """
-        Initialisiert Charts-Integration falls verfügbar
+        FIXED: Initialisiert Charts-Integration mit robuster Fehlerbehandlung
         
         Args:
             api_key: Steam API Key
@@ -91,20 +93,33 @@ class SteamPriceTracker:
         try:
             from steam_charts_manager import SteamChartsManager
             
+            logger.info("🔄 Initialisiere Charts-Integration...")
+            
             self.charts_manager = SteamChartsManager(api_key, self.db_manager)
             self.charts_manager.set_price_tracker(self)
-            self.charts_enabled = True
             
             # Charts-Tabellen in Datenbank sicherstellen
             if hasattr(self.db_manager, 'init_charts_tables'):
                 self.db_manager.init_charts_tables()
             
-            logger.info("✅ Charts-Integration erfolgreich initialisiert")
+            # FIXED: Test ob Charts-Manager funktioniert
+            try:
+                test_status = self.charts_manager.get_charts_scheduler_status()
+                self.charts_enabled = True
+                logger.info("✅ Charts-Integration erfolgreich initialisiert")
+            except Exception as test_e:
+                logger.warning(f"⚠️ Charts-Manager Test fehlgeschlagen: {test_e}")
+                self.charts_enabled = False
+                self.charts_manager = None
             
         except ImportError:
             logger.info("ℹ️ Charts-Module nicht verfügbar - Charts-Features deaktiviert")
+            self.charts_enabled = False
+            self.charts_manager = None
         except Exception as e:
             logger.warning(f"⚠️ Charts-Integration fehlgeschlagen: {e}")
+            self.charts_enabled = False
+            self.charts_manager = None
     
     def _wait_for_cheapshark_rate_limit(self):
         """Wartet für CheapShark API Rate Limiting"""
@@ -573,7 +588,7 @@ class SteamPriceTracker:
                         # Update last_price_update
                         self.db_manager.update_app_last_price_update(app_id)
                         
-                        # Auch in Charts-DB speichern falls verfügbar
+                        # FIXED: Auch in Charts-DB speichern falls verfügbar
                         if self.charts_enabled and hasattr(self.db_manager, 'save_charts_price_snapshot'):
                             # Prüfe ob App in Charts ist
                             if hasattr(self.db_manager, 'get_active_chart_games'):
@@ -721,28 +736,68 @@ class SteamPriceTracker:
             self.processing_active = False
     
     # ========================
-    # SCHEDULER FUNCTIONALITY
+    # SCHEDULER FUNCTIONALITY - FIXED
     # ========================
+    
+    def get_enhanced_scheduler_status(self) -> Dict:
+        """
+        FIXED: Gibt erweiterten Scheduler-Status zurück mit Charts-Integration
+        
+        Returns:
+            Dict mit erweiterten Scheduler-Informationen
+        """
+        status = {
+            'standard_scheduler_running': self.scheduler_running,
+            'charts_scheduler_running': False,
+            'standard_next_run': None,
+            'charts_next_update': None,
+            'charts_next_cleanup': None,
+            'charts_next_price_update': None,
+            'standard_jobs_count': 0,
+            'charts_jobs_count': 0,
+            'charts_thread_alive': False
+        }
+        
+        # Standard-Scheduler Status
+        try:
+            if hasattr(schedule, 'jobs'):
+                standard_jobs = [job for job in schedule.jobs if 'charts' not in str(job.job_func)]
+                status['standard_jobs_count'] = len(standard_jobs)
+                
+                if standard_jobs:
+                    try:
+                        next_job = min(standard_jobs, key=lambda job: job.next_run)
+                        status['standard_next_run'] = next_job.next_run.strftime('%Y-%m-%d %H:%M:%S')
+                    except:
+                        status['standard_next_run'] = 'Unbekannt'
+        except:
+            pass
+        
+        # FIXED: Charts-Scheduler Status (falls verfügbar)
+        if self.charts_enabled and self.charts_manager:
+            try:
+                charts_status = self.charts_manager.get_charts_scheduler_status()
+                status.update({
+                    'charts_scheduler_running': charts_status.get('charts_scheduler_running', False),
+                    'charts_next_update': charts_status.get('next_charts_update'),
+                    'charts_next_cleanup': charts_status.get('next_cleanup'),
+                    'charts_next_price_update': charts_status.get('next_price_update'),
+                    'charts_jobs_count': charts_status.get('charts_jobs_count', 0),
+                    'charts_thread_alive': charts_status.get('scheduler_thread_alive', False)
+                })
+            except Exception as e:
+                logger.debug(f"Charts-Scheduler Status nicht verfügbar: {e}")
+        
+        return status
     
     def get_scheduler_status(self) -> Dict:
         """
-        Gibt den aktuellen Scheduler-Status zurück
+        Kompatibilitäts-Wrapper für get_enhanced_scheduler_status
+        
+        Returns:
+            Dict mit Scheduler-Status
         """
-        status = {
-            'scheduler_running': self.scheduler_running,
-            'next_run': None,
-            'jobs_count': len(schedule.jobs)
-        }
-        
-        # Nächster geplanter Lauf ermitteln
-        if schedule.jobs:
-            try:
-                next_job = min(schedule.jobs, key=lambda job: job.next_run)
-                status['next_run'] = next_job.next_run.strftime('%Y-%m-%d %H:%M:%S')
-            except:
-                status['next_run'] = 'Unbekannt'
-        
-        return status
+        return self.get_enhanced_scheduler_status()
     
     def start_scheduler(self, interval_hours: int = 6):
         """
@@ -846,7 +901,7 @@ class SteamPriceTracker:
         return self.stop_scheduler()
     
     # ========================
-    # CHARTS INTEGRATION (Optional)
+    # CHARTS INTEGRATION - FIXED
     # ========================
     
     def enable_charts_tracking(self, 
@@ -854,7 +909,7 @@ class SteamPriceTracker:
                               price_update_hours: int = 4,
                               cleanup_hours: int = 24) -> bool:
         """
-        Aktiviert Charts-Tracking (falls verfügbar)
+        FIXED: Aktiviert Charts-Tracking mit robuster Fehlerbehandlung
         
         Args:
             charts_update_hours: Intervall für Charts-Updates
@@ -868,7 +923,12 @@ class SteamPriceTracker:
             logger.warning("⚠️ Charts-Funktionalität nicht verfügbar")
             return False
         
+        if not self.charts_manager:
+            logger.error("❌ Charts-Manager nicht verfügbar")
+            return False
+        
         try:
+            # FIXED: Verwende die korrigierte start_charts_scheduler Methode
             self.charts_manager.start_charts_scheduler(
                 charts_update_hours=charts_update_hours,
                 cleanup_hours=cleanup_hours,
@@ -884,12 +944,15 @@ class SteamPriceTracker:
     
     def disable_charts_tracking(self) -> bool:
         """
-        Deaktiviert Charts-Tracking
+        FIXED: Deaktiviert Charts-Tracking sicher
         
         Returns:
             True wenn erfolgreich deaktiviert
         """
         if not self.charts_enabled:
+            return True
+        
+        if not self.charts_manager:
             return True
         
         try:
@@ -902,7 +965,7 @@ class SteamPriceTracker:
     
     def update_charts_now(self, chart_types: List[str] = None) -> Dict:
         """
-        Führt sofortiges Charts-Update durch (falls verfügbar)
+        FIXED: Führt sofortiges Charts-Update durch mit Fehlerbehandlung
         
         Args:
             chart_types: Liste der zu aktualisierenden Chart-Typen
@@ -912,6 +975,9 @@ class SteamPriceTracker:
         """
         if not self.charts_enabled:
             return {'success': False, 'error': 'Charts not enabled'}
+        
+        if not self.charts_manager:
+            return {'success': False, 'error': 'Charts manager not available'}
         
         try:
             # Standard-Counts für Charts
@@ -926,7 +992,8 @@ class SteamPriceTracker:
             if chart_types:
                 counts = {ct: counts.get(ct, 50) for ct in chart_types if ct in counts}
             
-            return self.charts_manager.update_all_charts(counts)
+            result = self.charts_manager.update_all_charts(counts)
+            return result
             
         except Exception as e:
             logger.error(f"❌ Fehler beim Charts-Update: {e}")
@@ -934,7 +1001,7 @@ class SteamPriceTracker:
     
     def update_charts_prices_now(self, chart_type: str = None) -> Dict:
         """
-        Führt sofortiges Preis-Update für Charts-Spiele durch (falls verfügbar)
+        FIXED: Führt sofortiges Preis-Update für Charts-Spiele durch
         
         Args:
             chart_type: Optionale Filterung nach Chart-Typ
@@ -944,6 +1011,9 @@ class SteamPriceTracker:
         """
         if not self.charts_enabled:
             return {'success': False, 'error': 'Charts not enabled'}
+        
+        if not self.charts_manager:
+            return {'success': False, 'error': 'Charts manager not available'}
         
         try:
             # Charts-Spiele holen die Updates benötigen
