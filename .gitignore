@@ -81,3 +81,4 @@
 # !important-file.log
 # !build/specific-file.txt
 # !src/config/.env.example
+/backup_before_setup

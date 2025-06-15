@@ -2,7 +2,7 @@
 """
 Steam Charts CLI Manager
 Command-Line Interface für Steam Charts Tracking
-UPDATED: Verwendet konsolidierte price_tracker.py
+UPDATED: Angepasst für konsolidierte price_tracker.py Architektur
 """
 
 import sys
@@ -18,14 +18,23 @@ logger = logging.getLogger(__name__)
 def cmd_enable_charts(args):
     """Aktiviert Charts-Tracking"""
     try:
-        # UPDATED: Verwende konsolidierte price_tracker.py
+        # UPDATED: Verwende konsolidierte price_tracker.py mit API Key
         from price_tracker import create_price_tracker
         
-        tracker = create_price_tracker()
+        # API Key laden
+        from steam_wishlist_manager import load_api_key_from_env
+        api_key = load_api_key_from_env()
+        
+        if not api_key:
+            print("❌ Kein Steam API Key in .env gefunden")
+            print("💡 Füge STEAM_API_KEY=dein_key zu .env hinzu")
+            return
+        
+        tracker = create_price_tracker(api_key=api_key, enable_charts=True)
         
         if not tracker.charts_enabled:
             print("❌ Charts-Funktionalität nicht verfügbar")
-            print("💡 Prüfe ob STEAM_API_KEY in .env gesetzt ist")
+            print("💡 Prüfe ob steam_charts_manager.py vorhanden ist")
             return
         
         print("🚀 Aktiviere Charts-Tracking...")
@@ -44,8 +53,8 @@ def cmd_enable_charts(args):
         else:
             print("❌ Fehler beim Aktivieren des Charts-Trackings")
             
-    except ImportError:
-        print("❌ Price Tracker Module nicht gefunden")
+    except ImportError as e:
+        print(f"❌ Import Fehler: {e}")
         print("💡 Stelle sicher, dass alle Dateien vorhanden sind")
     except Exception as e:
         print(f"❌ Fehler: {e}")
@@ -55,8 +64,10 @@ def cmd_disable_charts(args):
     try:
         # UPDATED: Verwende konsolidierte price_tracker.py
         from price_tracker import create_price_tracker
+        from steam_wishlist_manager import load_api_key_from_env
         
-        tracker = create_price_tracker()
+        api_key = load_api_key_from_env()
+        tracker = create_price_tracker(api_key=api_key, enable_charts=True)
         
         if not tracker.charts_enabled:
             print("ℹ️ Charts-Tracking ist bereits deaktiviert")
@@ -81,8 +92,10 @@ def cmd_update_charts(args):
     try:
         # UPDATED: Verwende konsolidierte price_tracker.py
         from price_tracker import create_price_tracker
+        from steam_wishlist_manager import load_api_key_from_env
         
-        tracker = create_price_tracker()
+        api_key = load_api_key_from_env()
+        tracker = create_price_tracker(api_key=api_key, enable_charts=True)
         
         if not tracker.charts_enabled:
             print("❌ Charts-Funktionalität nicht verfügbar")
@@ -119,8 +132,10 @@ def cmd_update_charts_prices(args):
     try:
         # UPDATED: Verwende konsolidierte price_tracker.py
         from price_tracker import create_price_tracker
+        from steam_wishlist_manager import load_api_key_from_env
         
-        tracker = create_price_tracker()
+        api_key = load_api_key_from_env()
+        tracker = create_price_tracker(api_key=api_key, enable_charts=True)
         
         if not tracker.charts_enabled:
             print("❌ Charts-Funktionalität nicht verfügbar")
@@ -155,8 +170,10 @@ def cmd_charts_status(args):
     try:
         # UPDATED: Verwende konsolidierte price_tracker.py
         from price_tracker import create_price_tracker
+        from steam_wishlist_manager import load_api_key_from_env
         
-        tracker = create_price_tracker()
+        api_key = load_api_key_from_env()
+        tracker = create_price_tracker(api_key=api_key, enable_charts=True)
         
         print("📊 STEAM CHARTS STATUS")
         print("=" * 30)
@@ -166,21 +183,12 @@ def cmd_charts_status(args):
             print("💡 Prüfe STEAM_API_KEY in .env-Datei")
             return
         
-        # Charts-Übersicht holen
-        if hasattr(tracker, 'get_charts_overview'):
-            overview = tracker.get_charts_overview()
-        else:
-            # Fallback: Basis-Informationen
-            overview = {
-                'enabled': tracker.charts_enabled,
-                'message': 'Charts verfügbar aber get_charts_overview() nicht implementiert'
-            }
+        # Charts-Übersicht erstellen (ersetzt get_charts_overview)
+        print("✅ Charts-Tracking: AKTIVIERT")
         
-        if overview.get('enabled'):
-            print("✅ Charts-Tracking: AKTIVIERT")
-            
-            # Scheduler Status
-            scheduler_status = overview.get('scheduler_status', {})
+        # Scheduler Status
+        if hasattr(tracker, 'charts_manager') and tracker.charts_manager:
+            scheduler_status = tracker.charts_manager.get_charts_scheduler_status()
             if scheduler_status.get('charts_scheduler_running'):
                 print("🚀 Scheduler: AKTIV")
                 print(f"   ⏰ Nächstes Charts-Update: {scheduler_status.get('next_charts_update', 'N/A')}")
@@ -188,31 +196,62 @@ def cmd_charts_status(args):
                 print(f"   🧹 Nächstes Cleanup: {scheduler_status.get('next_cleanup', 'N/A')}")
             else:
                 print("⏸️ Scheduler: INAKTIV")
-            
-            # Chart-Typen
-            chart_types = overview.get('chart_types', {})
-            if chart_types:
-                print(f"\n📈 CHART-TYPEN ({len(chart_types)}):")
-                for chart_type, info in chart_types.items():
-                    print(f"   • {info['description']}: {info['active_games']} Spiele")
+        
+        # Chart-Typen und Statistiken
+        if hasattr(tracker.db_manager, 'get_charts_statistics'):
+            try:
+                charts_stats = tracker.db_manager.get_charts_statistics()
+                
+                if charts_stats:
+                    print(f"\n📈 CHART-TYPEN:")
                     
-                    # Top 3 Spiele anzeigen
-                    top_games = info.get('top_games', [])[:3]
-                    for game in top_games:
-                        print(f"     #{game['rank']}: {game['name']}")
-            
-            # Letzte Aktivitäten
-            activity = overview.get('recent_activity', {})
-            if activity:
-                print(f"\n📊 AKTIVITÄTS-ÜBERSICHT:")
-                print(f"   📚 Aktive Charts-Spiele: {activity.get('total_active_games', 0)}")
-                print(f"   🎮 Einzigartige Apps: {activity.get('unique_apps', 0)}")
-                print(f"   💰 Preis-Updates heute: {activity.get('price_updates_today', 0)}")
-                print(f"   📅 Durchschnitt in Charts: {activity.get('average_days_in_charts', 0):.1f} Tage")
+                    # Chart-Typen aus aktiven Spielen ermitteln
+                    active_games = tracker.db_manager.get_active_chart_games()
+                    chart_types = {}
+                    
+                    for game in active_games:
+                        chart_type = game.get('chart_type', 'unknown')
+                        if chart_type not in chart_types:
+                            chart_types[chart_type] = {'active_games': 0, 'top_games': []}
+                        chart_types[chart_type]['active_games'] += 1
+                        
+                        # Top 3 Spiele sammeln
+                        if len(chart_types[chart_type]['top_games']) < 3:
+                            chart_types[chart_type]['top_games'].append({
+                                'rank': game.get('current_rank', 0),
+                                'name': game.get('name', 'Unknown')
+                            })
+                    
+                    # Chart-Typen anzeigen
+                    chart_descriptions = {
+                        'most_played': 'Meistgespielte Spiele',
+                        'top_releases': 'Beste neue Releases',
+                        'best_sellers': 'Bestseller',
+                        'weekly_top_sellers': 'Wöchentliche Bestseller'
+                    }
+                    
+                    for chart_type, info in chart_types.items():
+                        description = chart_descriptions.get(chart_type, chart_type.title())
+                        print(f"   • {description}: {info['active_games']} Spiele")
+                        
+                        # Top 3 Spiele anzeigen
+                        for game in info['top_games']:
+                            rank_display = f"#{game['rank']}" if game['rank'] > 0 else "-"
+                            print(f"     {rank_display}: {game['name']}")
+                    
+                    # Aktivitäts-Übersicht
+                    print(f"\n📊 AKTIVITÄTS-ÜBERSICHT:")
+                    print(f"   📚 Aktive Charts-Spiele: {charts_stats.get('total_active_charts_games', 0)}")
+                    print(f"   🎮 Einzigartige Apps: {charts_stats.get('unique_apps_in_charts', 0)}")
+                    print(f"   💰 Preis-Updates heute: {charts_stats.get('apps_with_price_updates_today', 0)}")
+                    print(f"   📅 Durchschnitt in Charts: {charts_stats.get('average_days_in_charts', 0):.1f} Tage")
+                else:
+                    print("\n📊 Noch keine Charts-Daten verfügbar")
+                    print("💡 Führe 'charts-cli update' aus")
+            except Exception as e:
+                print(f"\n⚠️ Fehler beim Laden der Charts-Statistiken: {e}")
         else:
-            print("❌ Charts-Tracking: DEAKTIVIERT")
-            if 'error' in overview:
-                print(f"   Fehler: {overview['error']}")
+            print("\n⚠️ Charts-Statistiken nicht verfügbar")
             
     except ImportError:
         print("❌ Price Tracker Module nicht gefunden")
@@ -224,8 +263,10 @@ def cmd_charts_deals(args):
     try:
         # UPDATED: Verwende konsolidierte price_tracker.py
         from price_tracker import create_price_tracker
+        from steam_wishlist_manager import load_api_key_from_env
         
-        tracker = create_price_tracker()
+        api_key = load_api_key_from_env()
+        tracker = create_price_tracker(api_key=api_key, enable_charts=True)
         
         if not tracker.charts_enabled:
             print("❌ Charts-Funktionalität nicht verfügbar")
@@ -253,6 +294,7 @@ def cmd_charts_deals(args):
                 print()
         else:
             print("❌ Keine Charts-Deals gefunden")
+            print("💡 Führe zuerst Charts-Updates und Preisabfragen durch")
             
     except ImportError:
         print("❌ Price Tracker Module nicht gefunden")
@@ -264,8 +306,10 @@ def cmd_charts_trending(args):
     try:
         # UPDATED: Verwende konsolidierte price_tracker.py
         from price_tracker import create_price_tracker
+        from steam_wishlist_manager import load_api_key_from_env
         
-        tracker = create_price_tracker()
+        api_key = load_api_key_from_env()
+        tracker = create_price_tracker(api_key=api_key, enable_charts=True)
         
         if not tracker.charts_enabled:
             print("❌ Charts-Funktionalität nicht verfügbar")
@@ -301,8 +345,10 @@ def cmd_charts_list(args):
     try:
         # UPDATED: Verwende konsolidierte price_tracker.py
         from price_tracker import create_price_tracker
+        from steam_wishlist_manager import load_api_key_from_env
         
-        tracker = create_price_tracker()
+        api_key = load_api_key_from_env()
+        tracker = create_price_tracker(api_key=api_key, enable_charts=True)
         
         if not tracker.charts_enabled:
             print("❌ Charts-Funktionalität nicht verfügbar")
@@ -348,6 +394,7 @@ def cmd_charts_list(args):
                     print(f"   (Zeige erste {args.limit})")
             else:
                 print("❌ Keine Charts-Spiele gefunden")
+                print("💡 Führe zuerst ein Charts-Update durch")
         else:
             print("❌ Charts-Datenbankfunktionen nicht verfügbar")
             
@@ -361,8 +408,10 @@ def cmd_charts_cleanup(args):
     try:
         # UPDATED: Verwende konsolidierte price_tracker.py
         from price_tracker import create_price_tracker
+        from steam_wishlist_manager import load_api_key_from_env
         
-        tracker = create_price_tracker()
+        api_key = load_api_key_from_env()
+        tracker = create_price_tracker(api_key=api_key, enable_charts=True)
         
         if not tracker.charts_enabled:
             print("❌ Charts-Funktionalität nicht verfügbar")
@@ -370,15 +419,18 @@ def cmd_charts_cleanup(args):
         
         print(f"🧹 Starte Charts-Cleanup (>{args.days} Tage)...")
         
-        if hasattr(tracker.charts_manager, 'cleanup_old_chart_games'):
-            removed = tracker.charts_manager.cleanup_old_chart_games(args.days)
-            
-            if removed > 0:
-                print(f"✅ {removed} alte Charts-Spiele entfernt")
+        if hasattr(tracker, 'charts_manager') and tracker.charts_manager:
+            if hasattr(tracker.charts_manager, 'cleanup_old_chart_games'):
+                removed = tracker.charts_manager.cleanup_old_chart_games(args.days)
+                
+                if removed > 0:
+                    print(f"✅ {removed} alte Charts-Spiele entfernt")
+                else:
+                    print("✅ Keine alten Charts-Spiele zum Entfernen gefunden")
             else:
-                print("✅ Keine alten Charts-Spiele zum Entfernen gefunden")
+                print("❌ Charts-Cleanup Funktion nicht verfügbar")
         else:
-            print("❌ Charts-Cleanup Funktion nicht verfügbar")
+            print("❌ Charts-Manager nicht verfügbar")
             
     except ImportError:
         print("❌ Price Tracker Module nicht gefunden")
@@ -390,8 +442,10 @@ def cmd_charts_export(args):
     try:
         # UPDATED: Verwende konsolidierte price_tracker.py
         from price_tracker import create_price_tracker
+        from steam_wishlist_manager import load_api_key_from_env
         
-        tracker = create_price_tracker()
+        api_key = load_api_key_from_env()
+        tracker = create_price_tracker(api_key=api_key, enable_charts=True)
         
         if not tracker.charts_enabled:
             print("❌ Charts-Funktionalität nicht verfügbar")
@@ -404,15 +458,18 @@ def cmd_charts_export(args):
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             output_file = f"exports/charts_export_{timestamp}.csv"
         
-        if hasattr(tracker.charts_manager, 'export_charts_data_csv'):
-            csv_file = tracker.charts_manager.export_charts_data_csv(output_file)
-            
-            if csv_file:
-                print(f"✅ Charts-Export erstellt: {csv_file}")
+        if hasattr(tracker, 'charts_manager') and tracker.charts_manager:
+            if hasattr(tracker.charts_manager, 'export_charts_data_csv'):
+                csv_file = tracker.charts_manager.export_charts_data_csv(output_file)
+                
+                if csv_file:
+                    print(f"✅ Charts-Export erstellt: {csv_file}")
+                else:
+                    print("❌ Export fehlgeschlagen (keine Daten?)")
             else:
-                print("❌ Export fehlgeschlagen (keine Daten?)")
+                print("❌ Charts-Export Funktion nicht verfügbar")
         else:
-            print("❌ Charts-Export Funktion nicht verfügbar")
+            print("❌ Charts-Manager nicht verfügbar")
             
     except ImportError:
         print("❌ Price Tracker Module nicht gefunden")
@@ -424,8 +481,10 @@ def cmd_setup_automation(args):
     try:
         # UPDATED: Verwende konsolidierte price_tracker.py
         from price_tracker import create_price_tracker, setup_full_automation
+        from steam_wishlist_manager import load_api_key_from_env
         
-        tracker = create_price_tracker()
+        api_key = load_api_key_from_env()
+        tracker = create_price_tracker(api_key=api_key, enable_charts=True)
         
         print("🚀 Richte vollautomatisches Tracking ein...")
         
