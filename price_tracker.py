@@ -1,8 +1,7 @@
 """
-Steam Price Tracker - Konsolidierte Version mit allen Bugfixes
-KOMPLETT GEFIXT - Vereint Standard Price Tracking mit robuster Charts-Integration
-Automatische Erkennung verfügbarer Features mit graceful degradation
-Threading-Probleme behoben, API-Fallbacks implementiert
+Steam Price Tracker - Updated Version mit Universal Background Scheduler
+KONSOLIDIERT - Vereint Standard Price Tracking mit robuster Charts-Integration
+Nutzt universellen BackgroundScheduler für separate Terminal-Execution
 """
 
 import requests
@@ -15,15 +14,17 @@ import logging
 from pathlib import Path
 from database_manager import DatabaseManager
 
+# Universal Background Scheduler importieren
+from background_scheduler import BackgroundScheduler, create_price_tracker_scheduler, create_charts_scheduler
+
 # Logging Setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class SteamPriceTracker:
     """
-    Konsolidierter Steam Preis-Tracker - FIXED VERSION
-    Kombiniert Standard Price Tracking mit robuster Charts-Integration
-    Alle Threading-Probleme und API-Fehler behoben
+    Steam Preis-Tracker mit Universal Background Scheduler
+    UPDATED VERSION - Nutzt separaten Terminal-Execution für alle Background-Tasks
     """
     
     # Store-Konfiguration basierend auf Projekt_SteamGoG.ipynb
@@ -41,7 +42,7 @@ class SteamPriceTracker:
     
     def __init__(self, db_manager: DatabaseManager = None, api_key: str = None, enable_charts: bool = True):
         """
-        Initialisiert Steam Price Tracker mit robuster Charts-Integration
+        Initialisiert Steam Price Tracker mit Universal Background Scheduler
         
         Args:
             db_manager: DatabaseManager Instanz
@@ -52,17 +53,16 @@ class SteamPriceTracker:
         self.api_key = api_key
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'SteamPriceTracker/2.0'
+            'User-Agent': 'SteamPriceTracker/2.1'
         })
         
         # Rate Limiting für CheapShark API
         self.last_cheapshark_request = 0
         self.cheapshark_rate_limit = 1.5  # 1.5 Sekunden zwischen Requests
         
-        # Standard Scheduler für Preisabfragen
-        self.scheduler_running = False
-        self.scheduler_thread = None
-        self.stop_scheduler_event = threading.Event()
+        # UPDATED: Universal Background Scheduler statt eigenem Threading
+        self.price_scheduler = create_price_tracker_scheduler()
+        self.charts_scheduler = None
         
         # Batch-Processing Konfiguration
         self.batch_size = 50  # Apps pro Batch
@@ -70,14 +70,14 @@ class SteamPriceTracker:
         self.retry_delay = 5.0  # Sekunden
         self.processing_active = False
         
-        # FIXED: Charts-Integration (optional) mit robuster Initialisierung
+        # Charts-Integration (optional) mit robuster Initialisierung
         self.charts_manager = None
         self.charts_enabled = False
         
         if enable_charts and api_key:
             self._initialize_charts_integration_fixed(api_key)
         
-        logger.info("✅ Steam Price Tracker initialisiert")
+        logger.info("✅ Steam Price Tracker mit Universal Background Scheduler initialisiert")
         if self.charts_enabled:
             logger.info("📊 Charts-Integration aktiviert")
         else:
@@ -85,7 +85,7 @@ class SteamPriceTracker:
     
     def _initialize_charts_integration_fixed(self, api_key: str):
         """
-        FIXED: Initialisiert Charts-Integration mit robuster Fehlerbehandlung
+        FIXED: Initialisiert Charts-Integration mit Universal Background Scheduler
         
         Args:
             api_key: Steam API Key
@@ -102,24 +102,29 @@ class SteamPriceTracker:
             if hasattr(self.db_manager, 'init_charts_tables'):
                 self.db_manager.init_charts_tables()
             
-            # FIXED: Test ob Charts-Manager funktioniert
+            # UPDATED: Charts-Scheduler erstellen
+            self.charts_scheduler = create_charts_scheduler()
+            
+            # Test ob Charts-Manager funktioniert
             try:
-                test_status = self.charts_manager.get_charts_scheduler_status()
                 self.charts_enabled = True
-                logger.info("✅ Charts-Integration erfolgreich initialisiert")
+                logger.info("✅ Charts-Integration mit Universal Scheduler erfolgreich initialisiert")
             except Exception as test_e:
                 logger.warning(f"⚠️ Charts-Manager Test fehlgeschlagen: {test_e}")
                 self.charts_enabled = False
                 self.charts_manager = None
+                self.charts_scheduler = None
             
         except ImportError:
             logger.info("ℹ️ Charts-Module nicht verfügbar - Charts-Features deaktiviert")
             self.charts_enabled = False
             self.charts_manager = None
+            self.charts_scheduler = None
         except Exception as e:
             logger.warning(f"⚠️ Charts-Integration fehlgeschlagen: {e}")
             self.charts_enabled = False
             self.charts_manager = None
+            self.charts_scheduler = None
     
     def _wait_for_cheapshark_rate_limit(self):
         """Wartet für CheapShark API Rate Limiting"""
@@ -736,57 +741,100 @@ class SteamPriceTracker:
             self.processing_active = False
     
     # ========================
-    # SCHEDULER FUNCTIONALITY - FIXED
+    # UNIVERSAL BACKGROUND SCHEDULER INTEGRATION - NEW
     # ========================
+    
+    def start_background_scheduler(self, 
+                                  price_interval_hours: int = 6,
+                                  name_interval_minutes: int = 30) -> bool:
+        """
+        UPDATED: Startet Background-Scheduler für Price Tracking in separatem Terminal
+        
+        Args:
+            price_interval_hours: Intervall für Preis-Updates in Stunden
+            name_interval_minutes: Intervall für Namen-Updates in Minuten
+            
+        Returns:
+            True wenn erfolgreich gestartet
+        """
+        try:
+            # Price Updates Scheduler starten
+            if self.price_scheduler.start_scheduler(
+                'price_updates', 
+                interval_hours=price_interval_hours
+            ):
+                logger.info(f"✅ Preis-Update Scheduler gestartet (alle {price_interval_hours}h)")
+            
+            # Name Updates Scheduler starten
+            if self.price_scheduler.start_scheduler(
+                'name_updates',
+                interval_minutes=name_interval_minutes
+            ):
+                logger.info(f"✅ Namen-Update Scheduler gestartet (alle {name_interval_minutes}min)")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Fehler beim Starten des Background-Schedulers: {e}")
+            return False
+    
+    def stop_background_scheduler(self) -> bool:
+        """
+        UPDATED: Stoppt alle Background-Scheduler
+        
+        Returns:
+            True wenn erfolgreich gestoppt
+        """
+        try:
+            stopped_count = self.price_scheduler.stop_all_schedulers()
+            logger.info(f"⏹️ {stopped_count} Price Tracker Scheduler gestoppt")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Fehler beim Stoppen der Background-Scheduler: {e}")
+            return False
     
     def get_enhanced_scheduler_status(self) -> Dict:
         """
-        FIXED: Gibt erweiterten Scheduler-Status zurück mit Charts-Integration
+        UPDATED: Gibt erweiterten Scheduler-Status mit Universal Background Scheduler zurück
         
         Returns:
             Dict mit erweiterten Scheduler-Informationen
         """
         status = {
-            'standard_scheduler_running': self.scheduler_running,
-            'charts_scheduler_running': False,
-            'standard_next_run': None,
-            'charts_next_update': None,
-            'charts_next_cleanup': None,
-            'charts_next_price_update': None,
-            'standard_jobs_count': 0,
-            'charts_jobs_count': 0,
-            'charts_thread_alive': False
+            'scheduler_type': 'Universal Background Scheduler',
+            'price_scheduler_status': self.price_scheduler.get_scheduler_status(),
+            'charts_scheduler_status': None,
+            'total_active_schedulers': 0
         }
         
-        # Standard-Scheduler Status
-        try:
-            if hasattr(schedule, 'jobs'):
-                standard_jobs = [job for job in schedule.jobs if 'charts' not in str(job.job_func)]
-                status['standard_jobs_count'] = len(standard_jobs)
-                
-                if standard_jobs:
-                    try:
-                        next_job = min(standard_jobs, key=lambda job: job.next_run)
-                        status['standard_next_run'] = next_job.next_run.strftime('%Y-%m-%d %H:%M:%S')
-                    except:
-                        status['standard_next_run'] = 'Unbekannt'
-        except:
-            pass
+        # Price Scheduler Status auswerten
+        price_status = status['price_scheduler_status']
+        if price_status and 'schedulers' in price_status:
+            for scheduler_name, scheduler_info in price_status['schedulers'].items():
+                if scheduler_info.get('running'):
+                    status['total_active_schedulers'] += 1
         
-        # FIXED: Charts-Scheduler Status (falls verfügbar)
-        if self.charts_enabled and self.charts_manager:
-            try:
-                charts_status = self.charts_manager.get_charts_scheduler_status()
-                status.update({
-                    'charts_scheduler_running': charts_status.get('charts_scheduler_running', False),
-                    'charts_next_update': charts_status.get('next_charts_update'),
-                    'charts_next_cleanup': charts_status.get('next_cleanup'),
-                    'charts_next_price_update': charts_status.get('next_price_update'),
-                    'charts_jobs_count': charts_status.get('charts_jobs_count', 0),
-                    'charts_thread_alive': charts_status.get('scheduler_thread_alive', False)
-                })
-            except Exception as e:
-                logger.debug(f"Charts-Scheduler Status nicht verfügbar: {e}")
+        # Charts Scheduler Status (falls verfügbar)
+        if self.charts_enabled and self.charts_scheduler:
+            status['charts_scheduler_status'] = self.charts_scheduler.get_scheduler_status()
+            
+            charts_status = status['charts_scheduler_status']
+            if charts_status and 'schedulers' in charts_status:
+                for scheduler_name, scheduler_info in charts_status['schedulers'].items():
+                    if scheduler_info.get('running'):
+                        status['total_active_schedulers'] += 1
+        
+        # Compatibility-Felder für alte API
+        status['standard_scheduler_running'] = any(
+            s.get('running', False) 
+            for s in price_status.get('schedulers', {}).values()
+        ) if price_status else False
+        
+        status['charts_scheduler_running'] = any(
+            s.get('running', False) 
+            for s in status['charts_scheduler_status'].get('schedulers', {}).values()
+        ) if status['charts_scheduler_status'] else False
         
         return status
     
@@ -799,109 +847,24 @@ class SteamPriceTracker:
         """
         return self.get_enhanced_scheduler_status()
     
+    # Kompatibilitäts-Methoden für alte API
     def start_scheduler(self, interval_hours: int = 6):
         """
-        Startet den automatischen Preis-Tracker Scheduler
-        
-        Args:
-            interval_hours: Intervall in Stunden zwischen Updates
+        DEPRECATED: Kompatibilitäts-Wrapper für start_background_scheduler
+        Nutzt Universal Background Scheduler
         """
-        if self.scheduler_running:
-            logger.warning("⚠️ Scheduler läuft bereits")
-            return
-        
-        # Bestehende Jobs löschen
-        schedule.clear()
-        
-        # Neuen Job planen
-        schedule.every(interval_hours).hours.do(self._scheduled_price_update)
-        
-        # Scheduler-Thread starten
-        self.stop_scheduler_event.clear()
-        self.scheduler_thread = threading.Thread(target=self._run_scheduler, daemon=True)
-        self.scheduler_thread.start()
-        
-        self.scheduler_running = True
-        logger.info(f"✅ Scheduler gestartet - Updates alle {interval_hours} Stunden")
+        logger.warning("⚠️ start_scheduler() ist deprecated - verwende start_background_scheduler()")
+        return self.start_background_scheduler(price_interval_hours=interval_hours)
     
     def stop_scheduler(self):
         """
-        Stoppt den automatischen Scheduler
+        DEPRECATED: Kompatibilitäts-Wrapper für stop_background_scheduler
         """
-        if not self.scheduler_running:
-            logger.info("ℹ️ Scheduler war nicht aktiv")
-            return
-        
-        # Signal zum Stoppen setzen
-        self.stop_scheduler_event.set()
-        
-        # Jobs löschen
-        schedule.clear()
-        
-        # Auf Thread-Ende warten
-        if self.scheduler_thread and self.scheduler_thread.is_alive():
-            self.scheduler_thread.join(timeout=5)
-        
-        self.scheduler_running = False
-        self.scheduler_thread = None
-        
-        logger.info("⏹️ Scheduler gestoppt")
-    
-    def _run_scheduler(self):
-        """
-        Interne Methode: Führt den Scheduler in eigenem Thread aus
-        """
-        logger.info("🚀 Scheduler-Thread gestartet")
-        
-        while not self.stop_scheduler_event.is_set():
-            try:
-                schedule.run_pending()
-                time.sleep(60)  # Prüfe jede Minute
-            except Exception as e:
-                logger.error(f"❌ Scheduler-Fehler: {e}")
-                time.sleep(60)
-        
-        logger.info("⏹️ Scheduler-Thread beendet")
-    
-    def _scheduled_price_update(self):
-        """
-        Interne Methode: Wird vom Scheduler automatisch aufgerufen
-        """
-        try:
-            logger.info("🔄 Automatisches Preisupdate gestartet")
-            
-            # Alle getrackte Apps abrufen
-            tracked_apps = self.get_tracked_apps()
-            
-            if not tracked_apps:
-                logger.info("ℹ️ Keine Apps zum Tracken gefunden")
-                return
-            
-            # App-IDs extrahieren
-            app_ids = [app['steam_app_id'] for app in tracked_apps]
-            
-            # Preise aktualisieren
-            result = self.track_app_prices(app_ids)
-            
-            logger.info(f"✅ Automatisches Update abgeschlossen: {result['successful']}/{result['processed']} Apps")
-            
-            if result['errors']:
-                logger.warning(f"⚠️ {len(result['errors'])} Fehler beim automatischen Update")
-                
-        except Exception as e:
-            logger.error(f"❌ Fehler beim automatischen Preisupdate: {e}")
-    
-    # Kompatibilitäts-Methoden
-    def start_price_tracking_scheduler(self, interval_hours: int = 6):
-        """Alias für start_scheduler() für Kompatibilität"""
-        return self.start_scheduler(interval_hours)
-    
-    def stop_price_tracking_scheduler(self):
-        """Alias für stop_scheduler() für Kompatibilität"""
-        return self.stop_scheduler()
+        logger.warning("⚠️ stop_scheduler() ist deprecated - verwende stop_background_scheduler()")
+        return self.stop_background_scheduler()
     
     # ========================
-    # CHARTS INTEGRATION - FIXED
+    # CHARTS INTEGRATION - UPDATED
     # ========================
     
     def enable_charts_tracking(self, 
@@ -909,7 +872,7 @@ class SteamPriceTracker:
                               price_update_hours: int = 4,
                               cleanup_hours: int = 24) -> bool:
         """
-        FIXED: Aktiviert Charts-Tracking mit robuster Fehlerbehandlung
+        UPDATED: Aktiviert Charts-Tracking mit Universal Background Scheduler
         
         Args:
             charts_update_hours: Intervall für Charts-Updates
@@ -923,19 +886,33 @@ class SteamPriceTracker:
             logger.warning("⚠️ Charts-Funktionalität nicht verfügbar")
             return False
         
-        if not self.charts_manager:
-            logger.error("❌ Charts-Manager nicht verfügbar")
+        if not self.charts_scheduler:
+            logger.error("❌ Charts-Scheduler nicht verfügbar")
             return False
         
         try:
-            # FIXED: Verwende die korrigierte start_charts_scheduler Methode
-            self.charts_manager.start_charts_scheduler(
-                charts_update_hours=charts_update_hours,
-                cleanup_hours=cleanup_hours,
-                price_update_hours=price_update_hours
-            )
+            # Charts Update Scheduler starten
+            if self.charts_scheduler.start_scheduler(
+                'charts_updates',
+                interval_hours=charts_update_hours
+            ):
+                logger.info(f"✅ Charts-Update Scheduler gestartet (alle {charts_update_hours}h)")
             
-            logger.info("✅ Charts-Tracking aktiviert")
+            # Charts Price Update Scheduler starten
+            if self.charts_scheduler.start_scheduler(
+                'charts_prices',
+                interval_hours=price_update_hours
+            ):
+                logger.info(f"✅ Charts-Preis Scheduler gestartet (alle {price_update_hours}h)")
+            
+            # Charts Cleanup Scheduler starten
+            if self.charts_scheduler.start_scheduler(
+                'charts_cleanup',
+                interval_hours=cleanup_hours
+            ):
+                logger.info(f"✅ Charts-Cleanup Scheduler gestartet (alle {cleanup_hours}h)")
+            
+            logger.info("✅ Charts-Tracking mit Universal Background Scheduler aktiviert")
             return True
             
         except Exception as e:
@@ -944,20 +921,17 @@ class SteamPriceTracker:
     
     def disable_charts_tracking(self) -> bool:
         """
-        FIXED: Deaktiviert Charts-Tracking sicher
+        UPDATED: Deaktiviert Charts-Tracking sicher
         
         Returns:
             True wenn erfolgreich deaktiviert
         """
-        if not self.charts_enabled:
-            return True
-        
-        if not self.charts_manager:
+        if not self.charts_enabled or not self.charts_scheduler:
             return True
         
         try:
-            self.charts_manager.stop_charts_scheduler()
-            logger.info("⏹️ Charts-Tracking deaktiviert")
+            stopped_count = self.charts_scheduler.stop_all_schedulers()
+            logger.info(f"⏹️ {stopped_count} Charts-Scheduler gestoppt")
             return True
         except Exception as e:
             logger.error(f"❌ Fehler beim Deaktivieren des Charts-Trackings: {e}")
@@ -1141,17 +1115,18 @@ class SteamPriceTracker:
         # Basis-Statistiken
         stats = self.get_statistics()
         
+        # Universal Background Scheduler Status
+        stats['background_scheduler'] = {
+            'price_tracker': self.price_scheduler.get_scheduler_status(),
+            'charts': self.charts_scheduler.get_scheduler_status() if self.charts_scheduler else None
+        }
+        
         # Charts-Statistiken hinzufügen falls verfügbar
         if self.charts_enabled and hasattr(self.db_manager, 'get_charts_statistics'):
             try:
                 charts_stats = self.db_manager.get_charts_statistics()
                 stats['charts'] = charts_stats
                 stats['charts']['enabled'] = True
-                
-                # Charts-Scheduler Status
-                if self.charts_manager:
-                    scheduler_status = self.charts_manager.get_charts_scheduler_status()
-                    stats['charts']['scheduler_status'] = scheduler_status
             except Exception as e:
                 logger.warning(f"⚠️ Fehler beim Laden der Charts-Statistiken: {e}")
                 stats['charts'] = {'enabled': True, 'error': str(e)}
@@ -1253,15 +1228,32 @@ class SteamPriceTracker:
         
         logger.info(f"✅ CSV Export erstellt: {output_path}")
         return str(output_path)
+    
+    def cleanup_scheduler_resources(self):
+        """
+        UPDATED: Bereinigt alle Scheduler-Ressourcen
+        """
+        try:
+            # Price Tracker Scheduler aufräumen
+            self.price_scheduler.cleanup_all_files()
+            
+            # Charts Scheduler aufräumen (falls verfügbar)
+            if self.charts_scheduler:
+                self.charts_scheduler.cleanup_all_files()
+            
+            logger.info("🧹 Alle Scheduler-Ressourcen bereinigt")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Fehler beim Aufräumen der Scheduler-Ressourcen: {e}")
 
 
 # ========================
-# CONVENIENCE FUNCTIONS
+# CONVENIENCE FUNCTIONS - UPDATED
 # ========================
 
 def create_price_tracker(api_key: str = None, db_path: str = "steam_price_tracker.db", enable_charts: bool = True):
     """
-    Erstellt Steam Price Tracker mit automatischer Konfiguration
+    Erstellt Steam Price Tracker mit Universal Background Scheduler
     
     Args:
         api_key: Steam API Key (optional, lädt aus .env)
@@ -1269,7 +1261,7 @@ def create_price_tracker(api_key: str = None, db_path: str = "steam_price_tracke
         enable_charts: Ob Charts-Funktionalität aktiviert werden soll
         
     Returns:
-        SteamPriceTracker Instanz
+        SteamPriceTracker Instanz mit Universal Background Scheduler
     """
     if api_key is None and enable_charts:
         try:
@@ -1289,23 +1281,28 @@ def create_price_tracker(api_key: str = None, db_path: str = "steam_price_tracke
 def setup_full_automation(tracker: SteamPriceTracker,
                          normal_interval: int = 6,
                          charts_interval: int = 6,
-                         charts_price_interval: int = 4) -> bool:
+                         charts_price_interval: int = 4,
+                         name_interval: int = 30) -> bool:
     """
-    Richtet vollautomatisches Tracking ein
+    UPDATED: Richtet vollautomatisches Tracking mit Universal Background Scheduler ein
     
     Args:
         tracker: SteamPriceTracker Instanz
         normal_interval: Intervall für normale Apps (Stunden)
         charts_interval: Intervall für Charts-Updates (Stunden)
         charts_price_interval: Intervall für Charts-Preise (Stunden)
+        name_interval: Intervall für Namen-Updates (Minuten)
         
     Returns:
         True wenn erfolgreich eingerichtet
     """
     try:
-        # Normales Tracking starten
-        tracker.start_scheduler(normal_interval)
-        logger.info(f"✅ Normales Tracking: alle {normal_interval}h")
+        # Price Tracker Background Scheduler starten
+        tracker.start_background_scheduler(
+            price_interval_hours=normal_interval,
+            name_interval_minutes=name_interval
+        )
+        logger.info(f"✅ Price Tracker Automation: Preise alle {normal_interval}h, Namen alle {name_interval}min")
         
         # Charts-Tracking starten (falls verfügbar)
         if tracker.charts_enabled:
@@ -1314,11 +1311,35 @@ def setup_full_automation(tracker: SteamPriceTracker,
                 price_update_hours=charts_price_interval,
                 cleanup_hours=24
             )
-            logger.info(f"✅ Charts-Tracking: Updates alle {charts_interval}h, Preise alle {charts_price_interval}h")
+            logger.info(f"✅ Charts Automation: Updates alle {charts_interval}h, Preise alle {charts_price_interval}h")
         
-        logger.info("🚀 Vollautomatisches Tracking aktiviert!")
+        logger.info("🚀 Vollautomatisches Tracking mit Universal Background Scheduler aktiviert!")
+        logger.info("💡 Alle Tasks laufen in separaten Terminals!")
         return True
         
     except Exception as e:
         logger.error(f"❌ Fehler beim Setup der Automatisierung: {e}")
         return False
+
+def cleanup_all_background_schedulers():
+    """
+    Utility-Funktion zum Aufräumen aller Background-Scheduler-Ressourcen
+    """
+    try:
+        from pathlib import Path
+        
+        # Temporäre Scheduler-Dateien entfernen
+        temp_dir = Path("temp_schedulers")
+        if temp_dir.exists():
+            for file in temp_dir.glob("scheduler_*.py"):
+                file.unlink()
+            
+            try:
+                temp_dir.rmdir()
+            except OSError:
+                pass
+        
+        logger.info("🧹 Alle Background-Scheduler-Ressourcen bereinigt")
+        
+    except Exception as e:
+        logger.warning(f"⚠️ Fehler beim Aufräumen: {e}")
