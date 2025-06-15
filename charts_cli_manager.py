@@ -2,6 +2,7 @@
 """
 Steam Charts CLI Manager
 Command-Line Interface für Steam Charts Tracking
+UPDATED: Verwendet konsolidierte price_tracker.py
 """
 
 import sys
@@ -17,9 +18,10 @@ logger = logging.getLogger(__name__)
 def cmd_enable_charts(args):
     """Aktiviert Charts-Tracking"""
     try:
-        from enhanced_price_tracker_charts import create_enhanced_tracker
+        # UPDATED: Verwende konsolidierte price_tracker.py
+        from price_tracker import create_price_tracker
         
-        tracker = create_enhanced_tracker()
+        tracker = create_price_tracker()
         
         if not tracker.charts_enabled:
             print("❌ Charts-Funktionalität nicht verfügbar")
@@ -43,7 +45,7 @@ def cmd_enable_charts(args):
             print("❌ Fehler beim Aktivieren des Charts-Trackings")
             
     except ImportError:
-        print("❌ Enhanced Price Tracker Module nicht gefunden")
+        print("❌ Price Tracker Module nicht gefunden")
         print("💡 Stelle sicher, dass alle Dateien vorhanden sind")
     except Exception as e:
         print(f"❌ Fehler: {e}")
@@ -51,9 +53,10 @@ def cmd_enable_charts(args):
 def cmd_disable_charts(args):
     """Deaktiviert Charts-Tracking"""
     try:
-        from enhanced_price_tracker_charts import create_enhanced_tracker
+        # UPDATED: Verwende konsolidierte price_tracker.py
+        from price_tracker import create_price_tracker
         
-        tracker = create_enhanced_tracker()
+        tracker = create_price_tracker()
         
         if not tracker.charts_enabled:
             print("ℹ️ Charts-Tracking ist bereits deaktiviert")
@@ -69,16 +72,17 @@ def cmd_disable_charts(args):
             print("❌ Fehler beim Deaktivieren")
             
     except ImportError:
-        print("❌ Enhanced Price Tracker Module nicht gefunden")
+        print("❌ Price Tracker Module nicht gefunden")
     except Exception as e:
         print(f"❌ Fehler: {e}")
 
 def cmd_update_charts(args):
     """Führt Charts-Update durch"""
     try:
-        from enhanced_price_tracker_charts import create_enhanced_tracker
+        # UPDATED: Verwende konsolidierte price_tracker.py
+        from price_tracker import create_price_tracker
         
-        tracker = create_enhanced_tracker()
+        tracker = create_price_tracker()
         
         if not tracker.charts_enabled:
             print("❌ Charts-Funktionalität nicht verfügbar")
@@ -106,16 +110,17 @@ def cmd_update_charts(args):
             print(f"❌ Charts-Update fehlgeschlagen: {result.get('error', 'Unbekannter Fehler')}")
             
     except ImportError:
-        print("❌ Enhanced Price Tracker Module nicht gefunden")
+        print("❌ Price Tracker Module nicht gefunden")
     except Exception as e:
         print(f"❌ Fehler: {e}")
 
 def cmd_update_charts_prices(args):
     """Führt Preis-Update für Charts durch"""
     try:
-        from enhanced_price_tracker_charts import create_enhanced_tracker
+        # UPDATED: Verwende konsolidierte price_tracker.py
+        from price_tracker import create_price_tracker
         
-        tracker = create_enhanced_tracker()
+        tracker = create_price_tracker()
         
         if not tracker.charts_enabled:
             print("❌ Charts-Funktionalität nicht verfügbar")
@@ -141,16 +146,17 @@ def cmd_update_charts_prices(args):
             print(f"❌ Charts-Preisupdate fehlgeschlagen: {result.get('error', 'Unbekannter Fehler')}")
             
     except ImportError:
-        print("❌ Enhanced Price Tracker Module nicht gefunden")
+        print("❌ Price Tracker Module nicht gefunden")
     except Exception as e:
         print(f"❌ Fehler: {e}")
 
 def cmd_charts_status(args):
     """Zeigt Charts-Status an"""
     try:
-        from enhanced_price_tracker_charts import create_enhanced_tracker
+        # UPDATED: Verwende konsolidierte price_tracker.py
+        from price_tracker import create_price_tracker
         
-        tracker = create_enhanced_tracker()
+        tracker = create_price_tracker()
         
         print("📊 STEAM CHARTS STATUS")
         print("=" * 30)
@@ -161,7 +167,14 @@ def cmd_charts_status(args):
             return
         
         # Charts-Übersicht holen
-        overview = tracker.get_charts_overview()
+        if hasattr(tracker, 'get_charts_overview'):
+            overview = tracker.get_charts_overview()
+        else:
+            # Fallback: Basis-Informationen
+            overview = {
+                'enabled': tracker.charts_enabled,
+                'message': 'Charts verfügbar aber get_charts_overview() nicht implementiert'
+            }
         
         if overview.get('enabled'):
             print("✅ Charts-Tracking: AKTIVIERT")
@@ -202,16 +215,17 @@ def cmd_charts_status(args):
                 print(f"   Fehler: {overview['error']}")
             
     except ImportError:
-        print("❌ Enhanced Price Tracker Module nicht gefunden")
+        print("❌ Price Tracker Module nicht gefunden")
     except Exception as e:
         print(f"❌ Fehler: {e}")
 
 def cmd_charts_deals(args):
     """Zeigt beste Charts-Deals"""
     try:
-        from enhanced_price_tracker_charts import create_enhanced_tracker
+        # UPDATED: Verwende konsolidierte price_tracker.py
+        from price_tracker import create_price_tracker
         
-        tracker = create_enhanced_tracker()
+        tracker = create_price_tracker()
         
         if not tracker.charts_enabled:
             print("❌ Charts-Funktionalität nicht verfügbar")
@@ -241,16 +255,17 @@ def cmd_charts_deals(args):
             print("❌ Keine Charts-Deals gefunden")
             
     except ImportError:
-        print("❌ Enhanced Price Tracker Module nicht gefunden")
+        print("❌ Price Tracker Module nicht gefunden")
     except Exception as e:
         print(f"❌ Fehler: {e}")
 
 def cmd_charts_trending(args):
     """Zeigt Trending Price Drops"""
     try:
-        from enhanced_price_tracker_charts import create_enhanced_tracker
+        # UPDATED: Verwende konsolidierte price_tracker.py
+        from price_tracker import create_price_tracker
         
-        tracker = create_enhanced_tracker()
+        tracker = create_price_tracker()
         
         if not tracker.charts_enabled:
             print("❌ Charts-Funktionalität nicht verfügbar")
@@ -277,16 +292,17 @@ def cmd_charts_trending(args):
             print("💡 Versuche niedrigeren Mindestrabatt oder längeren Zeitraum")
             
     except ImportError:
-        print("❌ Enhanced Price Tracker Module nicht gefunden")
+        print("❌ Price Tracker Module nicht gefunden")
     except Exception as e:
         print(f"❌ Fehler: {e}")
 
 def cmd_charts_list(args):
     """Listet Charts-Spiele auf"""
     try:
-        from enhanced_price_tracker_charts import create_enhanced_tracker
+        # UPDATED: Verwende konsolidierte price_tracker.py
+        from price_tracker import create_price_tracker
         
-        tracker = create_enhanced_tracker()
+        tracker = create_price_tracker()
         
         if not tracker.charts_enabled:
             print("❌ Charts-Funktionalität nicht verfügbar")
@@ -336,16 +352,17 @@ def cmd_charts_list(args):
             print("❌ Charts-Datenbankfunktionen nicht verfügbar")
             
     except ImportError:
-        print("❌ Enhanced Price Tracker Module nicht gefunden")
+        print("❌ Price Tracker Module nicht gefunden")
     except Exception as e:
         print(f"❌ Fehler: {e}")
 
 def cmd_charts_cleanup(args):
     """Führt Charts-Cleanup durch"""
     try:
-        from enhanced_price_tracker_charts import create_enhanced_tracker
+        # UPDATED: Verwende konsolidierte price_tracker.py
+        from price_tracker import create_price_tracker
         
-        tracker = create_enhanced_tracker()
+        tracker = create_price_tracker()
         
         if not tracker.charts_enabled:
             print("❌ Charts-Funktionalität nicht verfügbar")
@@ -364,16 +381,17 @@ def cmd_charts_cleanup(args):
             print("❌ Charts-Cleanup Funktion nicht verfügbar")
             
     except ImportError:
-        print("❌ Enhanced Price Tracker Module nicht gefunden")
+        print("❌ Price Tracker Module nicht gefunden")
     except Exception as e:
         print(f"❌ Fehler: {e}")
 
 def cmd_charts_export(args):
     """Exportiert Charts-Daten"""
     try:
-        from enhanced_price_tracker_charts import create_enhanced_tracker
+        # UPDATED: Verwende konsolidierte price_tracker.py
+        from price_tracker import create_price_tracker
         
-        tracker = create_enhanced_tracker()
+        tracker = create_price_tracker()
         
         if not tracker.charts_enabled:
             print("❌ Charts-Funktionalität nicht verfügbar")
@@ -397,16 +415,17 @@ def cmd_charts_export(args):
             print("❌ Charts-Export Funktion nicht verfügbar")
             
     except ImportError:
-        print("❌ Enhanced Price Tracker Module nicht gefunden")
+        print("❌ Price Tracker Module nicht gefunden")
     except Exception as e:
         print(f"❌ Fehler: {e}")
 
 def cmd_setup_automation(args):
     """Richtet vollautomatisches Tracking ein"""
     try:
-        from enhanced_price_tracker_charts import create_enhanced_tracker, setup_full_automation
+        # UPDATED: Verwende konsolidierte price_tracker.py
+        from price_tracker import create_price_tracker, setup_full_automation
         
-        tracker = create_enhanced_tracker()
+        tracker = create_price_tracker()
         
         print("🚀 Richte vollautomatisches Tracking ein...")
         
@@ -451,7 +470,7 @@ def cmd_setup_automation(args):
             print("❌ Fehler beim Einrichten der Automatisierung")
             
     except ImportError:
-        print("❌ Enhanced Price Tracker Module nicht gefunden")
+        print("❌ Price Tracker Module nicht gefunden")
     except Exception as e:
         print(f"❌ Fehler: {e}")
 

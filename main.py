@@ -1,6 +1,7 @@
 """
 Enhanced Steam Price Tracker - Hauptanwendung mit Charts Integration
 CLI mit ALLEN ursprünglichen Funktionen plus Charts-Features
+UPDATED: Verwendet konsolidierte price_tracker.py mit integrierter Charts-Funktionalität
 """
 
 import os
@@ -117,17 +118,22 @@ def safe_stop_scheduler(price_tracker):
 def check_charts_functionality():
     """Prüft ob Charts-Funktionalität verfügbar ist"""
     try:
-        # Prüfe ob Enhanced Tracker verfügbar ist
-        from enhanced_price_tracker_charts import create_enhanced_tracker
+        # UPDATED: Verwende konsolidierte price_tracker.py
+        from database_manager import DatabaseManager
+        from price_tracker import SteamPriceTracker
         
         # Teste mit temporärem Tracker
-        tracker = create_enhanced_tracker()
+        db = DatabaseManager()
+        tracker = SteamPriceTracker(db)
+        
+        # Prüfe ob Charts-Funktionalität verfügbar ist
+        charts_available = hasattr(tracker, 'charts_manager') and tracker.charts_manager is not None
         
         return {
-            'available': True,
-            'charts_enabled': tracker.charts_enabled,
-            'has_api_key': tracker.charts_enabled,
-            'message': '✅ Charts-Funktionalität verfügbar' if tracker.charts_enabled else '⚠️ Charts verfügbar, aber kein API Key'
+            'available': charts_available,
+            'charts_enabled': charts_available,
+            'has_api_key': charts_available,
+            'message': '✅ Charts-Funktionalität verfügbar' if charts_available else '⚠️ Charts nicht verfügbar (kein API Key oder Charts-Module fehlen)'
         }
         
     except ImportError as e:
@@ -135,14 +141,14 @@ def check_charts_functionality():
             'available': False,
             'charts_enabled': False,
             'has_api_key': False,
-            'message': f'❌ Charts-Module nicht gefunden: {e}'
+            'message': f'❌ Module nicht gefunden: {e}'
         }
     except Exception as e:
         return {
             'available': False,
             'charts_enabled': False,
             'has_api_key': False,
-            'message': f'❌ Charts-Fehler: {e}'
+            'message': f'❌ Fehler: {e}'
         }
 
 def main():
@@ -173,23 +179,29 @@ def main():
     
     # Komponenten initialisieren
     try:
-        if charts_status['available']:
-            # Enhanced Tracker mit Charts
-            from enhanced_price_tracker_charts import create_enhanced_tracker
-            price_tracker = create_enhanced_tracker(api_key)
-            print("✅ Enhanced Steam Price Tracker mit Charts initialisiert")
-            
-            charts_enabled = price_tracker.charts_enabled
-        else:
-            # Fallback auf Standard Tracker
-            from database_manager import DatabaseManager
-            from price_tracker import SteamPriceTracker
-            
-            db_manager = DatabaseManager()
-            price_tracker = SteamPriceTracker(db_manager)
-            print("✅ Standard Steam Price Tracker initialisiert")
-            
-            charts_enabled = False
+        # UPDATED: Verwende konsolidierte price_tracker.py
+        from database_manager import DatabaseManager
+        from price_tracker import SteamPriceTracker
+        
+        # Database Manager mit Charts-Erweiterungen
+        db_manager = DatabaseManager()
+        
+        # Erstelle Price Tracker
+        price_tracker = SteamPriceTracker(db_manager)
+        
+        # Charts-Integration falls API Key verfügbar
+        charts_enabled = False
+        if api_key and hasattr(price_tracker, 'enable_charts_integration'):
+            try:
+                charts_enabled = price_tracker.enable_charts_integration(api_key)
+                if charts_enabled:
+                    print("✅ Charts-Integration aktiviert")
+                else:
+                    print("⚠️ Charts-Integration fehlgeschlagen")
+            except Exception as e:
+                print(f"⚠️ Charts-Integration nicht möglich: {e}")
+        
+        print("✅ Steam Price Tracker initialisiert")
             
         # Wishlist Manager
         if api_key:
@@ -211,10 +223,7 @@ def main():
     while True:
         # Aktuelle Statistiken anzeigen
         try:
-            if hasattr(price_tracker, 'get_enhanced_statistics'):
-                stats = price_tracker.get_enhanced_statistics()
-            else:
-                stats = price_tracker.get_statistics()
+            stats = price_tracker.get_statistics()
             
             # Standard Statistiken
             print(f"\n📊 AKTUELLER STATUS:")
@@ -224,25 +233,27 @@ def main():
             print(f"🏪 Stores: {', '.join(stats['stores_tracked'])}")
             
             # Charts-Statistiken (falls verfügbar)
-            if charts_enabled and 'charts' in stats:
-                charts_stats = stats['charts']
-                if charts_stats.get('enabled', False):
-                    print(f"\n📊 CHARTS-STATUS:")
-                    print(f"🎯 Aktive Charts-Spiele: {charts_stats.get('total_active_charts_games', 0)}")
-                    print(f"🎮 Einzigartige Apps in Charts: {charts_stats.get('unique_apps_in_charts', 0)}")
-                    print(f"📈 Charts-Preis-Snapshots: {charts_stats.get('total_charts_price_snapshots', 0):,}")
-                    
-                    # Scheduler Status
-                    scheduler_status = charts_stats.get('scheduler_status', {})
-                    if scheduler_status.get('charts_scheduler_running'):
-                        print(f"🚀 Charts-Scheduler: AKTIV ✅")
-                        next_update = scheduler_status.get('next_charts_update', 'N/A')
-                        if next_update and next_update != 'N/A':
-                            print(f"   ⏰ Nächstes Charts-Update: {next_update}")
-                    else:
-                        print(f"🚀 Charts-Scheduler: INAKTIV ❌")
-                else:
-                    print(f"📊 Charts: {charts_stats.get('message', 'Nicht verfügbar')}")
+            if charts_enabled and hasattr(price_tracker, 'get_charts_statistics'):
+                try:
+                    charts_stats = price_tracker.get_charts_statistics()
+                    if charts_stats:
+                        print(f"\n📊 CHARTS-STATUS:")
+                        print(f"🎯 Aktive Charts-Spiele: {charts_stats.get('total_active_charts_games', 0)}")
+                        print(f"🎮 Einzigartige Apps in Charts: {charts_stats.get('unique_apps_in_charts', 0)}")
+                        print(f"📈 Charts-Preis-Snapshots: {charts_stats.get('total_charts_price_snapshots', 0):,}")
+                        
+                        # Scheduler Status
+                        if hasattr(price_tracker, 'get_charts_scheduler_status'):
+                            scheduler_status = price_tracker.get_charts_scheduler_status()
+                            if scheduler_status.get('charts_scheduler_running'):
+                                print(f"🚀 Charts-Scheduler: AKTIV ✅")
+                                next_update = scheduler_status.get('next_charts_update', 'N/A')
+                                if next_update and next_update != 'N/A':
+                                    print(f"   ⏰ Nächstes Charts-Update: {next_update}")
+                            else:
+                                print(f"🚀 Charts-Scheduler: INAKTIV ❌")
+                except Exception as e:
+                    print(f"⚠️ Charts-Statistiken nicht verfügbar: {e}")
             
             # Standard Scheduler Status
             scheduler_status = safe_get_scheduler_status(price_tracker)
@@ -784,10 +795,7 @@ def main():
             print("=" * 30)
             
             try:
-                if hasattr(price_tracker, 'get_enhanced_statistics'):
-                    stats = price_tracker.get_enhanced_statistics()
-                else:
-                    stats = price_tracker.get_statistics()
+                stats = price_tracker.get_statistics()
                 
                 print(f"📚 Getrackte Apps: {stats['tracked_apps']}")
                 print(f"📈 Gesamt Preis-Snapshots: {stats.get('total_snapshots', 0):,}")
@@ -815,14 +823,17 @@ def main():
                     print(f"❌ Fehlgeschlagene Updates: {name_stats['failed_updates']}")
                 
                 # Charts-Statistiken (falls verfügbar)
-                if charts_enabled and 'charts' in stats:
-                    charts_stats = stats['charts']
-                    if charts_stats and 'total_active_charts_games' in charts_stats:
-                        print(f"\n📊 CHARTS-STATISTIKEN:")
-                        print(f"🎯 Aktive Charts-Spiele: {charts_stats['total_active_charts_games']}")
-                        print(f"🎮 Einzigartige Apps in Charts: {charts_stats['unique_apps_in_charts']}")
-                        print(f"📈 Charts-Preis-Snapshots: {charts_stats['total_charts_price_snapshots']:,}")
-                        print(f"📅 Durchschnitt in Charts: {charts_stats.get('average_days_in_charts', 0):.1f} Tage")
+                if charts_enabled and hasattr(price_tracker, 'get_charts_statistics'):
+                    try:
+                        charts_stats = price_tracker.get_charts_statistics()
+                        if charts_stats and 'total_active_charts_games' in charts_stats:
+                            print(f"\n📊 CHARTS-STATISTIKEN:")
+                            print(f"🎯 Aktive Charts-Spiele: {charts_stats['total_active_charts_games']}")
+                            print(f"🎮 Einzigartige Apps in Charts: {charts_stats['unique_apps_in_charts']}")
+                            print(f"📈 Charts-Preis-Snapshots: {charts_stats['total_charts_price_snapshots']:,}")
+                            print(f"📅 Durchschnitt in Charts: {charts_stats.get('average_days_in_charts', 0):.1f} Tage")
+                    except Exception as e:
+                        print(f"⚠️ Charts-Statistiken nicht verfügbar: {e}")
                 
                 # Weitere Details aus Datenbank
                 if hasattr(price_tracker.db_manager, 'get_total_price_snapshots'):
@@ -1089,40 +1100,45 @@ def main():
             print("\n🎯 CHARTS-TRACKING VERWALTEN")
             print("=" * 35)
             
-            if hasattr(price_tracker, 'charts_manager') and price_tracker.charts_manager:
-                scheduler_status = price_tracker.charts_manager.get_charts_scheduler_status()
-                
-                if scheduler_status.get('charts_scheduler_running'):
-                    print("🔄 Charts-Tracking läuft bereits")
-                    print(f"   ⏰ Nächstes Charts-Update: {scheduler_status.get('next_charts_update', 'N/A')}")
-                    print(f"   💰 Nächstes Preis-Update: {scheduler_status.get('next_price_update', 'N/A')}")
+            if hasattr(price_tracker, 'get_charts_scheduler_status'):
+                try:
+                    scheduler_status = price_tracker.get_charts_scheduler_status()
                     
-                    stop = input("Charts-Tracking stoppen? (j/n): ").lower().strip()
-                    if stop in ['j', 'ja', 'y', 'yes']:
-                        if price_tracker.disable_charts_tracking():
-                            print("⏹️ Charts-Tracking gestoppt")
-                else:
-                    print("⏸️ Charts-Tracking ist inaktiv")
-                    start = input("Charts-Tracking starten? (j/n): ").lower().strip()
-                    
-                    if start in ['j', 'ja', 'y', 'yes']:
-                        charts_hours = input("Charts-Update Intervall in Stunden (Standard: 6): ").strip()
-                        price_hours = input("Preis-Update Intervall in Stunden (Standard: 4): ").strip()
-                        cleanup_hours = input("Cleanup Intervall in Stunden (Standard: 24): ").strip()
+                    if scheduler_status.get('charts_scheduler_running'):
+                        print("🔄 Charts-Tracking läuft bereits")
+                        print(f"   ⏰ Nächstes Charts-Update: {scheduler_status.get('next_charts_update', 'N/A')}")
+                        print(f"   💰 Nächstes Preis-Update: {scheduler_status.get('next_price_update', 'N/A')}")
                         
-                        try:
-                            charts_hours = int(charts_hours) if charts_hours else 6
-                            price_hours = int(price_hours) if price_hours else 4
-                            cleanup_hours = int(cleanup_hours) if cleanup_hours else 24
-                        except ValueError:
-                            charts_hours, price_hours, cleanup_hours = 6, 4, 24
+                        stop = input("Charts-Tracking stoppen? (j/n): ").lower().strip()
+                        if stop in ['j', 'ja', 'y', 'yes']:
+                            if hasattr(price_tracker, 'disable_charts_tracking'):
+                                if price_tracker.disable_charts_tracking():
+                                    print("⏹️ Charts-Tracking gestoppt")
+                    else:
+                        print("⏸️ Charts-Tracking ist inaktiv")
+                        start = input("Charts-Tracking starten? (j/n): ").lower().strip()
                         
-                        if price_tracker.enable_charts_tracking(charts_hours, price_hours, cleanup_hours):
-                            print(f"▶️ Charts-Tracking gestartet")
-                            print(f"   📊 Charts-Updates: alle {charts_hours}h")
-                            print(f"   💰 Preis-Updates: alle {price_hours}h")
+                        if start in ['j', 'ja', 'y', 'yes']:
+                            charts_hours = input("Charts-Update Intervall in Stunden (Standard: 6): ").strip()
+                            price_hours = input("Preis-Update Intervall in Stunden (Standard: 4): ").strip()
+                            cleanup_hours = input("Cleanup Intervall in Stunden (Standard: 24): ").strip()
+                            
+                            try:
+                                charts_hours = int(charts_hours) if charts_hours else 6
+                                price_hours = int(price_hours) if price_hours else 4
+                                cleanup_hours = int(cleanup_hours) if cleanup_hours else 24
+                            except ValueError:
+                                charts_hours, price_hours, cleanup_hours = 6, 4, 24
+                            
+                            if hasattr(price_tracker, 'enable_charts_tracking'):
+                                if price_tracker.enable_charts_tracking(charts_hours, price_hours, cleanup_hours):
+                                    print(f"▶️ Charts-Tracking gestartet")
+                                    print(f"   📊 Charts-Updates: alle {charts_hours}h")
+                                    print(f"   💰 Preis-Updates: alle {price_hours}h")
+                except Exception as e:
+                    print(f"❌ Charts-Scheduler Fehler: {e}")
             else:
-                print("❌ Charts-Manager nicht verfügbar")
+                print("❌ Charts-Scheduler-Funktionen nicht verfügbar")
         
         elif charts_enabled and choice == "16":
             # Charts sofort aktualisieren
@@ -1149,15 +1165,19 @@ def main():
                 chart_types = ["weekly_top_sellers"]
             
             print("🔄 Starte Charts-Update...")
-            result = price_tracker.update_charts_now(chart_types)
             
-            if result.get('success', True):
-                print("✅ Charts-Update abgeschlossen:")
-                print(f"   📊 {result.get('total_games_found', 0)} Spiele gefunden")
-                print(f"   ➕ {result.get('new_games_added', 0)} neue Spiele")
-                print(f"   🔄 {result.get('existing_games_updated', 0)} aktualisiert")
+            if hasattr(price_tracker, 'update_charts_now'):
+                result = price_tracker.update_charts_now(chart_types)
+                
+                if result.get('success', True):
+                    print("✅ Charts-Update abgeschlossen:")
+                    print(f"   📊 {result.get('total_games_found', 0)} Spiele gefunden")
+                    print(f"   ➕ {result.get('new_games_added', 0)} neue Spiele")
+                    print(f"   🔄 {result.get('existing_games_updated', 0)} aktualisiert")
+                else:
+                    print(f"❌ Charts-Update fehlgeschlagen: {result.get('error')}")
             else:
-                print(f"❌ Charts-Update fehlgeschlagen: {result.get('error')}")
+                print("❌ Charts-Update Funktion nicht verfügbar")
         
         elif charts_enabled and choice == "17":
             # Charts-Preise aktualisieren
@@ -1165,17 +1185,21 @@ def main():
             print("=" * 35)
             
             print("🔄 Aktualisiere Preise für alle Charts-Spiele...")
-            result = price_tracker.update_charts_prices_now()
             
-            if result.get('success'):
-                print("✅ Charts-Preisupdate abgeschlossen:")
-                print(f"   📊 {result.get('total_games', 0)} Spiele verarbeitet")
-                print(f"   💰 {result.get('successful', 0)} erfolgreich aktualisiert")
+            if hasattr(price_tracker, 'update_charts_prices_now'):
+                result = price_tracker.update_charts_prices_now()
                 
-                if result.get('failed', 0) > 0:
-                    print(f"   ❌ {result['failed']} fehlgeschlagen")
+                if result.get('success'):
+                    print("✅ Charts-Preisupdate abgeschlossen:")
+                    print(f"   📊 {result.get('total_games', 0)} Spiele verarbeitet")
+                    print(f"   💰 {result.get('successful', 0)} erfolgreich aktualisiert")
+                    
+                    if result.get('failed', 0) > 0:
+                        print(f"   ❌ {result['failed']} fehlgeschlagen")
+                else:
+                    print(f"❌ Charts-Preisupdate fehlgeschlagen: {result.get('error')}")
             else:
-                print(f"❌ Charts-Preisupdate fehlgeschlagen: {result.get('error')}")
+                print("❌ Charts-Preisupdate Funktion nicht verfügbar")
         
         elif charts_enabled and choice == "18":
             # Beste Charts-Deals anzeigen
@@ -1186,23 +1210,26 @@ def main():
             if not chart_type_filter:
                 chart_type_filter = None
             
-            deals = price_tracker.get_best_charts_deals(limit=15, chart_type=chart_type_filter)
-            
-            if deals:
-                print(f"🏆 Top {len(deals)} Charts-Deals:")
-                print()
+            if hasattr(price_tracker, 'get_best_charts_deals'):
+                deals = price_tracker.get_best_charts_deals(limit=15, chart_type=chart_type_filter)
                 
-                for i, deal in enumerate(deals, 1):
-                    rank_info = f"#{deal.get('current_rank', '?')}" if deal.get('current_rank') else ""
-                    chart_info = f"[{deal.get('chart_type', 'Unknown')}]"
-                    
-                    print(f"{i:2d}. {deal['game_title'][:35]:<35} {rank_info} {chart_info}")
-                    print(f"    💰 €{deal['best_price']:.2f} (-{deal['discount_percent']}%) bei {deal['best_store']}")
-                    print(f"    🆔 App ID: {deal['steam_app_id']}")
+                if deals:
+                    print(f"🏆 Top {len(deals)} Charts-Deals:")
                     print()
+                    
+                    for i, deal in enumerate(deals, 1):
+                        rank_info = f"#{deal.get('current_rank', '?')}" if deal.get('current_rank') else ""
+                        chart_info = f"[{deal.get('chart_type', 'Unknown')}]"
+                        
+                        print(f"{i:2d}. {deal['game_title'][:35]:<35} {rank_info} {chart_info}")
+                        print(f"    💰 €{deal['best_price']:.2f} (-{deal['discount_percent']}%) bei {deal['best_store']}")
+                        print(f"    🆔 App ID: {deal['steam_app_id']}")
+                        print()
+                else:
+                    print("❌ Keine Charts-Deals gefunden")
+                    print("💡 Führe zuerst Charts-Updates und Preisabfragen durch")
             else:
-                print("❌ Keine Charts-Deals gefunden")
-                print("💡 Führe zuerst Charts-Updates und Preisabfragen durch")
+                print("❌ Charts-Deals Funktion nicht verfügbar")
         
         elif charts_enabled and choice == "19":
             # Trending Charts Price Drops
@@ -1218,22 +1245,25 @@ def main():
             except ValueError:
                 hours, min_discount = 24, 20
             
-            trending = price_tracker.get_trending_price_drops(hours_back=hours, min_discount=min_discount)
-            
-            if trending:
-                print(f"📈 Trending Price Drops (letzte {hours}h, min. {min_discount}%):")
-                print()
+            if hasattr(price_tracker, 'get_trending_price_drops'):
+                trending = price_tracker.get_trending_price_drops(hours_back=hours, min_discount=min_discount)
                 
-                for i, item in enumerate(trending, 1):
-                    chart_badge = f"[{item['chart_type']}]"
-                    
-                    print(f"{i:2d}. {item['game_title'][:35]:<35} {chart_badge}")
-                    print(f"    💰 €{item['current_price']:.2f} (-{item['discount_percent']}%) bei {item['store']}")
-                    print(f"    📅 {item['timestamp'][:16]}")
+                if trending:
+                    print(f"📈 Trending Price Drops (letzte {hours}h, min. {min_discount}%):")
                     print()
+                    
+                    for i, item in enumerate(trending, 1):
+                        chart_badge = f"[{item['chart_type']}]"
+                        
+                        print(f"{i:2d}. {item['game_title'][:35]:<35} {chart_badge}")
+                        print(f"    💰 €{item['current_price']:.2f} (-{item['discount_percent']}%) bei {item['store']}")
+                        print(f"    📅 {item['timestamp'][:16]}")
+                        print()
+                else:
+                    print("❌ Keine Trending Price Drops gefunden")
+                    print("💡 Versuche niedrigeren Mindestrabatt oder längeren Zeitraum")
             else:
-                print("❌ Keine Trending Price Drops gefunden")
-                print("💡 Versuche niedrigeren Mindestrabatt oder längeren Zeitraum")
+                print("❌ Trending Price Drops Funktion nicht verfügbar")
         
         elif charts_enabled and choice == "20":
             # Charts-Spiele anzeigen
@@ -1244,37 +1274,40 @@ def main():
             if not chart_type_filter:
                 chart_type_filter = None
             
-            active_games = price_tracker.db_manager.get_active_chart_games(chart_type_filter)
-            
-            if active_games:
-                if chart_type_filter:
-                    print(f"📊 {chart_type_filter.upper()} SPIELE ({len(active_games)}):")
+            if hasattr(price_tracker.db_manager, 'get_active_chart_games'):
+                active_games = price_tracker.db_manager.get_active_chart_games(chart_type_filter)
+                
+                if active_games:
+                    if chart_type_filter:
+                        print(f"📊 {chart_type_filter.upper()} SPIELE ({len(active_games)}):")
+                    else:
+                        print(f"📊 ALLE CHARTS-SPIELE ({len(active_games)}):")
+                    print()
+                    
+                    current_chart = None
+                    for i, game in enumerate(active_games[:50], 1):  # Limitiere auf 50
+                        # Chart-Typ Header
+                        if game.get('chart_type') != current_chart and not chart_type_filter:
+                            current_chart = game.get('chart_type')
+                            print(f"\n📈 {current_chart.upper()}")
+                            print("-" * 30)
+                        
+                        rank = game.get('current_rank', 0)
+                        rank_display = f"#{rank:3d}" if rank > 0 else "   -"
+                        
+                        first_seen = game.get('first_seen', '')[:10]
+                        last_seen = game.get('last_seen', '')[:10]
+                        
+                        print(f"{rank_display} {game['name'][:40]:<40}")
+                        print(f"     🆔 {game['steam_app_id']} | 📅 {first_seen} - {last_seen}")
+                    
+                    if len(active_games) > 50:
+                        print(f"\n... und {len(active_games) - 50} weitere Spiele")
                 else:
-                    print(f"📊 ALLE CHARTS-SPIELE ({len(active_games)}):")
-                print()
-                
-                current_chart = None
-                for i, game in enumerate(active_games[:50], 1):  # Limitiere auf 50
-                    # Chart-Typ Header
-                    if game.get('chart_type') != current_chart and not chart_type_filter:
-                        current_chart = game.get('chart_type')
-                        print(f"\n📈 {current_chart.upper()}")
-                        print("-" * 30)
-                    
-                    rank = game.get('current_rank', 0)
-                    rank_display = f"#{rank:3d}" if rank > 0 else "   -"
-                    
-                    first_seen = game.get('first_seen', '')[:10]
-                    last_seen = game.get('last_seen', '')[:10]
-                    
-                    print(f"{rank_display} {game['name'][:40]:<40}")
-                    print(f"     🆔 {game['steam_app_id']} | 📅 {first_seen} - {last_seen}")
-                
-                if len(active_games) > 50:
-                    print(f"\n... und {len(active_games) - 50} weitere Spiele")
+                    print("❌ Keine Charts-Spiele gefunden")
+                    print("💡 Führe zuerst ein Charts-Update durch")
             else:
-                print("❌ Keine Charts-Spiele gefunden")
-                print("💡 Führe zuerst ein Charts-Update durch")
+                print("❌ Charts-Spiele Funktion nicht verfügbar")
         
         elif charts_enabled and choice == "21":
             # Charts-Spiele bereinigen
@@ -1289,12 +1322,15 @@ def main():
             
             print(f"🧹 Starte Charts-Cleanup (>{days} Tage)...")
             
-            removed = price_tracker.charts_manager.cleanup_old_chart_games(days)
-            
-            if removed > 0:
-                print(f"✅ {removed} alte Charts-Spiele entfernt")
+            if hasattr(price_tracker, 'cleanup_old_chart_games'):
+                removed = price_tracker.cleanup_old_chart_games(days)
+                
+                if removed > 0:
+                    print(f"✅ {removed} alte Charts-Spiele entfernt")
+                else:
+                    print("✅ Keine alten Charts-Spiele zum Entfernen gefunden")
             else:
-                print("✅ Keine alten Charts-Spiele zum Entfernen gefunden")
+                print("❌ Charts-Cleanup Funktion nicht verfügbar")
         
         elif charts_enabled and choice == "22":
             # Vollautomatik einrichten
@@ -1323,28 +1359,23 @@ def main():
                 
                 # Setup Vollautomatik
                 try:
-                    from enhanced_price_tracker_charts import setup_full_automation
+                    # Normales Tracking starten
+                    if safe_start_scheduler(price_tracker, normal_hours):
+                        print(f"✅ Standard-Tracking gestartet (alle {normal_hours}h)")
                     
-                    success = setup_full_automation(
-                        price_tracker,
-                        normal_interval=normal_hours,
-                        charts_interval=charts_hours,
-                        charts_price_interval=charts_price_hours
-                    )
+                    # Charts-Tracking starten (falls verfügbar)
+                    if hasattr(price_tracker, 'enable_charts_tracking'):
+                        if price_tracker.enable_charts_tracking(charts_hours, charts_price_hours, 24):
+                            print(f"✅ Charts-Tracking gestartet")
+                            print(f"   📊 Charts-Updates: alle {charts_hours}h")
+                            print(f"   💰 Charts-Preise: alle {charts_price_hours}h")
+                            print(f"   🧹 Charts-Cleanup: alle 24h")
                     
-                    if success:
-                        print("✅ Vollautomatik erfolgreich eingerichtet!")
-                        print("\n📋 AKTIVE SCHEDULER:")
-                        print(f"   🎯 Normale Apps: alle {normal_hours}h")
-                        print(f"   📊 Charts-Updates: alle {charts_hours}h")
-                        print(f"   💰 Charts-Preise: alle {charts_price_hours}h")
-                        print(f"   🧹 Charts-Cleanup: alle 24h")
-                        print("\n💡 Alle Scheduler laufen nun automatisch im Hintergrund!")
-                    else:
-                        print("❌ Fehler beim Einrichten der Vollautomatik")
+                    print("\n✅ Vollautomatik erfolgreich eingerichtet!")
+                    print("\n💡 Alle Scheduler laufen nun automatisch im Hintergrund!")
                         
-                except ImportError:
-                    print("❌ Vollautomatik-Funktion nicht verfügbar")
+                except Exception as e:
+                    print(f"❌ Fehler beim Einrichten der Vollautomatik: {e}")
         
         # =====================================================================
         # BEENDEN
@@ -1362,11 +1393,15 @@ def main():
                 safe_stop_scheduler(price_tracker)
             
             # Charts-Scheduler stoppen falls aktiv
-            if charts_enabled and hasattr(price_tracker, 'charts_manager') and price_tracker.charts_manager:
-                charts_scheduler_status = price_tracker.charts_manager.get_charts_scheduler_status()
-                if charts_scheduler_status.get('charts_scheduler_running'):
-                    print("⏹️ Stoppe Charts-Tracking...")
-                    price_tracker.disable_charts_tracking()
+            if charts_enabled and hasattr(price_tracker, 'disable_charts_tracking'):
+                try:
+                    if hasattr(price_tracker, 'get_charts_scheduler_status'):
+                        charts_scheduler_status = price_tracker.get_charts_scheduler_status()
+                        if charts_scheduler_status.get('charts_scheduler_running'):
+                            print("⏹️ Stoppe Charts-Tracking...")
+                            price_tracker.disable_charts_tracking()
+                except Exception as e:
+                    print(f"⚠️ Charts-Scheduler konnte nicht gestoppt werden: {e}")
             
             print("💾 Datenbankverbindungen werden automatisch geschlossen...")
             print("✅ Enhanced Steam Price Tracker beendet. Auf Wiedersehen!")
