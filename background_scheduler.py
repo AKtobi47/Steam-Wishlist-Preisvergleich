@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Universal Background Scheduler - Separate Terminal Execution
+Universal Background Scheduler - CORRECTED VERSION
 Universeller Scheduler für alle Background-Tasks in separaten Terminals
-Kann von price_tracker.py, charts_manager.py und anderen Modulen verwendet werden
+FIXED: Korrekte Imports und Module-Erkennung
 """
 
 import os
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class BackgroundScheduler:
     """
     Universeller Background-Scheduler für separate Terminal-Execution
-    Kann von allen Modulen verwendet werden
+    CORRECTED: Korrekte Module-Imports und Pfad-Handling
     """
     
     def __init__(self, scheduler_name: str, base_config: Dict = None):
@@ -42,6 +42,9 @@ class BackgroundScheduler:
         # Basis-Verzeichnisse
         self.temp_dir = Path("temp_schedulers")
         self.temp_dir.mkdir(exist_ok=True)
+        
+        # CORRECTED: Python-Pfad für korrekte Imports
+        self.project_root = Path.cwd()
         
         logger.info(f"✅ Universal Background Scheduler '{scheduler_name}' initialisiert")
     
@@ -248,7 +251,7 @@ class BackgroundScheduler:
     
     def _create_scheduler_script(self, scheduler_type: str, **kwargs) -> str:
         """
-        Erstellt temporäres Python-Script für separaten Scheduler-Prozess
+        CORRECTED: Erstellt temporäres Python-Script mit korrekten Imports
         
         Args:
             scheduler_type: Typ des Schedulers
@@ -259,12 +262,13 @@ class BackgroundScheduler:
         """
         config = self.scheduler_configs[scheduler_type]
         
-        # Script-Inhalt generieren
+        # CORRECTED: Script-Inhalt mit robusten Imports
         script_content = f'''#!/usr/bin/env python3
 """
 Background Scheduler: {scheduler_type}
 Auto-generated scheduler script für separate Terminal-Ausführung
 Scheduler: {self.scheduler_name}
+CORRECTED: Robuste Import-Behandlung
 """
 
 import sys
@@ -273,8 +277,9 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
-# Aktuelles Verzeichnis zum Python-Pfad hinzufügen
-sys.path.insert(0, "{Path.cwd()}")
+# CORRECTED: Aktuelles Verzeichnis zum Python-Pfad hinzufügen
+project_root = Path("{self.project_root}")
+sys.path.insert(0, str(project_root))
 
 # Konfiguration
 SCHEDULER_TYPE = "{scheduler_type}"
@@ -289,21 +294,27 @@ print(f"📊 Scheduler: {self.scheduler_name}")
 print(f"🎯 Task: {scheduler_type}")
 print(f"⏰ Intervall: {{INTERVAL_MINUTES}} Minuten")
 print(f"🚀 Gestartet: {{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}}")
+print(f"📁 Working Directory: {{project_root}}")
 print("⚠️ Drücke Ctrl+C zum Beenden")
 print()
 
 try:
-    # Dependencies importieren
-    {self._generate_import_statements(config.get('dependencies', []))}
+    # CORRECTED: Dependencies importieren mit Fehlerbehandlung
+    {self._generate_import_statements_corrected(config.get('dependencies', []))}
     
-    # Task-Funktion ausführen
+    print("✅ Alle Module erfolgreich importiert")
+    
+    # Task-Funktion definieren und ausführen
     def execute_task():
         try:
-            {config['task_function']}
+            print("🔄 Führe Task aus...")
+            {self._format_task_function(config['task_function'])}
+            return True
         except Exception as e:
             print(f"❌ Task-Fehler: {{e}}")
+            import traceback
+            traceback.print_exc()
             return False
-        return True
     
     # Hauptschleife
     cycle = 0
@@ -325,9 +336,14 @@ except KeyboardInterrupt:
     print("\\n⏹️ Scheduler gestoppt durch Benutzer")
 except ImportError as e:
     print(f"❌ Import-Fehler: {{e}}")
-    print("💡 Stelle sicher dass alle Module verfügbar sind")
+    print("💡 Prüfe ob alle Module verfügbar sind:")
+    print(f"   - Arbeitsverzeichnis: {{project_root}}")
+    print(f"   - Python-Pfad: {{sys.path[:3]}}")
+    print("💡 Starte das Hauptprogramm vom richtigen Verzeichnis")
 except Exception as e:
     print(f"❌ Unerwarteter Fehler: {{e}}")
+    import traceback
+    traceback.print_exc()
     sys.exit(1)
 '''
         
@@ -340,34 +356,69 @@ except Exception as e:
         
         return str(script_path)
     
-    def _generate_import_statements(self, dependencies: List[str]) -> str:
+    def _generate_import_statements_corrected(self, dependencies: List[str]) -> str:
         """
-        Generiert Import-Statements für Dependencies
+        CORRECTED: Generiert robuste Import-Statements
         
         Args:
             dependencies: Liste der erforderlichen Module
             
         Returns:
-            Import-Statements als String
+            Import-Statements als String mit Fehlerbehandlung
         """
         if not dependencies:
-            return "# Keine zusätzlichen Dependencies"
+            return "    # Keine zusätzlichen Dependencies"
         
         imports = []
         for dep in dependencies:
             if '.' in dep:
                 # from module import submodule
                 module, submodule = dep.rsplit('.', 1)
-                imports.append(f"from {module} import {submodule}")
+                imports.append(f"""    try:
+        from {module} import {submodule}
+        print(f"✅ Imported {submodule} from {module}")
+    except ImportError as e:
+        print(f"❌ Failed to import {submodule} from {module}: {{e}}")
+        raise""")
             else:
                 # import module
-                imports.append(f"import {dep}")
+                imports.append(f"""    try:
+        import {dep}
+        print(f"✅ Imported {dep}")
+    except ImportError as e:
+        print(f"❌ Failed to import {dep}: {{e}}")
+        raise""")
         
-        return '\n    '.join(imports)
+        return '\n'.join(imports)
+    
+    def _format_task_function(self, task_function: str) -> str:
+        """
+        CORRECTED: Formatiert Task-Funktion für korrekten Einzug
+        
+        Args:
+            task_function: Task-Funktions-Code
+            
+        Returns:
+            Korrekt eingerückter Code
+        """
+        # Entferne führende/nachfolgende Leerzeichen
+        task_function = task_function.strip()
+        
+        # Füge korrekten Einzug hinzu (12 Spaces für execute_task Funktion)
+        lines = task_function.split('\n')
+        indented_lines = []
+        
+        for line in lines:
+            if line.strip():  # Nur nicht-leere Zeilen einrücken
+                indented_lines.append('            ' + line.lstrip())
+            else:
+                indented_lines.append('')
+        
+        return '\n'.join(indented_lines)
     
     def _start_terminal_process(self, script_path: str, scheduler_type: str) -> Optional[subprocess.Popen]:
         """
-        Startet Script in separatem Terminal
+        CORRECTED: Startet Script in separatem Terminal mit robusteren Optionen
         
         Args:
             script_path: Pfad zum Python-Script
@@ -384,28 +435,51 @@ except Exception as e:
                     'cmd', '/c', 'start', 
                     f'"{terminal_title}"',
                     'cmd', '/k', 
-                    f'python "{script_path}" && pause'
+                    f'cd /d "{self.project_root}" && python "{script_path}"'
                 ], shell=True)
             
             else:  # Linux/macOS
-                # Versuche verschiedene Terminal-Emulatoren
+                # CORRECTED: Robuste Terminal-Erkennung mit Working Directory
                 terminals = [
-                    ('gnome-terminal', ['gnome-terminal', '--title', terminal_title, '--', 'python3', script_path]),
-                    ('xterm', ['xterm', '-title', terminal_title, '-e', f'python3 {script_path}']),
-                    ('konsole', ['konsole', '--title', terminal_title, '-e', f'python3 {script_path}']),
-                    ('terminal', ['terminal', '-e', f'python3 {script_path}']),
-                    ('x-terminal-emulator', ['x-terminal-emulator', '-e', f'python3 {script_path}'])
+                    ('gnome-terminal', [
+                        'gnome-terminal', 
+                        '--title', terminal_title,
+                        '--working-directory', str(self.project_root),
+                        '--', 'python3', script_path
+                    ]),
+                    ('xterm', [
+                        'xterm', 
+                        '-title', terminal_title,
+                        '-e', f'cd "{self.project_root}" && python3 "{script_path}"'
+                    ]),
+                    ('konsole', [
+                        'konsole', 
+                        '--title', terminal_title,
+                        '--workdir', str(self.project_root),
+                        '-e', f'python3 "{script_path}"'
+                    ]),
+                    ('terminal', [
+                        'terminal',
+                        '-e', f'cd "{self.project_root}" && python3 "{script_path}"'
+                    ]),
+                    ('x-terminal-emulator', [
+                        'x-terminal-emulator',
+                        '-e', f'cd "{self.project_root}" && python3 "{script_path}"'
+                    ])
                 ]
                 
                 for terminal_name, cmd in terminals:
                     try:
-                        return subprocess.Popen(cmd)
+                        logger.debug(f"Versuche Terminal: {terminal_name}")
+                        return subprocess.Popen(cmd, cwd=str(self.project_root))
                     except FileNotFoundError:
                         continue
                 
-                # Fallback: ohne separates Terminal
-                logger.warning(f"⚠️ Kein Terminal-Emulator gefunden - starte ohne separates Terminal")
-                return subprocess.Popen(['python3', script_path])
+                # CORRECTED: Fallback mit korrektem Working Directory
+                logger.warning(f"⚠️ Kein GUI-Terminal gefunden - starte im Hintergrund")
+                return subprocess.Popen([
+                    'python3', script_path
+                ], cwd=str(self.project_root))
                 
         except Exception as e:
             logger.error(f"❌ Fehler beim Starten des Terminal-Prozesses: {e}")
@@ -449,81 +523,24 @@ except Exception as e:
 
 
 # =====================================================================
-# SCHEDULER TASK DEFINITIONS - Vordefinierte Tasks
+# SCHEDULER TASK DEFINITIONS - CORRECTED
 # =====================================================================
 
 class SchedulerTasks:
     """
     Sammlung vordefinierter Task-Funktionen für verschiedene Scheduler
+    CORRECTED: Korrekte Import-Behandlung und Fehlerbehandlung
     """
     
     @staticmethod
     def price_tracking_task():
-        """Task für automatisches Preis-Tracking"""
+        """CORRECTED: Task für automatisches Preis-Tracking"""
         return '''
-# Preis-Tracking Task
+# Preis-Tracking Task - CORRECTED VERSION
 from price_tracker import create_price_tracker
 from steam_wishlist_manager import load_api_key_from_env
 
 api_key = load_api_key_from_env()
-tracker = create_price_tracker(api_key=api_key, enable_charts=False)
-
-# Apps holen die Updates benötigen
-pending_apps = tracker.get_apps_needing_price_update(hours_threshold=6)
-
-if pending_apps:
-    app_ids = [app['steam_app_id'] for app in pending_apps]
-    print(f"📊 Aktualisiere {len(app_ids)} Apps...")
-    
-    result = tracker.track_app_prices(app_ids)
-    print(f"✅ {result['successful']}/{result['processed']} Apps erfolgreich aktualisiert")
-else:
-    print("✅ Alle Apps sind aktuell")
-'''
-    
-    @staticmethod
-    def charts_update_task():
-        """Task für Charts-Updates"""
-        return '''
-# Charts-Update Task
-from price_tracker import create_price_tracker
-from steam_wishlist_manager import load_api_key_from_env
-
-api_key = load_api_key_from_env()
-if not api_key:
-    print("❌ Kein Steam API Key - Charts-Update übersprungen")
-    return
-
-tracker = create_price_tracker(api_key=api_key, enable_charts=True)
-
-if not tracker.charts_enabled:
-    print("❌ Charts nicht verfügbar")
-    return
-
-# Charts aktualisieren
-result = tracker.update_charts_now()
-
-if result.get('success', True):
-    print(f"✅ Charts-Update: {result.get('total_games_found', 0)} Spiele gefunden")
-    print(f"   ➕ {result.get('new_games_added', 0)} neue Spiele")
-    print(f"   🔄 {result.get('existing_games_updated', 0)} aktualisiert")
-else:
-    print(f"❌ Charts-Update fehlgeschlagen: {result.get('error')}")
-'''
-    
-    @staticmethod
-    def charts_price_update_task():
-        """Task für Charts-Preis-Updates"""
-        return '''
-# Charts-Preis-Update Task
-from price_tracker import create_price_tracker
-from steam_wishlist_manager import load_api_key_from_env
-
-api_key = load_api_key_from_env()
-if not api_key:
-    print("❌ Kein Steam API Key - Charts-Preise übersprungen")
-    return
-
 tracker = create_price_tracker(api_key=api_key, enable_charts=True)
 
 if not tracker.charts_enabled:
@@ -531,19 +548,24 @@ if not tracker.charts_enabled:
     return
 
 # Charts-Preise aktualisieren
+print("💰 Starte Charts-Preis-Update...")
 result = tracker.update_charts_prices_now()
 
 if result.get('success', True):
-    print(f"✅ Charts-Preise: {result.get('successful', 0)} Apps aktualisiert")
+    print(f"✅ Charts-Preise erfolgreich:")
+    print(f"   💰 {result.get('successful', 0)} Apps aktualisiert")
+    
+    if result.get('failed', 0) > 0:
+        print(f"   ❌ {result['failed']} fehlgeschlagen")
 else:
     print(f"❌ Charts-Preise fehlgeschlagen: {result.get('error')}")
 '''
     
     @staticmethod
     def name_update_task():
-        """Task für automatische Namen-Updates"""
+        """CORRECTED: Task für automatische Namen-Updates"""
         return '''
-# Namen-Update Task
+# Namen-Update Task - CORRECTED VERSION
 from price_tracker import create_price_tracker
 from steam_wishlist_manager import load_api_key_from_env
 
@@ -556,6 +578,8 @@ tracker = create_price_tracker(api_key=api_key, enable_charts=True)
 
 # Standard-Apps mit generischen Namen
 standard_candidates = tracker.get_name_update_candidates()
+standard_updated = 0
+
 if standard_candidates:
     # Nur wenige Apps pro Durchlauf (Rate Limiting)
     batch_size = min(10, len(standard_candidates))
@@ -566,11 +590,13 @@ if standard_candidates:
     result = tracker.update_app_names_from_steam(app_ids, api_key)
     
     if result.get('success'):
+        standard_updated = result['updated']
         print(f"✅ {result['updated']}/{batch_size} Standard-Namen aktualisiert")
     else:
         print(f"❌ Standard-Namen-Update fehlgeschlagen")
 
 # Charts-Apps mit generischen Namen (falls verfügbar)
+charts_updated = 0
 if tracker.charts_enabled and hasattr(tracker.db_manager, 'get_active_chart_games'):
     all_chart_games = tracker.db_manager.get_active_chart_games()
     
@@ -590,19 +616,25 @@ if tracker.charts_enabled and hasattr(tracker.db_manager, 'get_active_chart_game
         result = tracker.update_app_names_from_steam(app_ids, api_key)
         
         if result.get('success'):
+            charts_updated = result['updated']
             print(f"✅ {result['updated']}/{batch_size} Charts-Namen aktualisiert")
         else:
             print(f"❌ Charts-Namen-Update fehlgeschlagen")
 
-if not standard_candidates and (not tracker.charts_enabled or not charts_candidates):
-    print("✅ Alle Namen sind aktuell")
+if standard_updated == 0 and charts_updated == 0:
+    if not standard_candidates and (not tracker.charts_enabled or not charts_candidates):
+        print("✅ Alle Namen sind aktuell")
+    else:
+        print("⚠️ Namen-Updates fehlgeschlagen oder keine API-Zugriffe möglich")
+else:
+    print(f"🎉 Gesamt: {standard_updated + charts_updated} Namen aktualisiert")
 '''
     
     @staticmethod
     def charts_cleanup_task():
-        """Task für Charts-Cleanup"""
+        """CORRECTED: Task für Charts-Cleanup"""
         return '''
-# Charts-Cleanup Task
+# Charts-Cleanup Task - CORRECTED VERSION
 from price_tracker import create_price_tracker
 from steam_wishlist_manager import load_api_key_from_env
 
@@ -613,6 +645,8 @@ if not tracker.charts_enabled:
     print("❌ Charts nicht verfügbar")
     return
 
+print("🧹 Starte Charts-Cleanup...")
+
 # Cleanup ausführen
 if hasattr(tracker, 'charts_manager') and tracker.charts_manager:
     removed = tracker.charts_manager.cleanup_old_chart_games(days_threshold=30)
@@ -621,18 +655,24 @@ if hasattr(tracker, 'charts_manager') and tracker.charts_manager:
         print(f"✅ {removed} alte Charts-Spiele entfernt")
     else:
         print("✅ Keine alten Charts-Spiele zum Entfernen")
+    
+    # Zusätzlich: Alte Preis-Snapshots bereinigen
+    if hasattr(tracker.db_manager, 'cleanup_old_prices'):
+        old_snapshots = tracker.db_manager.cleanup_old_prices(days=90)
+        if old_snapshots > 0:
+            print(f"🧹 {old_snapshots} alte Preis-Snapshots bereinigt")
 else:
     print("❌ Charts-Manager nicht verfügbar")
 '''
 
 
 # =====================================================================
-# CONVENIENCE FUNCTIONS
+# CONVENIENCE FUNCTIONS - CORRECTED
 # =====================================================================
 
 def create_price_tracker_scheduler() -> BackgroundScheduler:
     """
-    Erstellt BackgroundScheduler für Price Tracker mit vordefinierten Tasks
+    CORRECTED: Erstellt BackgroundScheduler für Price Tracker mit vordefinierten Tasks
     
     Returns:
         Konfigurierter BackgroundScheduler
@@ -665,7 +705,7 @@ def create_price_tracker_scheduler() -> BackgroundScheduler:
 
 def create_charts_scheduler() -> BackgroundScheduler:
     """
-    Erstellt BackgroundScheduler für Charts mit vordefinierten Tasks
+    CORRECTED: Erstellt BackgroundScheduler für Charts mit vordefinierten Tasks
     
     Returns:
         Konfigurierter BackgroundScheduler
@@ -704,7 +744,7 @@ def create_charts_scheduler() -> BackgroundScheduler:
 
 def setup_all_schedulers(enable_charts: bool = True) -> Dict[str, BackgroundScheduler]:
     """
-    Richtet alle Scheduler ein
+    CORRECTED: Richtet alle Scheduler ein
     
     Args:
         enable_charts: Ob Charts-Scheduler erstellt werden soll
@@ -723,3 +763,114 @@ def setup_all_schedulers(enable_charts: bool = True) -> Dict[str, BackgroundSche
     
     logger.info(f"✅ {len(schedulers)} Scheduler eingerichtet")
     return schedulers
+
+def test_scheduler_setup():
+    """
+    CORRECTED: Test-Funktion für Scheduler-Setup
+    """
+    print("🧪 TESTE UNIVERSAL BACKGROUND SCHEDULER")
+    print("=" * 45)
+    
+    try:
+        # Price Tracker Scheduler erstellen
+        price_scheduler = create_price_tracker_scheduler()
+        print(f"✅ Price Tracker Scheduler erstellt")
+        
+        # Charts Scheduler erstellen
+        charts_scheduler = create_charts_scheduler()
+        print(f"✅ Charts Scheduler erstellt")
+        
+        # Status anzeigen
+        price_status = price_scheduler.get_scheduler_status()
+        charts_status = charts_scheduler.get_scheduler_status()
+        
+        print(f"\n📊 PRICE TRACKER STATUS:")
+        print(f"   📝 Registrierte Scheduler: {price_status['total_registered']}")
+        print(f"   🏃 Laufende Scheduler: {price_status['total_running']}")
+        
+        print(f"\n📊 CHARTS STATUS:")
+        print(f"   📝 Registrierte Scheduler: {charts_status['total_registered']}")
+        print(f"   🏃 Laufende Scheduler: {charts_status['total_running']}")
+        
+        # Aufräumen
+        price_scheduler.cleanup_all_files()
+        charts_scheduler.cleanup_all_files()
+        
+        print(f"\n✅ Scheduler-Test erfolgreich!")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Scheduler-Test fehlgeschlagen: {e}")
+        return False
+
+if __name__ == "__main__":
+    # Test-Modus
+    test_scheduler_setup(), enable_charts=False)
+
+# Apps holen die Updates benötigen
+pending_apps = tracker.get_apps_needing_price_update(hours_threshold=6)
+
+if pending_apps:
+    app_ids = [app['steam_app_id'] for app in pending_apps]
+    print(f"📊 Aktualisiere {len(app_ids)} Apps...")
+    
+    result = tracker.track_app_prices(app_ids)
+    print(f"✅ {result['successful']}/{result['processed']} Apps erfolgreich aktualisiert")
+    
+    if result.get('errors'):
+        print(f"⚠️ {len(result['errors'])} Fehler aufgetreten")
+        for error in result['errors'][:3]:  # Zeige nur erste 3 Fehler
+            print(f"   - {error}")
+else:
+    print("✅ Alle Apps sind aktuell")
+'''
+    
+    @staticmethod
+    def charts_update_task():
+        """CORRECTED: Task für Charts-Updates"""
+        return '''
+# Charts-Update Task - CORRECTED VERSION
+from price_tracker import create_price_tracker
+from steam_wishlist_manager import load_api_key_from_env
+
+api_key = load_api_key_from_env()
+if not api_key:
+    print("❌ Kein Steam API Key - Charts-Update übersprungen")
+    return
+
+tracker = create_price_tracker(api_key=api_key, enable_charts=True)
+
+if not tracker.charts_enabled:
+    print("❌ Charts nicht verfügbar")
+    return
+
+# Charts aktualisieren
+print("📊 Starte Charts-Update...")
+result = tracker.update_charts_now()
+
+if result.get('success', True):
+    print(f"✅ Charts-Update erfolgreich:")
+    print(f"   📊 {result.get('total_games_found', 0)} Spiele gefunden")
+    print(f"   ➕ {result.get('new_games_added', 0)} neue Spiele")
+    print(f"   🔄 {result.get('existing_games_updated', 0)} aktualisiert")
+    
+    if result.get('errors'):
+        print(f"   ⚠️ {len(result['errors'])} Fehler")
+else:
+    print(f"❌ Charts-Update fehlgeschlagen: {result.get('error')}")
+'''
+    
+    @staticmethod
+    def charts_price_update_task():
+        """CORRECTED: Task für Charts-Preis-Updates"""
+        return '''
+# Charts-Preis-Update Task - CORRECTED VERSION
+from price_tracker import create_price_tracker
+from steam_wishlist_manager import load_api_key_from_env
+
+api_key = load_api_key_from_env()
+if not api_key:
+    print("❌ Kein Steam API Key - Charts-Preise übersprungen")
+    return
+
+tracker = create_price_tracker(api_key=api_key
