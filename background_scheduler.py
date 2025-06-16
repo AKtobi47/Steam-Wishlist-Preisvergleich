@@ -431,27 +431,54 @@ except Exception as e:
         terminal_title = f"PriceTracker_{self.scheduler_name}_{scheduler_type}"
         
         try:
-            if os.name == 'nt':  # Windows - FIXED VERSION
-                # FIXED: Verwende korrektes Windows-Kommando ohne Leerzeichen-Probleme
+            if os.name == 'nt':  # Windows - COMPLETELY FIXED VERSION
                 
-                # Option 1: Direkt mit cmd /k (bleibt offen)
-                cmd_command = f'cd /d "{self.project_root}" && python "{script_path}"'
+                # FIXED: Erstelle Batch-Datei für saubere Ausführung
+                batch_content = f'''@echo off
+title {terminal_title}
+echo 🚀 Background Scheduler gestartet
+echo ========================================
+echo Scheduler: {self.scheduler_name}
+echo Task: {scheduler_type}
+echo Zeit: %date% %time%
+echo ========================================
+echo.
+cd /d "{self.project_root}"
+python "{script_path}"
+echo.
+echo ⏹️ Scheduler beendet - Druecke eine Taste zum Schliessen
+pause >nul
+'''
+                # Temporäre Batch-Datei erstellen
+                batch_path = self.temp_dir / f"start_{scheduler_type}.bat"
+                with open(batch_path, 'w', encoding='utf-8') as f:
+                    f.write(batch_content)
                 
+                # FIXED: Korrekte Windows start Syntax
                 try:
-                    # Versuche PowerShell wenn verfügbar
-                    return subprocess.Popen([
-                        'powershell', '-Command',
-                        f'Start-Process cmd -ArgumentList "/k", "{cmd_command}" -WindowStyle Normal'
-                    ], cwd=str(self.project_root))
-                    
-                except FileNotFoundError:
-                    # Fallback: Standard cmd mit start
+                    # Option 1: cmd /c start (robusteste Lösung)
                     return subprocess.Popen([
                         'cmd', '/c', 'start', 
-                        '/wait',  # Warten auf Prozess
-                        'cmd', '/k', 
-                        cmd_command
-                    ], shell=True, cwd=str(self.project_root))
+                        f'cmd /k "{batch_path}"'  # Direkt die Batch-Datei als Kommando
+                    ], shell=False, cwd=str(self.project_root), 
+                      creationflags=subprocess.CREATE_NEW_CONSOLE if hasattr(subprocess, 'CREATE_NEW_CONSOLE') else 0)
+                    
+                except Exception as e1:
+                    logger.debug(f"Option 1 fehlgeschlagen: {e1}")
+                    try:
+                        # Option 2: Direkter Aufruf ohne start
+                        return subprocess.Popen([
+                            'cmd', '/k', f'"{batch_path}"'
+                        ], shell=False, cwd=str(self.project_root),
+                          creationflags=subprocess.CREATE_NEW_CONSOLE if hasattr(subprocess, 'CREATE_NEW_CONSOLE') else 0)
+                        
+                    except Exception as e2:
+                        logger.debug(f"Option 2 fehlgeschlagen: {e2}")
+                        # Option 3: Shell=True Fallback
+                        return subprocess.Popen(
+                            f'start cmd /k "{batch_path}"',
+                            shell=True, cwd=str(self.project_root)
+                        )
             
             else:  # Linux/macOS - wie zuvor
                 terminals = [
@@ -507,12 +534,21 @@ except Exception as e:
             scheduler_type: Typ des Schedulers
         """
         try:
+            # Python-Script aufräumen
             script_filename = f"scheduler_{self.scheduler_name}_{scheduler_type}.py"
             script_path = self.temp_dir / script_filename
             
             if script_path.exists():
                 script_path.unlink()
                 logger.debug(f"🧹 Temporäre Datei entfernt: {script_path}")
+            
+            # Batch-Datei aufräumen (Windows)
+            batch_filename = f"start_{scheduler_type}.bat"
+            batch_path = self.temp_dir / batch_filename
+            
+            if batch_path.exists():
+                batch_path.unlink()
+                logger.debug(f"🧹 Temporäre Batch-Datei entfernt: {batch_path}")
                 
         except Exception as e:
             logger.debug(f"⚠️ Fehler beim Aufräumen von {scheduler_type}: {e}")
@@ -521,7 +557,12 @@ except Exception as e:
         """Räumt alle temporären Dateien auf"""
         try:
             if self.temp_dir.exists():
+                # Python-Scripts aufräumen
                 for file in self.temp_dir.glob("scheduler_*.py"):
+                    file.unlink()
+                
+                # Batch-Dateien aufräumen (Windows)
+                for file in self.temp_dir.glob("start_*.bat"):
                     file.unlink()
                 
                 # Verzeichnis entfernen falls leer
