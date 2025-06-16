@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Universal Background Scheduler - WINDOWS FIXED VERSION
+Universal Background Scheduler - ENHANCED mit Sign of Life
 Universeller Scheduler für alle Background-Tasks in separaten Terminals
-FIXED: Windows Terminal-Start korrigiert
+ENHANCED: Terminals zeigen kontinuierlich "Sign of Life" mit Ticker, Heartbeat und Fortschrittsbalken
 """
 
 import os
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class BackgroundScheduler:
     """
     Universeller Background-Scheduler für separate Terminal-Execution
-    WINDOWS FIXED: Korrekte Terminal-Starts für Windows
+    ENHANCED: Mit kontinuierlichen Sign of Life Indicators
     """
     
     def __init__(self, scheduler_name: str, base_config: Dict = None):
@@ -53,7 +53,9 @@ class BackgroundScheduler:
                           task_function: str,
                           interval_minutes: int,
                           task_config: Dict = None,
-                          dependencies: List[str] = None) -> bool:
+                          dependencies: List[str] = None,
+                          heartbeat_interval: int = 30,
+                          show_progress_bar: bool = True) -> bool:
         """
         Registriert einen neuen Scheduler-Typ
         
@@ -63,6 +65,8 @@ class BackgroundScheduler:
             interval_minutes: Intervall in Minuten
             task_config: Konfiguration für die Task
             dependencies: Erforderliche Python-Module
+            heartbeat_interval: Heartbeat-Intervall in Sekunden (Standard: 30)
+            show_progress_bar: Ob Fortschrittsbalken angezeigt werden soll
             
         Returns:
             True wenn erfolgreich registriert
@@ -73,11 +77,13 @@ class BackgroundScheduler:
                 'interval_minutes': interval_minutes,
                 'task_config': task_config or {},
                 'dependencies': dependencies or [],
+                'heartbeat_interval': heartbeat_interval,
+                'show_progress_bar': show_progress_bar,
                 'registered_at': datetime.now().isoformat(),
                 'enabled': False
             }
             
-            logger.info(f"✅ Scheduler '{scheduler_type}' registriert (Intervall: {interval_minutes}min)")
+            logger.info(f"✅ Scheduler '{scheduler_type}' registriert (Intervall: {interval_minutes}min, Heartbeat: {heartbeat_interval}s)")
             return True
             
         except Exception as e:
@@ -109,7 +115,7 @@ class BackgroundScheduler:
         
         try:
             # Scheduler-Script erstellen
-            script_path = self._create_scheduler_script(scheduler_type, **kwargs)
+            script_path = self._create_enhanced_scheduler_script(scheduler_type, **kwargs)
             
             # Separaten Terminal-Prozess starten
             process = self._start_terminal_process_fixed(script_path, scheduler_type)
@@ -230,6 +236,8 @@ class BackgroundScheduler:
                 'enabled': config.get('enabled', False),
                 'running': self.is_scheduler_running(scheduler_type),
                 'interval_minutes': config.get('interval_minutes', 0),
+                'heartbeat_interval': config.get('heartbeat_interval', 30),
+                'show_progress_bar': config.get('show_progress_bar', True),
                 'task_function': config.get('task_function', ''),
                 'registered_at': config.get('registered_at', ''),
                 'started_at': config.get('started_at', ''),
@@ -249,9 +257,9 @@ class BackgroundScheduler:
             
             return all_status
     
-    def _create_scheduler_script(self, scheduler_type: str, **kwargs) -> str:
+    def _create_enhanced_scheduler_script(self, scheduler_type: str, **kwargs) -> str:
         """
-        Erstellt temporäres Python-Script mit korrekten Imports
+        ENHANCED: Erstellt temporäres Python-Script mit Sign of Life Features
         
         Args:
             scheduler_type: Typ des Schedulers
@@ -261,19 +269,22 @@ class BackgroundScheduler:
             Pfad zum erstellten Script
         """
         config = self.scheduler_configs[scheduler_type]
+        heartbeat_interval = config.get('heartbeat_interval', 30)
+        show_progress_bar = config.get('show_progress_bar', True)
         
-        # Script-Inhalt mit robusten Imports
+        # ENHANCED: Script-Inhalt mit Sign of Life Features
         script_content = f'''#!/usr/bin/env python3
 """
-Background Scheduler: {scheduler_type}
-Auto-generated scheduler script für separate Terminal-Ausführung
+ENHANCED Background Scheduler: {scheduler_type}
+Auto-generated scheduler script mit Sign of Life Features
 Scheduler: {self.scheduler_name}
-WINDOWS FIXED VERSION
+ENHANCED mit Ticker, Heartbeat und Fortschrittsbalken
 """
 
 import sys
 import time
 import json
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -283,19 +294,141 @@ sys.path.insert(0, str(project_root))
 
 # Konfiguration
 SCHEDULER_TYPE = "{scheduler_type}"
+SCHEDULER_NAME = "{self.scheduler_name}"
 INTERVAL_MINUTES = {config['interval_minutes']}
+HEARTBEAT_INTERVAL = {heartbeat_interval}
+SHOW_PROGRESS_BAR = {show_progress_bar}
 TASK_CONFIG = {json.dumps(config.get('task_config', {}), indent=4)}
 BASE_CONFIG = {json.dumps(self.base_config, indent=4)}
 KWARGS = {json.dumps(kwargs, indent=4)}
 
-print("🚀 Background Scheduler gestartet")
-print("=" * 50)
-print(f"📊 Scheduler: {self.scheduler_name}")
-print(f"🎯 Task: {scheduler_type}")
+# =====================================================================
+# ENHANCED SIGN OF LIFE FUNCTIONS
+# =====================================================================
+
+class SignOfLife:
+    """Klasse für Sign of Life Indicators"""
+    
+    def __init__(self):
+        self.spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+        self.heart_chars = ['💙', '🤍', '💚', '🤍', '💛', '🤍', '❤️', '🤍']
+        self.spinner_index = 0
+        self.heart_index = 0
+        self.running = False
+        self.ticker_thread = None
+        self.last_heartbeat = time.time()
+        
+    def start_ticker(self):
+        """Startet kontinuierlichen Ticker"""
+        self.running = True
+        self.ticker_thread = threading.Thread(target=self._ticker_loop, daemon=True)
+        self.ticker_thread.start()
+        
+    def stop_ticker(self):
+        """Stoppt Ticker"""
+        self.running = False
+        if self.ticker_thread and self.ticker_thread.is_alive():
+            self.ticker_thread.join(timeout=1)
+    
+    def _ticker_loop(self):
+        """Hauptschleife für Ticker"""
+        while self.running:
+            current_time = time.time()
+            
+            # Spinner aktualisieren
+            spinner = self.spinner_chars[self.spinner_index]
+            self.spinner_index = (self.spinner_index + 1) % len(self.spinner_chars)
+            
+            # Heartbeat prüfen
+            if current_time - self.last_heartbeat >= HEARTBEAT_INTERVAL:
+                heart = self.heart_chars[self.heart_index]
+                self.heart_index = (self.heart_index + 1) % len(self.heart_chars)
+                print(f"\\r{heart} HEARTBEAT - {{SCHEDULER_NAME}}/{SCHEDULER_TYPE} - {{datetime.now().strftime('%H:%M:%S')}} {heart}", flush=True)
+                self.last_heartbeat = current_time
+            else:
+                # Normaler Ticker
+                print(f"\\r{spinner} Aktiv - {{datetime.now().strftime('%H:%M:%S')}}", end='', flush=True)
+            
+            time.sleep(1)  # Update jede Sekunde
+    
+    def show_progress_bar(self, current_seconds, total_seconds, width=50):
+        """Zeigt Fortschrittsbalken für verbleibende Zeit"""
+        if not SHOW_PROGRESS_BAR or total_seconds <= 0:
+            return
+            
+        progress = min(current_seconds / total_seconds, 1.0)
+        filled_width = int(width * progress)
+        
+        bar = '█' * filled_width + '░' * (width - filled_width)
+        percentage = progress * 100
+        
+        remaining_seconds = max(0, total_seconds - current_seconds)
+        remaining_minutes = remaining_seconds // 60
+        remaining_secs = remaining_seconds % 60
+        
+        print(f"\\r⏳ [{bar}] {{percentage:6.1f}}% - Verbleibend: {{remaining_minutes:02.0f}}:{{remaining_secs:02.0f}}", 
+              end='', flush=True)
+
+# Globale Sign of Life Instanz
+sign_of_life = SignOfLife()
+
+def enhanced_sleep_with_progress(total_seconds):
+    """ENHANCED: Sleep mit Fortschrittsbalken und kontinuierlichem Ticker"""
+    if total_seconds <= 0:
+        return
+    
+    print(f"\\n⏳ Warte {{total_seconds//60:.0f}} Minuten bis zur nächsten Ausführung...")
+    
+    if SHOW_PROGRESS_BAR:
+        # Fortschrittsbalken-Modus
+        start_time = time.time()
+        
+        while True:
+            current_time = time.time()
+            elapsed_seconds = current_time - start_time
+            
+            if elapsed_seconds >= total_seconds:
+                sign_of_life.show_progress_bar(total_seconds, total_seconds)
+                print()  # Neue Zeile nach Fortschrittsbalken
+                break
+            
+            sign_of_life.show_progress_bar(elapsed_seconds, total_seconds)
+            
+            # Heartbeat während Fortschrittsbalken
+            if elapsed_seconds > 0 and int(elapsed_seconds) % HEARTBEAT_INTERVAL == 0:
+                heart = sign_of_life.heart_chars[sign_of_life.heart_index]
+                sign_of_life.heart_index = (sign_of_life.heart_index + 1) % len(sign_of_life.heart_chars)
+                print(f"\\n{heart} HEARTBEAT während Wartezeit {heart}")
+                sign_of_life.show_progress_bar(elapsed_seconds, total_seconds)
+            
+            time.sleep(1)
+    else:
+        # Einfacher Ticker-Modus
+        for remaining in range(int(total_seconds), 0, -1):
+            minutes = remaining // 60
+            seconds = remaining % 60
+            spinner = sign_of_life.spinner_chars[sign_of_life.spinner_index]
+            sign_of_life.spinner_index = (sign_of_life.spinner_index + 1) % len(sign_of_life.spinner_chars)
+            
+            print(f"\\r{spinner} Verbleibend: {{minutes:02d}}:{{seconds:02d}}", end='', flush=True)
+            time.sleep(1)
+        print()  # Neue Zeile
+
+# =====================================================================
+# MAIN EXECUTION
+# =====================================================================
+
+print("🚀 ENHANCED Background Scheduler gestartet")
+print("=" * 60)
+print(f"📊 Scheduler: {{SCHEDULER_NAME}}")
+print(f"🎯 Task: {{SCHEDULER_TYPE}}")
 print(f"⏰ Intervall: {{INTERVAL_MINUTES}} Minuten")
+print(f"💓 Heartbeat: {{HEARTBEAT_INTERVAL}} Sekunden")
+print(f"📊 Progress Bar: {{'✅' if SHOW_PROGRESS_BAR else '❌'}}")
 print(f"🚀 Gestartet: {{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}}")
 print(f"📁 Working Directory: {{project_root}}")
 print("⚠️ Drücke Ctrl+C zum Beenden")
+print("💡 SIGN OF LIFE: Ticker zeigt kontinuierliche Aktivität")
 print()
 
 try:
@@ -316,11 +449,19 @@ try:
             traceback.print_exc()
             return False
     
-    # Hauptschleife
+    # Sign of Life starten
+    sign_of_life.start_ticker()
+    print("💓 Sign of Life Ticker gestartet")
+    
+    # Hauptschleife mit Enhanced Features
     cycle = 0
     while True:
         cycle += 1
-        print(f"\\n🔄 Zyklus {{cycle}} - {{datetime.now().strftime('%H:%M:%S')}}")
+        
+        # Sign of Life temporär stoppen für Task-Ausführung
+        sign_of_life.stop_ticker()
+        
+        print(f"\\n🔄 === ZYKLUS {{cycle}} - {{datetime.now().strftime('%H:%M:%S')}} ===")
         
         success = execute_task()
         
@@ -330,21 +471,32 @@ try:
             print(f"❌ Task fehlgeschlagen")
         
         print(f"⏳ Nächste Ausführung in {{INTERVAL_MINUTES}} Minuten...")
-        time.sleep(INTERVAL_MINUTES * 60)
+        
+        # Enhanced Sleep mit Progress Bar und kontinuierlichem Ticker
+        enhanced_sleep_with_progress(INTERVAL_MINUTES * 60)
+        
+        # Sign of Life neu starten
+        sign_of_life.start_ticker()
 
 except KeyboardInterrupt:
     print("\\n⏹️ Scheduler gestoppt durch Benutzer")
+    sign_of_life.stop_ticker()
 except ImportError as e:
     print(f"❌ Import-Fehler: {{e}}")
     print("💡 Prüfe ob alle Module verfügbar sind:")
     print(f"   - Arbeitsverzeichnis: {{project_root}}")
     print(f"   - Python-Pfad: {{sys.path[:3]}}")
     print("💡 Starte das Hauptprogramm vom richtigen Verzeichnis")
+    sign_of_life.stop_ticker()
 except Exception as e:
     print(f"❌ Unerwarteter Fehler: {{e}}")
     import traceback
     traceback.print_exc()
+    sign_of_life.stop_ticker()
     sys.exit(1)
+finally:
+    sign_of_life.stop_ticker()
+    print("\\n👋 Background Scheduler beendet")
 '''
         
         # Script-Datei erstellen
@@ -418,7 +570,7 @@ except Exception as e:
     
     def _start_terminal_process_fixed(self, script_path: str, scheduler_type: str) -> Optional[subprocess.Popen]:
         """
-        WINDOWS FIXED: Startet Script in separatem Terminal mit korrigierter Windows-Unterstützung
+        ENHANCED: Startet Script in separatem Terminal mit Sign of Life Titel
         
         Args:
             script_path: Pfad zum Python-Script
@@ -427,60 +579,61 @@ except Exception as e:
         Returns:
             Subprocess.Popen Objekt oder None
         """
-        # FIXED: Einfacher Terminal-Titel ohne Sonderzeichen
-        terminal_title = f"PriceTracker_{self.scheduler_name}_{scheduler_type}"
+        # ENHANCED: Terminal-Titel mit Sign of Life Indikator
+        terminal_title = f"💓 {self.scheduler_name}_{scheduler_type} - LIVE"
         
         try:
-            if os.name == 'nt':  # Windows - COMPLETELY FIXED VERSION
+            if os.name == 'nt':  # Windows
                 
-                # FIXED: Erstelle Batch-Datei für saubere Ausführung
+                # ENHANCED: Batch-Datei für saubere Ausführung mit Sign of Life
                 batch_content = f'''@echo off
 title {terminal_title}
-echo 🚀 Background Scheduler gestartet
-echo ========================================
-echo Scheduler: {self.scheduler_name}
-echo Task: {scheduler_type}
-echo Zeit: %date% %time%
-echo ========================================
+color 0A
+echo 💓 ENHANCED Background Scheduler mit Sign of Life
+echo ================================================================
+echo 📊 Scheduler: {self.scheduler_name}
+echo 🎯 Task: {scheduler_type}
+echo 💓 Sign of Life: AKTIVIERT
+echo ⏰ Zeit: %date% %time%
+echo ================================================================
+echo 💡 Dieses Terminal zeigt kontinuierliche Aktivitaet
+echo 💡 Ticker, Heartbeat und Fortschrittsbalken inklusive
 echo.
 cd /d "{self.project_root}"
 python "{script_path}"
 echo.
-echo ⏹️ Scheduler beendet - Druecke eine Taste zum Schliessen
+echo ⏹️ Enhanced Scheduler beendet - Druecke eine Taste zum Schliessen
 pause >nul
 '''
                 # Temporäre Batch-Datei erstellen
-                batch_path = self.temp_dir / f"start_{scheduler_type}.bat"
+                batch_path = self.temp_dir / f"enhanced_start_{scheduler_type}.bat"
                 with open(batch_path, 'w', encoding='utf-8') as f:
                     f.write(batch_content)
                 
-                # FIXED: Korrekte Windows start Syntax
+                # Windows start mit Enhanced Terminal
                 try:
-                    # Option 1: cmd /c start (robusteste Lösung)
                     return subprocess.Popen([
                         'cmd', '/c', 'start', 
-                        f'cmd /k "{batch_path}"'  # Direkt die Batch-Datei als Kommando
+                        f'cmd /k "{batch_path}"'
                     ], shell=False, cwd=str(self.project_root), 
                       creationflags=subprocess.CREATE_NEW_CONSOLE if hasattr(subprocess, 'CREATE_NEW_CONSOLE') else 0)
                     
                 except Exception as e1:
-                    logger.debug(f"Option 1 fehlgeschlagen: {e1}")
+                    logger.debug(f"Enhanced Option 1 fehlgeschlagen: {e1}")
                     try:
-                        # Option 2: Direkter Aufruf ohne start
                         return subprocess.Popen([
                             'cmd', '/k', f'"{batch_path}"'
                         ], shell=False, cwd=str(self.project_root),
                           creationflags=subprocess.CREATE_NEW_CONSOLE if hasattr(subprocess, 'CREATE_NEW_CONSOLE') else 0)
                         
                     except Exception as e2:
-                        logger.debug(f"Option 2 fehlgeschlagen: {e2}")
-                        # Option 3: Shell=True Fallback
+                        logger.debug(f"Enhanced Option 2 fehlgeschlagen: {e2}")
                         return subprocess.Popen(
                             f'start cmd /k "{batch_path}"',
                             shell=True, cwd=str(self.project_root)
                         )
             
-            else:  # Linux/macOS - wie zuvor
+            else:  # Linux/macOS
                 terminals = [
                     ('gnome-terminal', [
                         'gnome-terminal', 
@@ -511,19 +664,19 @@ pause >nul
                 
                 for terminal_name, cmd in terminals:
                     try:
-                        logger.debug(f"Versuche Terminal: {terminal_name}")
+                        logger.debug(f"Versuche Enhanced Terminal: {terminal_name}")
                         return subprocess.Popen(cmd, cwd=str(self.project_root))
                     except FileNotFoundError:
                         continue
                 
                 # Fallback: Hintergrund-Prozess
-                logger.warning(f"⚠️ Kein GUI-Terminal gefunden - starte im Hintergrund")
+                logger.warning(f"⚠️ Kein GUI-Terminal gefunden - starte Enhanced im Hintergrund")
                 return subprocess.Popen([
                     'python3', script_path
                 ], cwd=str(self.project_root))
                 
         except Exception as e:
-            logger.error(f"❌ Fehler beim Starten des Terminal-Prozesses: {e}")
+            logger.error(f"❌ Fehler beim Starten des Enhanced Terminal-Prozesses: {e}")
             return None
     
     def _cleanup_scheduler_files(self, scheduler_type: str):
@@ -542,13 +695,13 @@ pause >nul
                 script_path.unlink()
                 logger.debug(f"🧹 Temporäre Datei entfernt: {script_path}")
             
-            # Batch-Datei aufräumen (Windows)
-            batch_filename = f"start_{scheduler_type}.bat"
+            # Enhanced Batch-Datei aufräumen (Windows)
+            batch_filename = f"enhanced_start_{scheduler_type}.bat"
             batch_path = self.temp_dir / batch_filename
             
             if batch_path.exists():
                 batch_path.unlink()
-                logger.debug(f"🧹 Temporäre Batch-Datei entfernt: {batch_path}")
+                logger.debug(f"🧹 Enhanced Batch-Datei entfernt: {batch_path}")
                 
         except Exception as e:
             logger.debug(f"⚠️ Fehler beim Aufräumen von {scheduler_type}: {e}")
@@ -561,8 +714,8 @@ pause >nul
                 for file in self.temp_dir.glob("scheduler_*.py"):
                     file.unlink()
                 
-                # Batch-Dateien aufräumen (Windows)
-                for file in self.temp_dir.glob("start_*.bat"):
+                # Enhanced Batch-Dateien aufräumen (Windows)
+                for file in self.temp_dir.glob("enhanced_start_*.bat"):
                     file.unlink()
                 
                 # Verzeichnis entfernen falls leer
@@ -571,26 +724,27 @@ pause >nul
                 except OSError:
                     pass  # Verzeichnis nicht leer
                     
-                logger.info("🧹 Alle temporären Scheduler-Dateien entfernt")
+                logger.info("🧹 Alle temporären Enhanced Scheduler-Dateien entfernt")
                 
         except Exception as e:
             logger.warning(f"⚠️ Fehler beim Aufräumen: {e}")
 
 
 # =====================================================================
-# SCHEDULER TASK DEFINITIONS
+# ENHANCED SCHEDULER TASK DEFINITIONS
 # =====================================================================
 
-class SchedulerTasks:
+class EnhancedSchedulerTasks:
     """
-    Sammlung vordefinierter Task-Funktionen für verschiedene Scheduler
+    Sammlung vordefinierter Task-Funktionen mit Enhanced Logging
     """
     
     @staticmethod
-    def price_tracking_task():
-        """Task für automatisches Preis-Tracking"""
+    def enhanced_price_tracking_task():
+        """ENHANCED: Task für automatisches Preis-Tracking mit detailliertem Status"""
         return '''
-# Preis-Tracking Task
+# ENHANCED Preis-Tracking Task
+print("💰 === PREIS-TRACKING GESTARTET ===")
 from price_tracker import create_price_tracker
 from steam_wishlist_manager import load_api_key_from_env
 
@@ -598,28 +752,37 @@ api_key = load_api_key_from_env()
 tracker = create_price_tracker(api_key=api_key, enable_charts=False)
 
 # Standard-Apps aktualisieren
+print("🔍 Suche Apps die Updates benötigen...")
 pending_apps = tracker.get_apps_needing_price_update(hours_threshold=6)
 
 if pending_apps:
     app_ids = [app['steam_app_id'] for app in pending_apps]
     print(f"📊 Aktualisiere {len(app_ids)} Apps...")
+    print(f"⏰ Start: {datetime.now().strftime('%H:%M:%S')}")
     
+    start_time = time.time()
     result = tracker.track_app_prices(app_ids)
+    duration = time.time() - start_time
+    
     print(f"✅ {result['successful']}/{result['processed']} Apps erfolgreich aktualisiert")
+    print(f"⏱️ Dauer: {duration:.1f} Sekunden ({result['successful']/duration:.1f} Apps/s)")
     
     if result.get('errors'):
         print(f"⚠️ {len(result['errors'])} Fehler aufgetreten")
         for error in result['errors'][:3]:  # Zeige nur erste 3 Fehler
             print(f"   - {error}")
 else:
-    print("✅ Alle Apps sind aktuell")
+    print("✅ Alle Apps sind aktuell - keine Updates nötig")
+
+print(f"🏁 Preis-Tracking abgeschlossen um {datetime.now().strftime('%H:%M:%S')}")
 '''
     
     @staticmethod
-    def name_update_task():
-        """Task für automatische Namen-Updates"""
+    def enhanced_name_update_task():
+        """ENHANCED: Task für automatische Namen-Updates mit detailliertem Status"""
         return '''
-# Namen-Update Task
+# ENHANCED Namen-Update Task
+print("🔤 === NAMEN-UPDATE GESTARTET ===")
 from price_tracker import create_price_tracker
 from steam_wishlist_manager import load_api_key_from_env
 
@@ -630,7 +793,11 @@ if not api_key:
 
 tracker = create_price_tracker(api_key=api_key, enable_charts=True)
 
+total_updated = 0
+total_checked = 0
+
 # Standard-Apps mit generischen Namen
+print("🔍 Suche Standard-Apps mit generischen Namen...")
 standard_candidates = tracker.get_name_update_candidates()
 standard_updated = 0
 
@@ -641,17 +808,22 @@ if standard_candidates:
     app_ids = [app['steam_app_id'] for app in batch_apps]
     
     print(f"📝 Aktualisiere {batch_size} Standard-Namen...")
+    print(f"⏰ Start: {datetime.now().strftime('%H:%M:%S')}")
+    
     result = tracker.update_app_names_from_steam(app_ids, api_key)
     
     if result.get('success'):
         standard_updated = result['updated']
         print(f"✅ {result['updated']}/{batch_size} Standard-Namen aktualisiert")
+        total_updated += standard_updated
+        total_checked += batch_size
     else:
         print(f"❌ Standard-Namen-Update fehlgeschlagen")
 
 # Charts-Apps mit generischen Namen (falls verfügbar)
 charts_updated = 0
 if tracker.charts_enabled and hasattr(tracker.db_manager, 'get_active_chart_games'):
+    print("🔍 Suche Charts-Apps mit generischen Namen...")
     all_chart_games = tracker.db_manager.get_active_chart_games()
     
     charts_candidates = []
@@ -672,23 +844,31 @@ if tracker.charts_enabled and hasattr(tracker.db_manager, 'get_active_chart_game
         if result.get('success'):
             charts_updated = result['updated']
             print(f"✅ {result['updated']}/{batch_size} Charts-Namen aktualisiert")
+            total_updated += charts_updated
+            total_checked += batch_size
         else:
             print(f"❌ Charts-Namen-Update fehlgeschlagen")
 
-if standard_updated == 0 and charts_updated == 0:
-    if not standard_candidates and (not tracker.charts_enabled or not charts_candidates):
-        print("✅ Alle Namen sind aktuell")
+# Zusammenfassung
+if total_updated == 0:
+    if total_checked == 0:
+        print("✅ Alle Namen sind aktuell - keine Updates nötig")
     else:
         print("⚠️ Namen-Updates fehlgeschlagen oder keine API-Zugriffe möglich")
 else:
-    print(f"🎉 Gesamt: {standard_updated + charts_updated} Namen aktualisiert")
+    print(f"🎉 GESAMT: {total_updated}/{total_checked} Namen erfolgreich aktualisiert")
+    print(f"   📝 Standard: {standard_updated}")
+    print(f"   📊 Charts: {charts_updated}")
+
+print(f"🏁 Namen-Update abgeschlossen um {datetime.now().strftime('%H:%M:%S')}")
 '''
     
     @staticmethod
-    def charts_update_task():
-        """Task für Charts-Updates"""
+    def enhanced_charts_update_task():
+        """ENHANCED: Task für Charts-Updates mit detailliertem Status"""
         return '''
-# Charts-Update Task
+# ENHANCED Charts-Update Task
+print("📊 === CHARTS-UPDATE GESTARTET ===")
 from price_tracker import create_price_tracker
 from steam_wishlist_manager import load_api_key_from_env
 
@@ -704,26 +884,40 @@ if not tracker.charts_enabled:
     return
 
 # Charts aktualisieren
-print("📊 Starte Charts-Update...")
+print("📊 Starte vollständiges Charts-Update...")
+print(f"⏰ Start: {datetime.now().strftime('%H:%M:%S')}")
+
+start_time = time.time()
 result = tracker.update_charts_now()
+duration = time.time() - start_time
 
 if result.get('success', True):
-    print(f"✅ Charts-Update erfolgreich:")
+    print(f"✅ Charts-Update erfolgreich abgeschlossen:")
     print(f"   📊 {result.get('total_games_found', 0)} Spiele gefunden")
-    print(f"   ➕ {result.get('new_games_added', 0)} neue Spiele")
-    print(f"   🔄 {result.get('existing_games_updated', 0)} aktualisiert")
+    print(f"   ➕ {result.get('new_games_added', 0)} neue Spiele hinzugefügt")
+    print(f"   🔄 {result.get('existing_games_updated', 0)} bestehende aktualisiert")
+    print(f"   ⏱️ Dauer: {duration:.1f} Sekunden")
+    
+    charts_updated = result.get('charts_updated', [])
+    if charts_updated:
+        print(f"   📈 Aktualisierte Chart-Typen: {', '.join(charts_updated)}")
     
     if result.get('errors'):
-        print(f"   ⚠️ {len(result['errors'])} Fehler")
+        print(f"   ⚠️ {len(result['errors'])} Fehler aufgetreten")
+        for error in result['errors'][:3]:
+            print(f"      - {error}")
 else:
     print(f"❌ Charts-Update fehlgeschlagen: {result.get('error')}")
+
+print(f"🏁 Charts-Update abgeschlossen um {datetime.now().strftime('%H:%M:%S')}")
 '''
     
     @staticmethod
-    def charts_price_update_task():
-        """Task für Charts-Preis-Updates"""
+    def enhanced_charts_price_update_task():
+        """ENHANCED: Task für Charts-Preis-Updates mit detailliertem Status"""
         return '''
-# Charts-Preis-Update Task
+# ENHANCED Charts-Preis-Update Task
+print("💰 === CHARTS-PREIS-UPDATE GESTARTET ===")
 from price_tracker import create_price_tracker
 from steam_wishlist_manager import load_api_key_from_env
 
@@ -736,23 +930,39 @@ if not tracker.charts_enabled:
 
 # Charts-Preise aktualisieren
 print("💰 Starte Charts-Preis-Update...")
+print(f"⏰ Start: {datetime.now().strftime('%H:%M:%S')}")
+
+start_time = time.time()
 result = tracker.update_charts_prices_now()
+duration = time.time() - start_time
 
 if result.get('success', True):
-    print(f"✅ Charts-Preise erfolgreich:")
-    print(f"   💰 {result.get('successful', 0)} Apps aktualisiert")
+    successful = result.get('successful', 0)
+    total_games = result.get('total_games', 0)
+    
+    print(f"✅ Charts-Preise erfolgreich aktualisiert:")
+    print(f"   💰 {successful}/{total_games} Spiele aktualisiert")
+    print(f"   ⏱️ Dauer: {duration:.1f} Sekunden")
+    
+    if total_games > 0:
+        print(f"   📊 Erfolgsrate: {(successful/total_games)*100:.1f}%")
+        if duration > 0:
+            print(f"   ⚡ Geschwindigkeit: {successful/duration:.1f} Apps/s")
     
     if result.get('failed', 0) > 0:
-        print(f"   ❌ {result['failed']} fehlgeschlagen")
+        print(f"   ❌ {result['failed']} Spiele fehlgeschlagen")
 else:
     print(f"❌ Charts-Preise fehlgeschlagen: {result.get('error')}")
+
+print(f"🏁 Charts-Preis-Update abgeschlossen um {datetime.now().strftime('%H:%M:%S')}")
 '''
     
     @staticmethod
-    def charts_cleanup_task():
-        """Task für Charts-Cleanup"""
+    def enhanced_charts_cleanup_task():
+        """ENHANCED: Task für Charts-Cleanup mit detailliertem Status"""
         return '''
-# Charts-Cleanup Task
+# ENHANCED Charts-Cleanup Task
+print("🧹 === CHARTS-CLEANUP GESTARTET ===")
 from price_tracker import create_price_tracker
 from steam_wishlist_manager import load_api_key_from_env
 
@@ -763,164 +973,201 @@ if not tracker.charts_enabled:
     print("❌ Charts nicht verfügbar")
     return
 
-print("🧹 Starte Charts-Cleanup...")
+print("🧹 Starte umfassendes Charts-Cleanup...")
+print(f"⏰ Start: {datetime.now().strftime('%H:%M:%S')}")
 
-# Cleanup ausführen
+total_cleaned = 0
+
+# Charts-Spiele Cleanup
 if hasattr(tracker, 'charts_manager') and tracker.charts_manager:
+    print("🗑️ Bereinige alte Charts-Spiele (>30 Tage)...")
     removed = tracker.charts_manager.cleanup_old_chart_games(days_threshold=30)
     
     if removed > 0:
         print(f"✅ {removed} alte Charts-Spiele entfernt")
+        total_cleaned += removed
     else:
         print("✅ Keine alten Charts-Spiele zum Entfernen")
     
     # Zusätzlich: Alte Preis-Snapshots bereinigen
+    print("🗑️ Bereinige alte Preis-Snapshots (>90 Tage)...")
     if hasattr(tracker.db_manager, 'cleanup_old_prices'):
         old_snapshots = tracker.db_manager.cleanup_old_prices(days=90)
         if old_snapshots > 0:
-            print(f"🧹 {old_snapshots} alte Preis-Snapshots bereinigt")
+            print(f"🧹 {old_snapshots} alte Standard-Preis-Snapshots bereinigt")
+            total_cleaned += old_snapshots
+        else:
+            print("✅ Keine alten Standard-Snapshots zum Bereinigen")
+    
+    # Datenbank optimieren
+    print("🔧 Optimiere Datenbank...")
+    if hasattr(tracker.db_manager, 'vacuum_database'):
+        tracker.db_manager.vacuum_database()
+        print("✅ Datenbank optimiert")
+    
 else:
     print("❌ Charts-Manager nicht verfügbar")
+
+if total_cleaned > 0:
+    print(f"🎉 Cleanup abgeschlossen: {total_cleaned} Einträge bereinigt")
+else:
+    print("✅ Cleanup abgeschlossen - alles bereits sauber")
+
+print(f"🏁 Charts-Cleanup abgeschlossen um {datetime.now().strftime('%H:%M:%S')}")
 '''
 
 
 # =====================================================================
-# CONVENIENCE FUNCTIONS
+# ENHANCED CONVENIENCE FUNCTIONS
 # =====================================================================
 
-def create_price_tracker_scheduler() -> BackgroundScheduler:
+def create_enhanced_price_tracker_scheduler() -> BackgroundScheduler:
     """
-    Erstellt BackgroundScheduler für Price Tracker mit vordefinierten Tasks
+    Erstellt ENHANCED BackgroundScheduler für Price Tracker mit Sign of Life Features
     
     Returns:
-        Konfigurierter BackgroundScheduler
+        Konfigurierter BackgroundScheduler mit Enhanced Features
     """
     scheduler = BackgroundScheduler(
         scheduler_name="PriceTracker",
         base_config={
             "rate_limit_seconds": 1.5,
             "batch_size": 50,
-            "max_retries": 3
+            "max_retries": 3,
+            "enhanced_features": True
         }
     )
     
-    # Standard Tasks registrieren
+    # ENHANCED Tasks registrieren
     scheduler.register_scheduler(
         scheduler_type="price_updates",
-        task_function=SchedulerTasks.price_tracking_task(),
+        task_function=EnhancedSchedulerTasks.enhanced_price_tracking_task(),
         interval_minutes=360,  # 6 Stunden
-        dependencies=["price_tracker", "steam_wishlist_manager"]
+        dependencies=["price_tracker", "steam_wishlist_manager"],
+        heartbeat_interval=30,  # 30 Sekunden Heartbeat
+        show_progress_bar=True
     )
     
     scheduler.register_scheduler(
         scheduler_type="name_updates",
-        task_function=SchedulerTasks.name_update_task(),
+        task_function=EnhancedSchedulerTasks.enhanced_name_update_task(),
         interval_minutes=30,  # 30 Minuten
-        dependencies=["price_tracker", "steam_wishlist_manager"]
+        dependencies=["price_tracker", "steam_wishlist_manager"],
+        heartbeat_interval=20,  # 20 Sekunden Heartbeat (häufiger da kürzer)
+        show_progress_bar=True
     )
     
     return scheduler
 
-def create_charts_scheduler() -> BackgroundScheduler:
+def create_enhanced_charts_scheduler() -> BackgroundScheduler:
     """
-    Erstellt BackgroundScheduler für Charts mit vordefinierten Tasks
+    Erstellt ENHANCED BackgroundScheduler für Charts mit Sign of Life Features
     
     Returns:
-        Konfigurierter BackgroundScheduler
+        Konfigurierter BackgroundScheduler mit Enhanced Features
     """
     scheduler = BackgroundScheduler(
         scheduler_name="Charts",
         base_config={
             "steam_api_rate_limit": 1.0,
-            "max_charts_per_update": 100
+            "max_charts_per_update": 100,
+            "enhanced_features": True
         }
     )
     
-    # Charts Tasks registrieren
+    # ENHANCED Charts Tasks registrieren
     scheduler.register_scheduler(
         scheduler_type="charts_updates",
-        task_function=SchedulerTasks.charts_update_task(),
+        task_function=EnhancedSchedulerTasks.enhanced_charts_update_task(),
         interval_minutes=360,  # 6 Stunden
-        dependencies=["price_tracker", "steam_wishlist_manager", "steam_charts_manager"]
+        dependencies=["price_tracker", "steam_wishlist_manager", "steam_charts_manager"],
+        heartbeat_interval=45,  # 45 Sekunden (längere Tasks)
+        show_progress_bar=True
     )
     
     scheduler.register_scheduler(
         scheduler_type="charts_prices",
-        task_function=SchedulerTasks.charts_price_update_task(),
+        task_function=EnhancedSchedulerTasks.enhanced_charts_price_update_task(),
         interval_minutes=240,  # 4 Stunden
-        dependencies=["price_tracker", "steam_wishlist_manager"]
+        dependencies=["price_tracker", "steam_wishlist_manager"],
+        heartbeat_interval=30,
+        show_progress_bar=True
     )
     
     scheduler.register_scheduler(
         scheduler_type="charts_cleanup",
-        task_function=SchedulerTasks.charts_cleanup_task(),
+        task_function=EnhancedSchedulerTasks.enhanced_charts_cleanup_task(),
         interval_minutes=1440,  # 24 Stunden
-        dependencies=["price_tracker", "steam_wishlist_manager"]
+        dependencies=["price_tracker", "steam_wishlist_manager"],
+        heartbeat_interval=60,  # 1 Minute (Cleanup Task)
+        show_progress_bar=True
     )
     
     return scheduler
 
-def setup_all_schedulers(enable_charts: bool = True) -> Dict[str, BackgroundScheduler]:
+def test_enhanced_scheduler():
     """
-    Richtet alle Scheduler ein
-    
-    Args:
-        enable_charts: Ob Charts-Scheduler erstellt werden soll
-        
-    Returns:
-        Dict mit allen erstellten Schedulern
+    ENHANCED Test-Funktion für Scheduler mit Sign of Life Features
     """
-    schedulers = {}
-    
-    # Price Tracker Scheduler
-    schedulers['price_tracker'] = create_price_tracker_scheduler()
-    
-    # Charts Scheduler (optional)
-    if enable_charts:
-        schedulers['charts'] = create_charts_scheduler()
-    
-    logger.info(f"✅ {len(schedulers)} Scheduler eingerichtet")
-    return schedulers
-
-def test_scheduler_setup():
-    """
-    Test-Funktion für Scheduler-Setup
-    """
-    print("🧪 TESTE UNIVERSAL BACKGROUND SCHEDULER (WINDOWS FIXED)")
-    print("=" * 55)
+    print("🧪 TESTE ENHANCED UNIVERSAL BACKGROUND SCHEDULER")
+    print("=" * 60)
+    print("💓 Mit Sign of Life: Ticker, Heartbeat, Fortschrittsbalken")
+    print()
     
     try:
-        # Price Tracker Scheduler erstellen
-        price_scheduler = create_price_tracker_scheduler()
-        print(f"✅ Price Tracker Scheduler erstellt")
+        # Enhanced Price Tracker Scheduler erstellen
+        price_scheduler = create_enhanced_price_tracker_scheduler()
+        print(f"✅ Enhanced Price Tracker Scheduler erstellt")
         
-        # Charts Scheduler erstellen
-        charts_scheduler = create_charts_scheduler()
-        print(f"✅ Charts Scheduler erstellt")
+        # Enhanced Charts Scheduler erstellen
+        charts_scheduler = create_enhanced_charts_scheduler()
+        print(f"✅ Enhanced Charts Scheduler erstellt")
         
         # Status anzeigen
         price_status = price_scheduler.get_scheduler_status()
         charts_status = charts_scheduler.get_scheduler_status()
         
-        print(f"\n📊 PRICE TRACKER STATUS:")
+        print(f"\n📊 ENHANCED PRICE TRACKER STATUS:")
         print(f"   📝 Registrierte Scheduler: {price_status['total_registered']}")
         print(f"   🏃 Laufende Scheduler: {price_status['total_running']}")
+        print(f"   💓 Sign of Life Features: Aktiviert")
         
-        print(f"\n📊 CHARTS STATUS:")
+        for name, scheduler_info in price_status['schedulers'].items():
+            heartbeat = scheduler_info.get('heartbeat_interval', 30)
+            progress = scheduler_info.get('show_progress_bar', True)
+            print(f"      • {name}: Heartbeat {heartbeat}s, Progress Bar {'✅' if progress else '❌'}")
+        
+        print(f"\n📊 ENHANCED CHARTS STATUS:")
         print(f"   📝 Registrierte Scheduler: {charts_status['total_registered']}")
         print(f"   🏃 Laufende Scheduler: {charts_status['total_running']}")
+        print(f"   💓 Sign of Life Features: Aktiviert")
+        
+        for name, scheduler_info in charts_status['schedulers'].items():
+            heartbeat = scheduler_info.get('heartbeat_interval', 30)
+            progress = scheduler_info.get('show_progress_bar', True)
+            print(f"      • {name}: Heartbeat {heartbeat}s, Progress Bar {'✅' if progress else '❌'}")
         
         # Aufräumen
         price_scheduler.cleanup_all_files()
         charts_scheduler.cleanup_all_files()
         
-        print(f"\n✅ Scheduler-Test erfolgreich!")
+        print(f"\n✅ Enhanced Scheduler-Test erfolgreich!")
+        print("💡 Terminals zeigen jetzt kontinuierliche Aktivität!")
         return True
         
     except Exception as e:
-        print(f"❌ Scheduler-Test fehlgeschlagen: {e}")
+        print(f"❌ Enhanced Scheduler-Test fehlgeschlagen: {e}")
         return False
 
+# Kompatibilitäts-Aliase für bestehenden Code
+def create_price_tracker_scheduler():
+    """Kompatibilitäts-Alias für Enhanced Version"""
+    return create_enhanced_price_tracker_scheduler()
+
+def create_charts_scheduler():
+    """Kompatibilitäts-Alias für Enhanced Version"""
+    return create_enhanced_charts_scheduler()
+
 if __name__ == "__main__":
-    # Test-Modus
-    test_scheduler_setup()
+    # ENHANCED Test-Modus
+    test_enhanced_scheduler()

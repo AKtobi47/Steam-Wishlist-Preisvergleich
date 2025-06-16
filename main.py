@@ -655,31 +655,126 @@ def main():
                             print("   💡 Läuft in separaten Terminals!")
             
             elif choice == "8":
-                # Getrackte Apps verwalten
+                # Getrackte Apps verwalten - FIXED VERSION
                 print("\n📋 GETRACKTE APPS VERWALTEN")
                 print("=" * 30)
                 
-                tracked_apps = price_tracker.get_tracked_apps()
-                
-                if not tracked_apps:
-                    print("❌ Keine Apps im Tracking")
-                    continue
-                
-                print(f"📊 {len(tracked_apps)} Apps getrackt:")
-                print()
-                
-                for i, app in enumerate(tracked_apps[:20], 1):  # Zeige nur erste 20
-                    last_update = app.get('last_price_update', 'Nie')
-                    if last_update and last_update != 'Nie':
-                        last_update = last_update[:19]
+                try:
+                    tracked_apps = price_tracker.get_tracked_apps()
                     
-                    print(f"{i:3d}. {app['name'][:40]:<40} (ID: {app['steam_app_id']})")
-                    print(f"     📅 Hinzugefügt: {app['added_at'][:10]} | Letztes Update: {last_update}")
-                
-                if len(tracked_apps) > 20:
-                    print(f"\n... und {len(tracked_apps) - 20} weitere Apps")
-                
-                print(f"\n💡 Verwende Option 9 um Apps zu entfernen")
+                    if not tracked_apps:
+                        print("❌ Keine Apps im Tracking")
+                        print("💡 Verwende Option 1 oder 2 um Apps hinzuzufügen")
+                        input("\nDrücke Enter um fortzufahren...")
+                        continue
+                    
+                    print(f"📊 {len(tracked_apps)} Apps getrackt:")
+                    print()
+                    
+                    for i, app in enumerate(tracked_apps[:20], 1):  # Zeige nur erste 20
+                        try:
+                            last_update = app.get('last_price_update', 'Nie')
+                            if last_update and last_update != 'Nie':
+                                # Sichere String-Kürzung
+                                if len(last_update) > 19:
+                                    last_update = last_update[:19]
+                            
+                            added_at = app.get('added_at', 'Unbekannt')
+                            if added_at and added_at != 'Unbekannt':
+                                # Sichere String-Kürzung  
+                                if len(added_at) > 10:
+                                    added_at = added_at[:10]
+                            
+                            app_name = app.get('name', 'Unbekannter Name')
+                            steam_app_id = app.get('steam_app_id', 'Unbekannte ID')
+                            
+                            # Sichere String-Formatierung
+                            if len(app_name) > 40:
+                                display_name = app_name[:37] + "..."
+                            else:
+                                display_name = app_name
+                            
+                            print(f"{i:3d}. {display_name:<40} (ID: {steam_app_id})")
+                            print(f"     📅 Hinzugefügt: {added_at} | Letztes Update: {last_update}")
+                            
+                        except Exception as e:
+                            print(f"{i:3d}. ❌ Fehler beim Anzeigen von App {i}: {e}")
+                    
+                    if len(tracked_apps) > 20:
+                        print(f"\n... und {len(tracked_apps) - 20} weitere Apps")
+                    
+                    print(f"\n💡 Verwende Option 9 um Apps zu entfernen")
+                    
+                    # ZUSÄTZLICH: Detailierte App-Informationen anbieten
+                    print("\nMöchtest du Details zu einer App anzeigen?")
+                    app_choice = input("App-Nummer eingeben (oder Enter zum Fortfahren): ").strip()
+                    
+                    if app_choice.isdigit():
+                        try:
+                            app_index = int(app_choice) - 1
+                            if 0 <= app_index < len(tracked_apps):
+                                selected_app = tracked_apps[app_index]
+                                
+                                print(f"\n📱 DETAILS FÜR APP {app_choice}:")
+                                print(f"🎮 Name: {selected_app.get('name', 'N/A')}")
+                                print(f"🆔 Steam App ID: {selected_app.get('steam_app_id', 'N/A')}")
+                                print(f"📅 Hinzugefügt: {selected_app.get('added_at', 'N/A')}")
+                                print(f"💰 Letztes Preis-Update: {selected_app.get('last_price_update', 'Nie')}")
+                                print(f"🔤 Letztes Namen-Update: {selected_app.get('last_name_update', 'Nie')}")
+                                print(f"🔄 Namen-Update Versuche: {selected_app.get('name_update_attempts', 0)}")
+                                print(f"✅ Aktiv: {'Ja' if selected_app.get('active', True) else 'Nein'}")
+                                
+                                # Neueste Preise anzeigen falls verfügbar
+                                try:
+                                    latest_prices = price_tracker.get_latest_prices(selected_app['steam_app_id'])
+                                    if latest_prices:
+                                        print(f"\n💰 NEUESTE PREISE (vom {latest_prices.get('timestamp', 'N/A')[:10]}):")
+                                        stores = ['steam', 'greenmangaming', 'gog', 'humblestore', 'fanatical', 'gamesplanet']
+                                        
+                                        for store in stores:
+                                            price_col = f"{store}_price"
+                                            available_col = f"{store}_available"
+                                            discount_col = f"{store}_discount_percent"
+                                            
+                                            if latest_prices.get(available_col) and latest_prices.get(price_col) is not None:
+                                                price = latest_prices[price_col]
+                                                discount = latest_prices.get(discount_col, 0)
+                                                status = f"€{price:.2f}"
+                                                if discount > 0:
+                                                    status += f" (-{discount}%)"
+                                                print(f"   {store.title():15}: {status}")
+                                            else:
+                                                print(f"   {store.title():15}: Nicht verfügbar")
+                                    else:
+                                        print(f"\n💰 Noch keine Preisdaten verfügbar")
+                                        
+                                except Exception as e:
+                                    print(f"\n⚠️ Fehler beim Laden der Preisdaten: {e}")
+                            else:
+                                print("❌ Ungültige App-Nummer")
+                        except ValueError:
+                            print("❌ Ungültige Eingabe")
+                    
+                    input("\nDrücke Enter um fortzufahren...")
+                    
+                except Exception as e:
+                    print(f"❌ Fehler beim Laden der getrackten Apps: {e}")
+                    print(f"🔍 Error Details: {type(e).__name__}")
+                    
+                    # Zusätzliche Debugging-Informationen
+                    try:
+                        print(f"📊 Versuche direkte Datenbankabfrage...")
+                        stats = price_tracker.get_statistics()
+                        print(f"📈 Statistiken zeigen {stats.get('tracked_apps', '?')} Apps")
+                    except Exception as db_e:
+                        print(f"❌ Auch Statistiken fehlgeschlagen: {db_e}")
+                    
+                    print(f"💡 Versuche folgende Lösungen:")
+                    print(f"   1. Neustart von main.py")
+                    print(f"   2. Datenbank mit 'python setup.py init-db' reparieren")
+                    print(f"   3. Prüfe ob steam_price_tracker.db existiert")
+                    
+                    input("\nDrücke Enter um fortzufahren...")
             
             elif choice == "9":
                 # Apps entfernen
