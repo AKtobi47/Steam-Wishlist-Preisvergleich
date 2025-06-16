@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Universal Background Scheduler - CORRECTED VERSION
+Universal Background Scheduler - WINDOWS FIXED VERSION
 Universeller Scheduler für alle Background-Tasks in separaten Terminals
-FIXED: Korrekte Imports und Module-Erkennung
+FIXED: Windows Terminal-Start korrigiert
 """
 
 import os
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class BackgroundScheduler:
     """
     Universeller Background-Scheduler für separate Terminal-Execution
-    CORRECTED: Korrekte Module-Imports und Pfad-Handling
+    WINDOWS FIXED: Korrekte Terminal-Starts für Windows
     """
     
     def __init__(self, scheduler_name: str, base_config: Dict = None):
@@ -43,7 +43,7 @@ class BackgroundScheduler:
         self.temp_dir = Path("temp_schedulers")
         self.temp_dir.mkdir(exist_ok=True)
         
-        # CORRECTED: Python-Pfad für korrekte Imports
+        # Python-Pfad für korrekte Imports
         self.project_root = Path.cwd()
         
         logger.info(f"✅ Universal Background Scheduler '{scheduler_name}' initialisiert")
@@ -112,7 +112,7 @@ class BackgroundScheduler:
             script_path = self._create_scheduler_script(scheduler_type, **kwargs)
             
             # Separaten Terminal-Prozess starten
-            process = self._start_terminal_process(script_path, scheduler_type)
+            process = self._start_terminal_process_fixed(script_path, scheduler_type)
             
             if process:
                 self.running_processes[scheduler_type] = process
@@ -251,7 +251,7 @@ class BackgroundScheduler:
     
     def _create_scheduler_script(self, scheduler_type: str, **kwargs) -> str:
         """
-        CORRECTED: Erstellt temporäres Python-Script mit korrekten Imports
+        Erstellt temporäres Python-Script mit korrekten Imports
         
         Args:
             scheduler_type: Typ des Schedulers
@@ -262,13 +262,13 @@ class BackgroundScheduler:
         """
         config = self.scheduler_configs[scheduler_type]
         
-        # CORRECTED: Script-Inhalt mit robusten Imports
+        # Script-Inhalt mit robusten Imports
         script_content = f'''#!/usr/bin/env python3
 """
 Background Scheduler: {scheduler_type}
 Auto-generated scheduler script für separate Terminal-Ausführung
 Scheduler: {self.scheduler_name}
-CORRECTED: Robuste Import-Behandlung
+WINDOWS FIXED VERSION
 """
 
 import sys
@@ -277,7 +277,7 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
-# CORRECTED: Aktuelles Verzeichnis zum Python-Pfad hinzufügen
+# Aktuelles Verzeichnis zum Python-Pfad hinzufügen
 project_root = Path("{self.project_root}")
 sys.path.insert(0, str(project_root))
 
@@ -299,7 +299,7 @@ print("⚠️ Drücke Ctrl+C zum Beenden")
 print()
 
 try:
-    # CORRECTED: Dependencies importieren mit Fehlerbehandlung
+    # Dependencies importieren mit Fehlerbehandlung
     {self._generate_import_statements_corrected(config.get('dependencies', []))}
     
     print("✅ Alle Module erfolgreich importiert")
@@ -358,7 +358,7 @@ except Exception as e:
     
     def _generate_import_statements_corrected(self, dependencies: List[str]) -> str:
         """
-        CORRECTED: Generiert robuste Import-Statements
+        Generiert robuste Import-Statements
         
         Args:
             dependencies: Liste der erforderlichen Module
@@ -393,7 +393,7 @@ except Exception as e:
     
     def _format_task_function(self, task_function: str) -> str:
         """
-        CORRECTED: Formatiert Task-Funktion für korrekten Einzug
+        Formatiert Task-Funktion für korrekten Einzug
         
         Args:
             task_function: Task-Funktions-Code
@@ -416,9 +416,9 @@ except Exception as e:
         
         return '\n'.join(indented_lines)
     
-    def _start_terminal_process(self, script_path: str, scheduler_type: str) -> Optional[subprocess.Popen]:
+    def _start_terminal_process_fixed(self, script_path: str, scheduler_type: str) -> Optional[subprocess.Popen]:
         """
-        CORRECTED: Startet Script in separatem Terminal mit robusteren Optionen
+        WINDOWS FIXED: Startet Script in separatem Terminal mit korrigierter Windows-Unterstützung
         
         Args:
             script_path: Pfad zum Python-Script
@@ -427,19 +427,33 @@ except Exception as e:
         Returns:
             Subprocess.Popen Objekt oder None
         """
-        terminal_title = f"Steam Price Tracker - {self.scheduler_name} - {scheduler_type}"
+        # FIXED: Einfacher Terminal-Titel ohne Sonderzeichen
+        terminal_title = f"PriceTracker_{self.scheduler_name}_{scheduler_type}"
         
         try:
-            if os.name == 'nt':  # Windows
-                return subprocess.Popen([
-                    'cmd', '/c', 'start', 
-                    f'"{terminal_title}"',
-                    'cmd', '/k', 
-                    f'cd /d "{self.project_root}" && python "{script_path}"'
-                ], shell=True)
+            if os.name == 'nt':  # Windows - FIXED VERSION
+                # FIXED: Verwende korrektes Windows-Kommando ohne Leerzeichen-Probleme
+                
+                # Option 1: Direkt mit cmd /k (bleibt offen)
+                cmd_command = f'cd /d "{self.project_root}" && python "{script_path}"'
+                
+                try:
+                    # Versuche PowerShell wenn verfügbar
+                    return subprocess.Popen([
+                        'powershell', '-Command',
+                        f'Start-Process cmd -ArgumentList "/k", "{cmd_command}" -WindowStyle Normal'
+                    ], cwd=str(self.project_root))
+                    
+                except FileNotFoundError:
+                    # Fallback: Standard cmd mit start
+                    return subprocess.Popen([
+                        'cmd', '/c', 'start', 
+                        '/wait',  # Warten auf Prozess
+                        'cmd', '/k', 
+                        cmd_command
+                    ], shell=True, cwd=str(self.project_root))
             
-            else:  # Linux/macOS
-                # CORRECTED: Robuste Terminal-Erkennung mit Working Directory
+            else:  # Linux/macOS - wie zuvor
                 terminals = [
                     ('gnome-terminal', [
                         'gnome-terminal', 
@@ -475,7 +489,7 @@ except Exception as e:
                     except FileNotFoundError:
                         continue
                 
-                # CORRECTED: Fallback mit korrektem Working Directory
+                # Fallback: Hintergrund-Prozess
                 logger.warning(f"⚠️ Kein GUI-Terminal gefunden - starte im Hintergrund")
                 return subprocess.Popen([
                     'python3', script_path
@@ -523,49 +537,48 @@ except Exception as e:
 
 
 # =====================================================================
-# SCHEDULER TASK DEFINITIONS - CORRECTED
+# SCHEDULER TASK DEFINITIONS
 # =====================================================================
 
 class SchedulerTasks:
     """
     Sammlung vordefinierter Task-Funktionen für verschiedene Scheduler
-    CORRECTED: Korrekte Import-Behandlung und Fehlerbehandlung
     """
     
     @staticmethod
     def price_tracking_task():
-        """CORRECTED: Task für automatisches Preis-Tracking"""
+        """Task für automatisches Preis-Tracking"""
         return '''
-# Preis-Tracking Task - CORRECTED VERSION
+# Preis-Tracking Task
 from price_tracker import create_price_tracker
 from steam_wishlist_manager import load_api_key_from_env
 
 api_key = load_api_key_from_env()
-tracker = create_price_tracker(api_key=api_key, enable_charts=True)
+tracker = create_price_tracker(api_key=api_key, enable_charts=False)
 
-if not tracker.charts_enabled:
-    print("❌ Charts nicht verfügbar")
-    return
+# Standard-Apps aktualisieren
+pending_apps = tracker.get_apps_needing_price_update(hours_threshold=6)
 
-# Charts-Preise aktualisieren
-print("💰 Starte Charts-Preis-Update...")
-result = tracker.update_charts_prices_now()
-
-if result.get('success', True):
-    print(f"✅ Charts-Preise erfolgreich:")
-    print(f"   💰 {result.get('successful', 0)} Apps aktualisiert")
+if pending_apps:
+    app_ids = [app['steam_app_id'] for app in pending_apps]
+    print(f"📊 Aktualisiere {len(app_ids)} Apps...")
     
-    if result.get('failed', 0) > 0:
-        print(f"   ❌ {result['failed']} fehlgeschlagen")
+    result = tracker.track_app_prices(app_ids)
+    print(f"✅ {result['successful']}/{result['processed']} Apps erfolgreich aktualisiert")
+    
+    if result.get('errors'):
+        print(f"⚠️ {len(result['errors'])} Fehler aufgetreten")
+        for error in result['errors'][:3]:  # Zeige nur erste 3 Fehler
+            print(f"   - {error}")
 else:
-    print(f"❌ Charts-Preise fehlgeschlagen: {result.get('error')}")
+    print("✅ Alle Apps sind aktuell")
 '''
     
     @staticmethod
     def name_update_task():
-        """CORRECTED: Task für automatische Namen-Updates"""
+        """Task für automatische Namen-Updates"""
         return '''
-# Namen-Update Task - CORRECTED VERSION
+# Namen-Update Task
 from price_tracker import create_price_tracker
 from steam_wishlist_manager import load_api_key_from_env
 
@@ -631,10 +644,74 @@ else:
 '''
     
     @staticmethod
-    def charts_cleanup_task():
-        """CORRECTED: Task für Charts-Cleanup"""
+    def charts_update_task():
+        """Task für Charts-Updates"""
         return '''
-# Charts-Cleanup Task - CORRECTED VERSION
+# Charts-Update Task
+from price_tracker import create_price_tracker
+from steam_wishlist_manager import load_api_key_from_env
+
+api_key = load_api_key_from_env()
+if not api_key:
+    print("❌ Kein Steam API Key - Charts-Update übersprungen")
+    return
+
+tracker = create_price_tracker(api_key=api_key, enable_charts=True)
+
+if not tracker.charts_enabled:
+    print("❌ Charts nicht verfügbar")
+    return
+
+# Charts aktualisieren
+print("📊 Starte Charts-Update...")
+result = tracker.update_charts_now()
+
+if result.get('success', True):
+    print(f"✅ Charts-Update erfolgreich:")
+    print(f"   📊 {result.get('total_games_found', 0)} Spiele gefunden")
+    print(f"   ➕ {result.get('new_games_added', 0)} neue Spiele")
+    print(f"   🔄 {result.get('existing_games_updated', 0)} aktualisiert")
+    
+    if result.get('errors'):
+        print(f"   ⚠️ {len(result['errors'])} Fehler")
+else:
+    print(f"❌ Charts-Update fehlgeschlagen: {result.get('error')}")
+'''
+    
+    @staticmethod
+    def charts_price_update_task():
+        """Task für Charts-Preis-Updates"""
+        return '''
+# Charts-Preis-Update Task
+from price_tracker import create_price_tracker
+from steam_wishlist_manager import load_api_key_from_env
+
+api_key = load_api_key_from_env()
+tracker = create_price_tracker(api_key=api_key, enable_charts=True)
+
+if not tracker.charts_enabled:
+    print("❌ Charts nicht verfügbar")
+    return
+
+# Charts-Preise aktualisieren
+print("💰 Starte Charts-Preis-Update...")
+result = tracker.update_charts_prices_now()
+
+if result.get('success', True):
+    print(f"✅ Charts-Preise erfolgreich:")
+    print(f"   💰 {result.get('successful', 0)} Apps aktualisiert")
+    
+    if result.get('failed', 0) > 0:
+        print(f"   ❌ {result['failed']} fehlgeschlagen")
+else:
+    print(f"❌ Charts-Preise fehlgeschlagen: {result.get('error')}")
+'''
+    
+    @staticmethod
+    def charts_cleanup_task():
+        """Task für Charts-Cleanup"""
+        return '''
+# Charts-Cleanup Task
 from price_tracker import create_price_tracker
 from steam_wishlist_manager import load_api_key_from_env
 
@@ -667,12 +744,12 @@ else:
 
 
 # =====================================================================
-# CONVENIENCE FUNCTIONS - CORRECTED
+# CONVENIENCE FUNCTIONS
 # =====================================================================
 
 def create_price_tracker_scheduler() -> BackgroundScheduler:
     """
-    CORRECTED: Erstellt BackgroundScheduler für Price Tracker mit vordefinierten Tasks
+    Erstellt BackgroundScheduler für Price Tracker mit vordefinierten Tasks
     
     Returns:
         Konfigurierter BackgroundScheduler
@@ -705,7 +782,7 @@ def create_price_tracker_scheduler() -> BackgroundScheduler:
 
 def create_charts_scheduler() -> BackgroundScheduler:
     """
-    CORRECTED: Erstellt BackgroundScheduler für Charts mit vordefinierten Tasks
+    Erstellt BackgroundScheduler für Charts mit vordefinierten Tasks
     
     Returns:
         Konfigurierter BackgroundScheduler
@@ -744,7 +821,7 @@ def create_charts_scheduler() -> BackgroundScheduler:
 
 def setup_all_schedulers(enable_charts: bool = True) -> Dict[str, BackgroundScheduler]:
     """
-    CORRECTED: Richtet alle Scheduler ein
+    Richtet alle Scheduler ein
     
     Args:
         enable_charts: Ob Charts-Scheduler erstellt werden soll
@@ -766,10 +843,10 @@ def setup_all_schedulers(enable_charts: bool = True) -> Dict[str, BackgroundSche
 
 def test_scheduler_setup():
     """
-    CORRECTED: Test-Funktion für Scheduler-Setup
+    Test-Funktion für Scheduler-Setup
     """
-    print("🧪 TESTE UNIVERSAL BACKGROUND SCHEDULER")
-    print("=" * 45)
+    print("🧪 TESTE UNIVERSAL BACKGROUND SCHEDULER (WINDOWS FIXED)")
+    print("=" * 55)
     
     try:
         # Price Tracker Scheduler erstellen
@@ -805,72 +882,4 @@ def test_scheduler_setup():
 
 if __name__ == "__main__":
     # Test-Modus
-    test_scheduler_setup(), enable_charts=False)
-
-# Apps holen die Updates benötigen
-pending_apps = tracker.get_apps_needing_price_update(hours_threshold=6)
-
-if pending_apps:
-    app_ids = [app['steam_app_id'] for app in pending_apps]
-    print(f"📊 Aktualisiere {len(app_ids)} Apps...")
-    
-    result = tracker.track_app_prices(app_ids)
-    print(f"✅ {result['successful']}/{result['processed']} Apps erfolgreich aktualisiert")
-    
-    if result.get('errors'):
-        print(f"⚠️ {len(result['errors'])} Fehler aufgetreten")
-        for error in result['errors'][:3]:  # Zeige nur erste 3 Fehler
-            print(f"   - {error}")
-else:
-    print("✅ Alle Apps sind aktuell")
-'''
-    
-    @staticmethod
-    def charts_update_task():
-        """CORRECTED: Task für Charts-Updates"""
-        return '''
-# Charts-Update Task - CORRECTED VERSION
-from price_tracker import create_price_tracker
-from steam_wishlist_manager import load_api_key_from_env
-
-api_key = load_api_key_from_env()
-if not api_key:
-    print("❌ Kein Steam API Key - Charts-Update übersprungen")
-    return
-
-tracker = create_price_tracker(api_key=api_key, enable_charts=True)
-
-if not tracker.charts_enabled:
-    print("❌ Charts nicht verfügbar")
-    return
-
-# Charts aktualisieren
-print("📊 Starte Charts-Update...")
-result = tracker.update_charts_now()
-
-if result.get('success', True):
-    print(f"✅ Charts-Update erfolgreich:")
-    print(f"   📊 {result.get('total_games_found', 0)} Spiele gefunden")
-    print(f"   ➕ {result.get('new_games_added', 0)} neue Spiele")
-    print(f"   🔄 {result.get('existing_games_updated', 0)} aktualisiert")
-    
-    if result.get('errors'):
-        print(f"   ⚠️ {len(result['errors'])} Fehler")
-else:
-    print(f"❌ Charts-Update fehlgeschlagen: {result.get('error')}")
-'''
-    
-    @staticmethod
-    def charts_price_update_task():
-        """CORRECTED: Task für Charts-Preis-Updates"""
-        return '''
-# Charts-Preis-Update Task - CORRECTED VERSION
-from price_tracker import create_price_tracker
-from steam_wishlist_manager import load_api_key_from_env
-
-api_key = load_api_key_from_env()
-if not api_key:
-    print("❌ Kein Steam API Key - Charts-Preise übersprungen")
-    return
-
-tracker = create_price_tracker(api_key=api_key
+    test_scheduler_setup()
