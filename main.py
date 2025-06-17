@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-Enhanced Steam Price Tracker - Simplified Main Application
-UPDATED: Nutzt Universal Background Scheduler für alle Background-Tasks
-Vereinfachtes Interface da Scheduler-Komplexität in background_scheduler.py abstrahiert ist
+Enhanced Steam Price Tracker v2.0 - Main Application mit automatischem Process Cleanup
+VOLLSTÄNDIG INTEGRIERT: Alle ursprünglichen Features + Enhanced Process Management
+Alle Subprozesse werden automatisch beendet wenn das Hauptprogramm geschlossen wird
 """
 
 import sys
 import time
+import atexit
+import signal
 from datetime import datetime
 from pathlib import Path
 import logging
@@ -16,81 +18,126 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # =====================================================================
-# SIMPLIFIED UTILITY-FUNKTIONEN - Reduziert durch Universal Scheduler
+# ENHANCED PROCESS CLEANUP SYSTEM
 # =====================================================================
 
-def get_universal_scheduler_status(price_tracker):
-    """Gibt Universal Background Scheduler Status zurück"""
+def setup_automatic_cleanup(price_tracker):
+    """
+    Richtet automatisches Cleanup für alle Background-Prozesse ein
+    
+    Args:
+        price_tracker: SteamPriceTracker Instanz
+    """
+    def cleanup_on_exit():
+        """Wird beim Beenden des Hauptprogramms ausgeführt"""
+        print("\n🧹 AUTOMATISCHES CLEANUP BEIM BEENDEN")
+        print("=" * 45)
+        
+        try:
+            # Background Scheduler stoppen
+            print("⏹️ Stoppe Price Tracker Background-Scheduler...")
+            if hasattr(price_tracker, 'stop_background_scheduler'):
+                price_tracker.stop_background_scheduler()
+            
+            # Charts Scheduler stoppen
+            if hasattr(price_tracker, 'charts_enabled') and price_tracker.charts_enabled:
+                print("⏹️ Stoppe Charts Background-Scheduler...")
+                if hasattr(price_tracker, 'disable_charts_tracking'):
+                    price_tracker.disable_charts_tracking()
+            
+            # Enhanced Universal Scheduler stoppen
+            if hasattr(price_tracker, 'price_scheduler'):
+                print("⏹️ Stoppe Enhanced Universal Scheduler...")
+                price_tracker.price_scheduler.cleanup_all_processes()
+            
+            # Charts Scheduler stoppen
+            if hasattr(price_tracker, 'charts_scheduler') and price_tracker.charts_scheduler:
+                print("⏹️ Stoppe Charts Universal Scheduler...")
+                price_tracker.charts_scheduler.cleanup_all_processes()
+            
+            print("✅ Alle Background-Prozesse gestoppt")
+            print("💾 Datenbankverbindungen werden geschlossen...")
+            
+            # Datenbank sicher schließen
+            if hasattr(price_tracker, 'db_manager'):
+                price_tracker.db_manager.close()
+            
+            print("✅ Enhanced Cleanup abgeschlossen")
+            
+        except Exception as e:
+            print(f"⚠️ Fehler beim Cleanup: {e}")
+    
+    # Cleanup-Handler registrieren
+    atexit.register(cleanup_on_exit)
+    
+    # Signal-Handler für Ctrl+C etc.
+    def signal_handler(signum, frame):
+        print(f"\n⚠️ Signal {signum} empfangen - führe Cleanup aus...")
+        cleanup_on_exit()
+        sys.exit(0)
+    
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    logger.info("✅ Automatisches Process Cleanup eingerichtet")
+
+# =====================================================================
+# ENHANCED PROCESS MANAGEMENT FUNCTIONS
+# =====================================================================
+
+def get_enhanced_process_status():
+    """Liefert Status aller Enhanced Prozesse"""
     try:
-        return price_tracker.get_enhanced_scheduler_status()
+        from background_scheduler import _global_process_manager
+        return _global_process_manager.get_process_status()
     except Exception as e:
-        logger.debug(f"Scheduler-Status Fehler: {e}")
-        return {
-            'scheduler_type': 'Universal Background Scheduler',
+        logger.warning(f"Process Status nicht verfügbar: {e}")
+        return {'total_tracked': 0, 'running_processes': 0, 'dead_processes': 0, 'processes': {}}
+
+def start_process_management_terminal():
+    """Startet Process Management Terminal"""
+    try:
+        from background_scheduler import create_process_management_terminal
+        if create_process_management_terminal():
+            print("✅ Process Management Terminal gestartet")
+            print("💡 Neues Terminal-Fenster sollte sich öffnen")
+        else:
+            print("❌ Fehler beim Starten des Management Terminals")
+    except Exception as e:
+        print(f"❌ Process Management Terminal nicht verfügbar: {e}")
+
+def get_universal_scheduler_status(price_tracker):
+    """Liefert Status des Universal Scheduler Systems"""
+    try:
+        status = {
             'total_active_schedulers': 0,
             'price_scheduler_status': None,
             'charts_scheduler_status': None
         }
-
-def show_available_chart_types():
-    """FIXED: Zeigt verfügbare Chart-Typen an"""
-    try:
-        from steam_charts_manager import SteamChartsManager
-        chart_types = SteamChartsManager.get_available_chart_types()
         
-        print("\n📊 VERFÜGBARE CHART-TYPEN:")
-        print("-" * 30)
-        for chart_type, description in chart_types.items():
-            print(f"• {chart_type} - {description}")
-        print()
+        # Price Scheduler Status
+        if hasattr(price_tracker, 'price_scheduler'):
+            price_status = price_tracker.price_scheduler.get_scheduler_status()
+            status['price_scheduler_status'] = price_status
+            status['total_active_schedulers'] += price_status.get('total_running', 0)
         
-        return list(chart_types.keys())
-    except ImportError:
-        print("❌ Charts-Funktionalität nicht verfügbar")
-        return []
+        # Charts Scheduler Status
+        if hasattr(price_tracker, 'charts_scheduler') and price_tracker.charts_scheduler:
+            charts_status = price_tracker.charts_scheduler.get_scheduler_status()
+            status['charts_scheduler_status'] = charts_status
+            status['total_active_schedulers'] += charts_status.get('total_running', 0)
+        
+        return status
     except Exception as e:
-        print(f"❌ Fehler beim Laden der Chart-Typen: {e}")
-        return []
+        logger.warning(f"Scheduler Status nicht verfügbar: {e}")
+        return {'total_active_schedulers': 0}
 
-def show_enhanced_charts_statistics(price_tracker):
-    """Zeigt erweiterte Charts-Statistiken"""
-    if not price_tracker.charts_enabled:
-        return
-    
-    try:
-        if hasattr(price_tracker.db_manager, 'get_charts_statistics'):
-            charts_stats = price_tracker.db_manager.get_charts_statistics()
-            
-            if charts_stats and charts_stats.get('total_active_charts_games', 0) > 0:
-                print(f"\n📊 CHARTS-STATUS:")
-                print(f"🎯 Aktive Charts-Spiele: {charts_stats.get('total_active_charts_games', 0)}")
-                print(f"🎮 Einzigartige Apps in Charts: {charts_stats.get('unique_apps_in_charts', 0)}")
-                print(f"📈 Charts-Preis-Snapshots: {charts_stats.get('total_charts_price_snapshots', 0):,}")
-                
-                # Pro Chart-Typ
-                active_by_chart = charts_stats.get('active_games_by_chart', {})
-                if active_by_chart:
-                    print(f"📈 Verteilung: ", end="")
-                    chart_info = []
-                    for chart_type, count in active_by_chart.items():
-                        chart_info.append(f"{chart_type}: {count}")
-                    print(" | ".join(chart_info))
-            else:
-                print(f"\n📊 CHARTS-STATUS:")
-                print(f"🎯 Charts verfügbar aber noch keine Daten")
-                print(f"💡 Führe 'Charts sofort aktualisieren' aus um zu starten")
-        else:
-            print("\n📊 Charts-Statistiken nicht verfügbar")
-            
-    except Exception as e:
-        print(f"⚠️ Fehler beim Laden der Charts-Statistiken: {e}")
-
-def show_universal_scheduler_status(price_tracker):
-    """Zeigt Universal Background Scheduler Status"""
+def show_universal_scheduler_status_enhanced(price_tracker):
+    """Zeigt Enhanced Universal Scheduler Status"""
     try:
         status = get_universal_scheduler_status(price_tracker)
         
-        print(f"\n🚀 UNIVERSAL BACKGROUND SCHEDULER:")
+        print(f"\n🚀 ENHANCED UNIVERSAL BACKGROUND SCHEDULER:")
         print(f"   📊 Aktive Scheduler: {status.get('total_active_schedulers', 0)}")
         
         # Price Tracker Scheduler
@@ -120,196 +167,50 @@ def show_universal_scheduler_status(price_tracker):
                 print(f"      • {scheduler_name}: {running} (alle {interval_str})")
         
     except Exception as e:
-        print(f"⚠️ Background Scheduler Status nicht verfügbar: {e}")
+        print(f"⚠️ Enhanced Background Scheduler Status nicht verfügbar: {e}")
 
-# =====================================================================
-# NEUE FUNKTIONEN FÜR CHARTS-NAMEN-UPDATES
-# =====================================================================
-
-def update_charts_names_from_steam(price_tracker):
-    """
-    NEU: Aktualisiert Namen für Charts-Spiele von Steam API
-    
-    Args:
-        price_tracker: SteamPriceTracker Instanz
-    """
-    print("\n🔤 CHARTS-NAMEN VON STEAM AKTUALISIEREN")
-    print("=" * 45)
-    
-    if not price_tracker.charts_enabled:
-        print("❌ Charts-Funktionalität nicht verfügbar")
-        return
-    
-    # API Key prüfen
-    api_key = None
-    if hasattr(price_tracker, 'api_key'):
-        api_key = price_tracker.api_key
-    
-    if not api_key:
-        try:
-            from steam_wishlist_manager import load_api_key_from_env
-            api_key = load_api_key_from_env()
-        except ImportError:
-            pass
-    
-    if not api_key:
-        print("❌ Kein Steam API Key verfügbar")
-        print("💡 Stelle sicher dass STEAM_API_KEY in .env konfiguriert ist")
-        return
-    
-    # Charts-Spiele mit generischen Namen finden
+def show_enhanced_charts_statistics(price_tracker):
+    """Zeigt Enhanced Charts-Statistiken"""
     try:
-        if hasattr(price_tracker.db_manager, 'get_active_chart_games'):
-            all_chart_games = price_tracker.db_manager.get_active_chart_games()
+        if not hasattr(price_tracker, 'charts_enabled') or not price_tracker.charts_enabled:
+            return
+        
+        if hasattr(price_tracker, 'charts_manager') and price_tracker.charts_manager:
+            charts_stats = price_tracker.charts_manager.get_charts_statistics()
             
-            # Spiele mit generischen Namen filtern
-            generic_names = []
-            for game in all_chart_games:
-                name = game.get('name', '')
-                if (name.startswith('Game ') or 
-                    name.startswith('Unknown Game') or 
-                    name.startswith('New Release') or
-                    name == '' or 
-                    name is None):
-                    generic_names.append(game)
-            
-            if not generic_names:
-                print("✅ Alle Charts-Spiele haben bereits korrekte Namen!")
-                return
-            
-            print(f"🔍 {len(generic_names)} Charts-Spiele mit generischen Namen gefunden:")
-            for game in generic_names[:10]:  # Zeige erste 10
-                print(f"   • {game['name']} (ID: {game['steam_app_id']}, Chart: {game['chart_type']})")
-            
-            if len(generic_names) > 10:
-                print(f"   ... und {len(generic_names) - 10} weitere")
-            
-            # Bestätigung
-            confirm = input(f"\nNamen für {len(generic_names)} Charts-Spiele aktualisieren? (j/n): ").lower().strip()
-            
-            if confirm in ['j', 'ja', 'y', 'yes']:
-                # App IDs extrahieren
-                app_ids = [game['steam_app_id'] for game in generic_names]
+            if charts_stats and charts_stats.get('total_tracked_charts', 0) > 0:
+                print(f"\n📊 ENHANCED CHARTS-STATISTIKEN:")
+                print(f"🎯 Getrackte Charts: {charts_stats['total_tracked_charts']}")
+                print(f"📈 Charts-Snapshots: {charts_stats.get('total_chart_snapshots', 0):,}")
+                print(f"🎮 Charts-Spiele: {charts_stats.get('total_chart_games', 0)}")
                 
-                print(f"🔄 Aktualisiere Namen für {len(app_ids)} Charts-Spiele...")
-                
-                # Verwende die bestehende Namen-Update Funktion
-                result = price_tracker.update_app_names_from_steam(app_ids, api_key)
-                
-                if result.get('success'):
-                    print(f"✅ Charts-Namen-Update abgeschlossen:")
-                    print(f"   📊 {result['updated']}/{result['total']} erfolgreich ({result.get('success_rate', 0):.1f}%)")
-                    print(f"   ❌ {result['failed']} fehlgeschlagen")
-                    
-                    # Auch Charts-spezifische Namen-Updates in Charts-Tabelle
-                    if hasattr(price_tracker.db_manager, 'update_chart_game'):
-                        print("🔄 Aktualisiere auch Charts-Tabelle...")
-                        charts_updated = 0
-                        
-                        for game in generic_names:
-                            if game['steam_app_id'] in [aid for aid in app_ids if result.get('updated', 0) > 0]:
-                                # Hole aktuellen Namen aus tracked_apps
-                                tracked_apps = price_tracker.get_tracked_apps()
-                                updated_app = next((app for app in tracked_apps if app['steam_app_id'] == game['steam_app_id']), None)
-                                
-                                if updated_app and updated_app['name'] != game['name']:
-                                    try:
-                                        if price_tracker.db_manager.update_chart_game(
-                                            game['steam_app_id'],
-                                            game['chart_type'],
-                                            game.get('current_rank', 0),
-                                            updated_app['name']
-                                        ):
-                                            charts_updated += 1
-                                    except:
-                                        pass
-                        
-                        if charts_updated > 0:
-                            print(f"   📊 {charts_updated} Charts-Einträge aktualisiert")
-                else:
-                    print(f"❌ Charts-Namen-Update fehlgeschlagen: {result.get('error', 'Unbekannter Fehler')}")
+                # Verteilung nach Chart-Typ
+                if 'chart_type_distribution' in charts_stats:
+                    active_by_chart = {k: v for k, v in charts_stats['chart_type_distribution'].items() if v > 0}
+                    print(f"📈 Verteilung: ", end="")
+                    chart_info = []
+                    for chart_type, count in active_by_chart.items():
+                        chart_info.append(f"{chart_type}: {count}")
+                    print(" | ".join(chart_info))
             else:
-                print("⏹️ Namen-Update abgebrochen")
+                print(f"\n📊 CHARTS-STATUS:")
+                print(f"🎯 Charts verfügbar aber noch keine Daten")
+                print(f"💡 Führe 'Charts sofort aktualisieren' aus um zu starten")
         else:
-            print("❌ Charts-Datenbank-Funktionen nicht verfügbar")
+            print("\n📊 Charts-Statistiken nicht verfügbar")
             
     except Exception as e:
-        print(f"❌ Fehler beim Charts-Namen-Update: {e}")
-
-def show_charts_name_candidates(price_tracker):
-    """
-    NEU: Zeigt Charts-Spiele mit generischen Namen
-    
-    Args:
-        price_tracker: SteamPriceTracker Instanz
-    """
-    print("\n🔍 CHARTS-SPIELE MIT GENERISCHEN NAMEN")
-    print("=" * 45)
-    
-    if not price_tracker.charts_enabled:
-        print("❌ Charts-Funktionalität nicht verfügbar")
-        return
-    
-    try:
-        if hasattr(price_tracker.db_manager, 'get_active_chart_games'):
-            all_chart_games = price_tracker.db_manager.get_active_chart_games()
-            
-            # Spiele mit generischen Namen filtern
-            generic_names = []
-            for game in all_chart_games:
-                name = game.get('name', '')
-                if (name.startswith('Game ') or 
-                    name.startswith('Unknown Game') or 
-                    name.startswith('New Release') or
-                    name == '' or 
-                    name is None):
-                    generic_names.append(game)
-            
-            if not generic_names:
-                print("✅ Alle Charts-Spiele haben korrekte Namen!")
-                return
-            
-            # Gruppiere nach Chart-Typ
-            by_chart_type = {}
-            for game in generic_names:
-                chart_type = game.get('chart_type', 'unknown')
-                if chart_type not in by_chart_type:
-                    by_chart_type[chart_type] = []
-                by_chart_type[chart_type].append(game)
-            
-            print(f"🔍 {len(generic_names)} Charts-Spiele benötigen Namen-Updates:\n")
-            
-            for chart_type, games in by_chart_type.items():
-                print(f"📊 {chart_type.upper()} ({len(games)} Spiele):")
-                
-                for game in games[:5]:  # Zeige erste 5 pro Chart-Typ
-                    rank = game.get('current_rank', 0)
-                    rank_display = f"#{rank}" if rank > 0 else "-"
-                    first_seen = game.get('first_seen', '')[:10]
-                    
-                    print(f"   {rank_display:>4} {game['name']}")
-                    print(f"        🆔 {game['steam_app_id']} | 📅 {first_seen}")
-                
-                if len(games) > 5:
-                    print(f"        ... und {len(games) - 5} weitere")
-                print()
-            
-            print("💡 Verwende 'Charts-Namen von Steam aktualisieren' um die Namen zu korrigieren")
-        else:
-            print("❌ Charts-Datenbank-Funktionen nicht verfügbar")
-            
-    except Exception as e:
-        print(f"❌ Fehler beim Anzeigen der Charts-Namen-Kandidaten: {e}")
+        print(f"⚠️ Fehler beim Laden der Charts-Statistiken: {e}")
 
 # =====================================================================
-# MAIN APPLICATION - SIMPLIFIED
+# ENHANCED MAIN APPLICATION
 # =====================================================================
 
 def main():
-    print("🚀 ENHANCED STEAM PRICE TRACKER v2.1")
-    print("=" * 50)
-    print("Vollständiges Preis-Tracking mit Universal Background Scheduler")
-    print("Alle Background-Tasks laufen in separaten Terminals")
+    print("🚀 ENHANCED STEAM PRICE TRACKER v2.0")
+    print("=" * 55)
+    print("Vollständiges Preis-Tracking mit automatischem Process Cleanup")
+    print("Alle Background-Tasks werden beim Beenden automatisch gestoppt")
     print()
     
     # Price Tracker erstellen
@@ -324,15 +225,18 @@ def main():
             print("💡 Einige Features (Charts, Namen-Updates) sind nicht verfügbar")
             api_key = None
         
-        # Price Tracker mit Charts-Integration und Universal Background Scheduler
+        # Enhanced Price Tracker erstellen
         price_tracker = create_price_tracker(api_key=api_key, enable_charts=True)
         charts_enabled = price_tracker.charts_enabled
         
-        print(f"✅ Price Tracker mit Universal Background Scheduler initialisiert")
+        print(f"✅ Enhanced Price Tracker initialisiert")
         if charts_enabled:
             print(f"📊 Charts-Integration: VERFÜGBAR")
         else:
             print(f"📊 Charts-Integration: NICHT VERFÜGBAR (kein API Key)")
+        
+        # ENHANCED: Automatisches Cleanup einrichten
+        setup_automatic_cleanup(price_tracker)
         
     except ImportError as e:
         print(f"❌ Import-Fehler: {e}")
@@ -345,7 +249,7 @@ def main():
     # Hauptschleife
     while True:
         try:
-            # Erweiterte Statistiken anzeigen
+            # Enhanced Statistiken anzeigen
             try:
                 stats = price_tracker.get_statistics()
                 
@@ -356,12 +260,12 @@ def main():
                 print(f"📈 Gesamt Preis-Snapshots: {total_snapshots:,}")
                 print(f"🏪 Stores: {', '.join(stats['stores_tracked'])}")
                 
-                # Charts-Statistiken (falls verfügbar)
+                # Charts-Statistiken
                 if charts_enabled:
                     show_enhanced_charts_statistics(price_tracker)
                 
-                # Universal Background Scheduler Status
-                show_universal_scheduler_status(price_tracker)
+                # Enhanced Universal Background Scheduler Status
+                show_universal_scheduler_status_enhanced(price_tracker)
                 
                 newest_snapshot = stats.get('newest_snapshot')
                 if newest_snapshot:
@@ -373,7 +277,7 @@ def main():
                 print("📚 Getrackte Apps: ❓")
                 print("📈 Gesamt Preis-Snapshots: ❓")
             
-            # VEREINFACHTE MENÜ-OPTIONEN - Universal Scheduler abstrahiert Komplexität
+            # ENHANCED MENÜ-OPTIONEN
             print(f"\n🎯 WAS MÖCHTEN SIE TUN?")
             print("=" * 30)
             
@@ -387,7 +291,7 @@ def main():
             
             print("\n🔄 PREISE & UPDATES:")
             print("6. Preise manuell aktualisieren")
-            print("7. Background-Tracking verwalten")  # VEREINFACHT
+            print("7. Background-Tracking verwalten")
             print("8. Getrackte Apps verwalten")
             print("9. Apps entfernen")
             
@@ -400,50 +304,50 @@ def main():
             print("12. App-Namen von Steam aktualisieren")
             print("13. Apps mit generischen Namen anzeigen")
             
-            # Charts-spezifische Optionen (falls verfügbar)
+            # ENHANCED: Process Management
+            print("\n🔧 ENHANCED PROCESS MANAGEMENT:")
+            print("14. Process Management Terminal starten")
+            print("15. Enhanced Process Status anzeigen")
+            
+            # Charts-Optionen (falls verfügbar)
             if charts_enabled:
-                print("\n📊 CHARTS-FUNKTIONEN:")
-                print("14. Charts-Tracking verwalten")  # VEREINFACHT
-                print("15. Charts sofort aktualisieren")
-                print("16. Charts-Preise aktualisieren")
-                print("17. Beste Charts-Deals")
-                print("18. Charts-Namen von Steam aktualisieren")  # NEU
-                print("19. Charts-Spiele mit generischen Namen")    # NEU
-                print("20. Charts-Spiele anzeigen")
-                print("21. Vollautomatik einrichten")  # VEREINFACHT
-                print("22. Beenden")
-                max_option = 22
+                print("\n📊 CHARTS & ERWEITERTE FEATURES:")
+                print("16. Charts sofort aktualisieren")
+                print("17. Charts-Preise aktualisieren")
+                print("18. Charts-Spiele anzeigen")
+                print("19. Charts-Trends anzeigen")
+                print("20. Charts-Cleanup ausführen")
+                print("21. Charts-Management")
+                print("22. Charts-Background-Tracking")
+                print("23. Enhanced Vollautomatik einrichten")
+                print("\n24. Enhanced Steam Price Tracker beenden")
             else:
-                print("14. Beenden")
-                max_option = 14
+                print("\n16. Enhanced Steam Price Tracker beenden")
             
-            # User Input
-            choice = input(f"\nWählen Sie eine Option (1-{max_option}): ").strip()
+            # Eingabe
+            max_choice = 24 if charts_enabled else 16
+            choice = input(f"\nWählen Sie eine Option (1-{max_choice}): ").strip()
             
-            # ========================
-            # STANDARD-OPTIONEN (unverändert)
-            # ========================
-            
+            # Standard-Funktionen (1-13)
             if choice == "1":
                 # App manuell hinzufügen
-                print("\n📱 APP MANUELL HINZUFÜGEN")
-                print("=" * 30)
+                print("\n➕ APP ZUM TRACKING HINZUFÜGEN")
+                print("=" * 35)
                 
                 steam_app_id = input("Steam App ID: ").strip()
                 if not steam_app_id:
                     print("❌ Ungültige App ID")
                     continue
                 
-                app_name = input("App Name (optional): ").strip()
-                if not app_name:
-                    app_name = f"Game {steam_app_id}"
+                print(f"🔄 Füge App {steam_app_id} hinzu...")
+                success = price_tracker.add_app_to_tracking(steam_app_id)
                 
-                if price_tracker.add_app_to_tracking(steam_app_id, app_name):
-                    print(f"✅ App '{app_name}' hinzugefügt")
+                if success:
+                    print("✅ App erfolgreich hinzugefügt")
                     
-                    # Sofortiges Namen-Update anbieten falls API Key verfügbar
-                    if api_key and app_name.startswith('Game '):
-                        update_name = input("Namen von Steam API abrufen? (j/n): ").lower().strip()
+                    # Namen von Steam aktualisieren (falls API Key verfügbar)
+                    if api_key:
+                        update_name = input("Namen von Steam API aktualisieren? (j/n): ").lower().strip()
                         if update_name in ['j', 'ja', 'y', 'yes']:
                             result = price_tracker.update_app_names_from_steam([steam_app_id], api_key)
                             if result.get('updated', 0) > 0:
@@ -458,7 +362,6 @@ def main():
                 
                 if not api_key:
                     print("❌ Steam API Key erforderlich für Wishlist-Import")
-                    print("💡 Konfiguriere STEAM_API_KEY in .env")
                     continue
                 
                 steam_id = input("Steam ID oder Custom URL: ").strip()
@@ -474,9 +377,8 @@ def main():
                     print(f"   ➕ {result['imported']} neue Apps hinzugefügt")
                     print(f"   ⏭️ {result['skipped_existing']} bereits vorhanden")
                     print(f"   🔄 {result.get('names_updated', 0)} Namen aktualisiert")
-                    print(f"   📊 {result['imported'] + result['skipped_existing']}/{result['total_items']} Apps verarbeitet")
                 else:
-                    print(f"❌ Wishlist-Import fehlgeschlagen: {result.get('error', 'Unbekannter Fehler')}")
+                    print(f"❌ Wishlist-Import fehlgeschlagen: {result.get('error')}")
             
             elif choice == "3":
                 # Aktuelle Preise anzeigen
@@ -504,7 +406,6 @@ def main():
                         print()
                 else:
                     print("❌ Keine Deals gefunden")
-                    print("💡 Führe zuerst Preisabfragen durch")
             
             elif choice == "5":
                 # Preisverlauf anzeigen
@@ -528,7 +429,7 @@ def main():
                     print(f"\n📊 Preisverlauf für {history[0]['game_title']} (letzte {len(history)} Einträge):")
                     print()
                     
-                    for snapshot in history[:10]:  # Zeige nur erste 10
+                    for snapshot in history[:10]:
                         date = snapshot['timestamp'][:10]
                         print(f"📅 {date}:")
                         
@@ -541,14 +442,9 @@ def main():
                             if snapshot.get(available_col) and snapshot.get(price_col) is not None:
                                 price = snapshot[price_col]
                                 discount = snapshot.get(discount_col, 0)
-                                status = f"€{price:.2f}"
-                                if discount > 0:
-                                    status += f" (-{discount}%)"
-                                print(f"   {store.title():15}: {status}")
+                                discount_text = f" (-{discount}%)" if discount > 0 else ""
+                                print(f"   💰 {store.upper():12}: €{price:.2f}{discount_text}")
                         print()
-                    
-                    if len(history) > 10:
-                        print(f"... und {len(history) - 10} weitere Einträge")
                 else:
                     print("❌ Kein Preisverlauf gefunden")
             
@@ -557,48 +453,26 @@ def main():
                 print("\n🔄 PREISE MANUELL AKTUALISIEREN")
                 print("=" * 35)
                 
-                tracked_apps = price_tracker.get_tracked_apps()
-                
-                if not tracked_apps:
-                    print("❌ Keine Apps im Tracking")
-                    continue
-                
-                print(f"📊 {len(tracked_apps)} Apps getrackt")
-                
-                # Optionen anbieten
                 print("1. Alle Apps aktualisieren")
-                print("2. Nur veraltete Apps aktualisieren")
-                print("3. Spezifische App aktualisieren")
+                print("2. Nur veraltete Apps (älter als 6h)")
+                print("3. Spezifische App")
                 
-                update_choice = input("Wählen Sie eine Option (1-3): ").strip()
+                update_choice = input("Auswahl (1-3): ").strip()
                 
                 if update_choice == "1":
                     # Alle Apps
-                    app_ids = [app['steam_app_id'] for app in tracked_apps]
-                    print(f"🔄 Aktualisiere alle {len(app_ids)} Apps...")
+                    print("🔄 Aktualisiere alle Apps...")
+                    result = price_tracker.process_all_apps_optimized()
+                    print(f"✅ {result['total_successful']}/{result['total_apps']} Apps aktualisiert")
+                    print(f"⏱️ Dauer: {result['total_duration']:.1f}s")
                     
-                    result = price_tracker.track_app_prices(app_ids)
-                    print(f"✅ Update abgeschlossen: {result['successful']}/{result['processed']} Apps erfolgreich")
-                
                 elif update_choice == "2":
                     # Nur veraltete Apps
-                    hours = input("Apps älter als wie viele Stunden? (Standard: 6): ").strip()
-                    try:
-                        hours = int(hours) if hours else 6
-                    except ValueError:
-                        hours = 6
+                    print("🔄 Aktualisiere veraltete Apps...")
+                    result = price_tracker.process_all_pending_apps_optimized(hours_threshold=6)
+                    print(f"✅ {result['total_successful']}/{result['total_apps']} Apps aktualisiert")
+                    print(f"⏱️ Dauer: {result['total_duration']:.1f}s")
                     
-                    pending_apps = price_tracker.get_apps_needing_price_update(hours)
-                    
-                    if pending_apps:
-                        app_ids = [app['steam_app_id'] for app in pending_apps]
-                        print(f"🔄 Aktualisiere {len(app_ids)} veraltete Apps...")
-                        
-                        result = price_tracker.track_app_prices(app_ids)
-                        print(f"✅ Update abgeschlossen: {result['successful']}/{result['processed']} Apps erfolgreich")
-                    else:
-                        print("✅ Alle Apps sind aktuell!")
-                
                 elif update_choice == "3":
                     # Spezifische App
                     steam_app_id = input("Steam App ID: ").strip()
@@ -612,18 +486,18 @@ def main():
                         print("❌ Ungültige App ID")
             
             elif choice == "7":
-                # VEREINFACHT: Background-Tracking verwalten
-                print("\n🚀 BACKGROUND-TRACKING VERWALTEN")
-                print("=" * 40)
+                # Background-Tracking verwalten
+                print("\n🚀 ENHANCED BACKGROUND-TRACKING VERWALTEN")
+                print("=" * 50)
                 
                 status = get_universal_scheduler_status(price_tracker)
                 total_active = status.get('total_active_schedulers', 0)
                 
                 if total_active > 0:
-                    print(f"🔄 Background-Tracking läuft: {total_active} aktive Scheduler")
-                    show_universal_scheduler_status(price_tracker)
+                    print(f"🔄 Enhanced Background-Tracking läuft: {total_active} aktive Scheduler")
+                    show_universal_scheduler_status_enhanced(price_tracker)
                     
-                    stop = input("\nAlle Background-Scheduler stoppen? (j/n): ").lower().strip()
+                    stop = input("\nAlle Enhanced Background-Scheduler stoppen? (j/n): ").lower().strip()
                     if stop in ['j', 'ja', 'y', 'yes']:
                         if price_tracker.stop_background_scheduler():
                             print("⏹️ Price Tracker Background-Scheduler gestoppt")
@@ -631,11 +505,11 @@ def main():
                         if charts_enabled and price_tracker.disable_charts_tracking():
                             print("⏹️ Charts Background-Scheduler gestoppt")
                 else:
-                    print("⏸️ Background-Tracking ist inaktiv")
-                    start = input("Background-Tracking starten? (j/n): ").lower().strip()
+                    print("⏸️ Enhanced Background-Tracking ist inaktiv")
+                    start = input("Enhanced Background-Tracking starten? (j/n): ").lower().strip()
                     
                     if start in ['j', 'ja', 'y', 'yes']:
-                        # Einfache Konfiguration
+                        # Enhanced Konfiguration
                         price_hours = input("Preis-Update Intervall in Stunden (Standard: 6): ").strip()
                         name_minutes = input("Namen-Update Intervall in Minuten (Standard: 30): ").strip()
                         
@@ -649,241 +523,89 @@ def main():
                             price_interval_hours=price_hours,
                             name_interval_minutes=name_minutes
                         ):
-                            print(f"✅ Background-Tracking gestartet!")
+                            print(f"✅ Enhanced Background-Tracking gestartet!")
                             print(f"   💰 Preise: alle {price_hours}h")
                             print(f"   🔤 Namen: alle {name_minutes}min")
-                            print("   💡 Läuft in separaten Terminals!")
+                            print("   💡 Läuft in separaten Terminals mit automatischem Cleanup!")
             
             elif choice == "8":
-                # Getrackte Apps verwalten - FIXED VERSION
+                # Getrackte Apps verwalten
                 print("\n📋 GETRACKTE APPS VERWALTEN")
                 print("=" * 30)
                 
-                try:
-                    tracked_apps = price_tracker.get_tracked_apps()
+                apps = price_tracker.get_all_tracked_apps()
+                
+                if apps:
+                    print(f"\n{len(apps)} getrackte Apps:")
+                    for i, app in enumerate(apps[:20], 1):  # Erste 20 anzeigen
+                        name = app.get('name', 'Unbekannt')[:40]
+                        print(f"{i:2d}. {app['steam_app_id']:10} - {name}")
                     
-                    if not tracked_apps:
-                        print("❌ Keine Apps im Tracking")
-                        print("💡 Verwende Option 1 oder 2 um Apps hinzuzufügen")
-                        input("\nDrücke Enter um fortzufahren...")
-                        continue
-                    
-                    print(f"📊 {len(tracked_apps)} Apps getrackt:")
-                    print()
-                    
-                    for i, app in enumerate(tracked_apps[:20], 1):  # Zeige nur erste 20
-                        try:
-                            last_update = app.get('last_price_update', 'Nie')
-                            if last_update and last_update != 'Nie':
-                                # Sichere String-Kürzung
-                                if len(last_update) > 19:
-                                    last_update = last_update[:19]
-                            
-                            added_at = app.get('added_at', 'Unbekannt')
-                            if added_at and added_at != 'Unbekannt':
-                                # Sichere String-Kürzung  
-                                if len(added_at) > 10:
-                                    added_at = added_at[:10]
-                            
-                            app_name = app.get('name', 'Unbekannter Name')
-                            steam_app_id = app.get('steam_app_id', 'Unbekannte ID')
-                            
-                            # Sichere String-Formatierung
-                            if len(app_name) > 40:
-                                display_name = app_name[:37] + "..."
-                            else:
-                                display_name = app_name
-                            
-                            print(f"{i:3d}. {display_name:<40} (ID: {steam_app_id})")
-                            print(f"     📅 Hinzugefügt: {added_at} | Letztes Update: {last_update}")
-                            
-                        except Exception as e:
-                            print(f"{i:3d}. ❌ Fehler beim Anzeigen von App {i}: {e}")
-                    
-                    if len(tracked_apps) > 20:
-                        print(f"\n... und {len(tracked_apps) - 20} weitere Apps")
-                    
-                    print(f"\n💡 Verwende Option 9 um Apps zu entfernen")
-                    
-                    # ZUSÄTZLICH: Detailierte App-Informationen anbieten
-                    print("\nMöchtest du Details zu einer App anzeigen?")
-                    app_choice = input("App-Nummer eingeben (oder Enter zum Fortfahren): ").strip()
-                    
-                    if app_choice.isdigit():
-                        try:
-                            app_index = int(app_choice) - 1
-                            if 0 <= app_index < len(tracked_apps):
-                                selected_app = tracked_apps[app_index]
-                                
-                                print(f"\n📱 DETAILS FÜR APP {app_choice}:")
-                                print(f"🎮 Name: {selected_app.get('name', 'N/A')}")
-                                print(f"🆔 Steam App ID: {selected_app.get('steam_app_id', 'N/A')}")
-                                print(f"📅 Hinzugefügt: {selected_app.get('added_at', 'N/A')}")
-                                print(f"💰 Letztes Preis-Update: {selected_app.get('last_price_update', 'Nie')}")
-                                print(f"🔤 Letztes Namen-Update: {selected_app.get('last_name_update', 'Nie')}")
-                                print(f"🔄 Namen-Update Versuche: {selected_app.get('name_update_attempts', 0)}")
-                                print(f"✅ Aktiv: {'Ja' if selected_app.get('active', True) else 'Nein'}")
-                                
-                                # Neueste Preise anzeigen falls verfügbar
-                                try:
-                                    latest_prices = price_tracker.get_latest_prices(selected_app['steam_app_id'])
-                                    if latest_prices:
-                                        print(f"\n💰 NEUESTE PREISE (vom {latest_prices.get('timestamp', 'N/A')[:10]}):")
-                                        stores = ['steam', 'greenmangaming', 'gog', 'humblestore', 'fanatical', 'gamesplanet']
-                                        
-                                        for store in stores:
-                                            price_col = f"{store}_price"
-                                            available_col = f"{store}_available"
-                                            discount_col = f"{store}_discount_percent"
-                                            
-                                            if latest_prices.get(available_col) and latest_prices.get(price_col) is not None:
-                                                price = latest_prices[price_col]
-                                                discount = latest_prices.get(discount_col, 0)
-                                                status = f"€{price:.2f}"
-                                                if discount > 0:
-                                                    status += f" (-{discount}%)"
-                                                print(f"   {store.title():15}: {status}")
-                                            else:
-                                                print(f"   {store.title():15}: Nicht verfügbar")
-                                    else:
-                                        print(f"\n💰 Noch keine Preisdaten verfügbar")
-                                        
-                                except Exception as e:
-                                    print(f"\n⚠️ Fehler beim Laden der Preisdaten: {e}")
-                            else:
-                                print("❌ Ungültige App-Nummer")
-                        except ValueError:
-                            print("❌ Ungültige Eingabe")
-                    
-                    input("\nDrücke Enter um fortzufahren...")
-                    
-                except Exception as e:
-                    print(f"❌ Fehler beim Laden der getrackten Apps: {e}")
-                    print(f"🔍 Error Details: {type(e).__name__}")
-                    
-                    # Zusätzliche Debugging-Informationen
-                    try:
-                        print(f"📊 Versuche direkte Datenbankabfrage...")
-                        stats = price_tracker.get_statistics()
-                        print(f"📈 Statistiken zeigen {stats.get('tracked_apps', '?')} Apps")
-                    except Exception as db_e:
-                        print(f"❌ Auch Statistiken fehlgeschlagen: {db_e}")
-                    
-                    print(f"💡 Versuche folgende Lösungen:")
-                    print(f"   1. Neustart von main.py")
-                    print(f"   2. Datenbank mit 'python setup.py init-db' reparieren")
-                    print(f"   3. Prüfe ob steam_price_tracker.db existiert")
-                    
-                    input("\nDrücke Enter um fortzufahren...")
+                    if len(apps) > 20:
+                        print(f"... und {len(apps) - 20} weitere")
+                else:
+                    print("❌ Keine Apps getrackt")
             
             elif choice == "9":
                 # Apps entfernen
                 print("\n🗑️ APPS ENTFERNEN")
-                print("=" * 15)
+                print("=" * 18)
                 
                 steam_app_id = input("Steam App ID zum Entfernen: ").strip()
                 if not steam_app_id:
                     print("❌ Ungültige App ID")
                     continue
                 
-                # App-Details zeigen
-                tracked_apps = price_tracker.get_tracked_apps()
-                app_to_remove = next((app for app in tracked_apps if app['steam_app_id'] == steam_app_id), None)
-                
-                if not app_to_remove:
-                    print(f"❌ App {steam_app_id} nicht im Tracking gefunden")
-                    continue
-                
-                print(f"🎮 App: {app_to_remove['name']}")
-                print(f"🆔 ID: {steam_app_id}")
-                print(f"📅 Hinzugefügt: {app_to_remove['added_at'][:19]}")
-                
-                confirm = input("\nApp wirklich entfernen? (j/n): ").lower().strip()
+                confirm = input(f"App {steam_app_id} wirklich entfernen? (j/n): ").lower().strip()
                 if confirm in ['j', 'ja', 'y', 'yes']:
                     if price_tracker.remove_app_from_tracking(steam_app_id):
-                        print(f"✅ App '{app_to_remove['name']}' entfernt")
+                        print("✅ App erfolgreich entfernt")
                     else:
-                        print("❌ Fehler beim Entfernen der App")
-                else:
-                    print("⏹️ Entfernen abgebrochen")
+                        print("❌ Fehler beim Entfernen")
             
             elif choice == "10":
-                # CSV-Export erstellen
+                # CSV-Export
                 print("\n📄 CSV-EXPORT ERSTELLEN")
                 print("=" * 25)
                 
                 steam_app_id = input("Steam App ID (oder Enter für alle): ").strip()
                 
                 if steam_app_id:
-                    # Einzelne App exportieren
-                    output_file = input("Ausgabedatei (optional): ").strip()
-                    csv_file = price_tracker.export_price_history_csv(steam_app_id, output_file)
-                    
+                    csv_file = price_tracker.export_price_history_csv(steam_app_id)
                     if csv_file:
                         print(f"✅ CSV-Export erstellt: {csv_file}")
                     else:
-                        print("❌ Export fehlgeschlagen")
+                        print("❌ Fehler beim Export")
                 else:
-                    # Alle Apps exportieren
                     print("🔄 Exportiere alle Apps...")
-                    tracked_apps = price_tracker.get_tracked_apps()
+                    exports_created = 0
+                    apps = price_tracker.get_all_tracked_apps()
                     
-                    if not tracked_apps:
-                        print("❌ Keine Apps zum Exportieren")
-                        continue
+                    for app in apps[:10]:  # Erste 10 Apps
+                        csv_file = price_tracker.export_price_history_csv(app['steam_app_id'])
+                        if csv_file:
+                            exports_created += 1
                     
-                    successful = 0
-                    for app in tracked_apps:
-                        try:
-                            csv_file = price_tracker.export_price_history_csv(app['steam_app_id'])
-                            if csv_file:
-                                successful += 1
-                        except:
-                            pass
-                    
-                    print(f"✅ {successful}/{len(tracked_apps)} Apps exportiert")
+                    print(f"✅ {exports_created} CSV-Exports erstellt")
             
             elif choice == "11":
                 # Detaillierte Statistiken
                 print("\n📊 DETAILLIERTE STATISTIKEN")
                 print("=" * 30)
                 
-                stats = price_tracker.get_statistics()
+                stats = price_tracker.get_detailed_statistics()
                 
                 print(f"📚 Getrackte Apps: {stats['tracked_apps']}")
-                print(f"📈 Gesamt Snapshots: {stats['total_snapshots']:,}")
-                print(f"🏪 Stores mit Daten: {len(stats['stores_tracked'])}")
-                print(f"   {', '.join(stats['stores_tracked'])}")
+                print(f"📈 Preis-Snapshots: {stats['total_snapshots']:,}")
+                print(f"🏪 Aktive Stores: {len(stats['stores_tracked'])}")
+                print(f"🕐 Zeitraum: {stats.get('date_range', 'N/A')}")
                 
-                if stats.get('oldest_snapshot'):
-                    print(f"📅 Ältester Snapshot: {stats['oldest_snapshot'][:19]}")
-                if stats.get('newest_snapshot'):
-                    print(f"📅 Neuester Snapshot: {stats['newest_snapshot'][:19]}")
-                
-                # Namen-Update Statistiken
-                if 'name_update_stats' in stats:
-                    name_stats = stats['name_update_stats']
-                    print(f"\n🔤 NAMEN-UPDATE STATISTIKEN:")
-                    print(f"📝 Apps mit generischen Namen: {name_stats['apps_with_generic_names']}")
-                    print(f"❓ Apps ohne Namen-Update: {name_stats['apps_never_updated']}")
-                    print(f"🔄 Gesamt Namen-Updates: {name_stats['total_name_updates']}")
-                    print(f"📊 Namen-Updates (24h): {name_stats['updates_last_24h']}")
-                    print(f"❌ Fehlgeschlagene Updates: {name_stats['failed_updates']}")
-                
-                # Apps die Updates benötigen
-                pending_apps = price_tracker.get_apps_needing_price_update(24)
-                print(f"\n⏰ Apps die Preis-Updates benötigen (>24h): {len(pending_apps)}")
-                
-                # Charts-Statistiken (falls verfügbar)
-                if charts_enabled:
-                    show_enhanced_charts_statistics(price_tracker)
-                
-                # Universal Background Scheduler Status
-                show_universal_scheduler_status(price_tracker)
-            
-            # ========================
-            # NAMEN-UPDATE OPTIONEN
-            # ========================
+                if 'app_statistics' in stats:
+                    app_stats = stats['app_statistics']
+                    print(f"\n📊 APP-VERTEILUNG:")
+                    print(f"   🔄 Kürzlich aktualisiert: {app_stats.get('recently_updated', 0)}")
+                    print(f"   ⏰ Veraltet (>6h): {app_stats.get('outdated', 0)}")
+                    print(f"   ❌ Noch nie aktualisiert: {app_stats.get('never_updated', 0)}")
             
             elif choice == "12":
                 # App-Namen von Steam aktualisieren
@@ -891,350 +613,333 @@ def main():
                 print("=" * 40)
                 
                 if not api_key:
-                    print("❌ Steam API Key erforderlich für Namen-Updates")
-                    print("💡 Konfiguriere STEAM_API_KEY in .env")
+                    print("❌ Steam API Key erforderlich")
                     continue
                 
-                print("Optionen:")
-                print("1. Alle Apps mit generischen Namen aktualisieren")
-                print("2. Spezifische App-ID(s) aktualisieren")
-                print("3. Alle getrackte Apps aktualisieren")
+                print("1. Alle Apps")
+                print("2. Nur Apps mit generischen Namen")
+                print("3. Spezifische App")
                 
-                name_choice = input("Wählen Sie eine Option (1-3): ").strip()
+                name_choice = input("Auswahl (1-3): ").strip()
                 
                 if name_choice == "1":
-                    # Apps mit generischen Namen
-                    candidates = price_tracker.get_name_update_candidates()
+                    # Alle Apps
+                    apps = price_tracker.get_all_tracked_apps()
+                    app_ids = [app['steam_app_id'] for app in apps]
                     
-                    if not candidates:
-                        print("✅ Alle Apps haben bereits korrekte Namen!")
-                        continue
+                    print(f"🔄 Aktualisiere Namen für {len(app_ids)} Apps...")
+                    result = price_tracker.update_app_names_from_steam(app_ids, api_key)
+                    print(f"✅ {result['updated']}/{result['total']} Namen aktualisiert")
                     
-                    print(f"🔍 {len(candidates)} Apps mit generischen Namen gefunden")
-                    for candidate in candidates[:10]:
-                        print(f"   • {candidate['name']} (ID: {candidate['steam_app_id']})")
-                    
-                    if len(candidates) > 10:
-                        print(f"   ... und {len(candidates) - 10} weitere")
-                    
-                    confirm = input(f"\nNamen für {len(candidates)} Apps aktualisieren? (j/n): ").lower().strip()
-                    if confirm in ['j', 'ja', 'y', 'yes']:
-                        result = price_tracker.update_names_for_apps_with_generic_names(api_key)
-                        
-                        if result.get('success'):
-                            print(f"✅ Namen-Update abgeschlossen:")
-                            print(f"   📊 {result['updated']}/{result['total']} erfolgreich ({result.get('success_rate', 0):.1f}%)")
-                            print(f"   ❌ {result['failed']} fehlgeschlagen")
-                        else:
-                            print(f"❌ Namen-Update fehlgeschlagen: {result.get('error')}")
-                
                 elif name_choice == "2":
-                    # Spezifische App-IDs
-                    app_ids_input = input("App-IDs (komma-getrennt): ").strip()
-                    if app_ids_input:
-                        app_ids = [app_id.strip() for app_id in app_ids_input.split(',') if app_id.strip()]
-                        
-                        print(f"🔄 Aktualisiere Namen für {len(app_ids)} Apps...")
+                    # Nur generische Namen
+                    generic_apps = price_tracker.get_apps_with_generic_names()
+                    app_ids = [app['steam_app_id'] for app in generic_apps]
+                    
+                    if app_ids:
+                        print(f"🔄 Aktualisiere {len(app_ids)} Apps mit generischen Namen...")
                         result = price_tracker.update_app_names_from_steam(app_ids, api_key)
+                        print(f"✅ {result['updated']}/{result['total']} Namen aktualisiert")
+                    else:
+                        print("✅ Keine Apps mit generischen Namen gefunden")
                         
-                        if result.get('success'):
-                            print(f"✅ Namen-Update abgeschlossen:")
-                            print(f"   📊 {result['updated']}/{result['total']} erfolgreich")
-                            print(f"   ❌ {result['failed']} fehlgeschlagen")
-                        else:
-                            print(f"❌ Namen-Update fehlgeschlagen: {result.get('error')}")
-                
                 elif name_choice == "3":
-                    # Alle getrackte Apps
-                    tracked_apps = price_tracker.get_tracked_apps()
-                    
-                    if not tracked_apps:
-                        print("❌ Keine Apps zum Aktualisieren")
-                        continue
-                    
-                    print(f"⚠️ Dies wird Namen für ALLE {len(tracked_apps)} Apps aktualisieren")
-                    confirm = input("Fortfahren? (j/n): ").lower().strip()
-                    
-                    if confirm in ['j', 'ja', 'y', 'yes']:
-                        app_ids = [app['steam_app_id'] for app in tracked_apps]
-                        
-                        print(f"🔄 Aktualisiere Namen für alle {len(app_ids)} Apps...")
-                        result = price_tracker.update_app_names_from_steam(app_ids, api_key)
-                        
-                        if result.get('success'):
-                            print(f"✅ Namen-Update abgeschlossen:")
-                            print(f"   📊 {result['updated']}/{result['total']} erfolgreich ({result.get('success_rate', 0):.1f}%)")
-                            print(f"   ❌ {result['failed']} fehlgeschlagen")
+                    # Spezifische App
+                    steam_app_id = input("Steam App ID: ").strip()
+                    if steam_app_id:
+                        result = price_tracker.update_app_names_from_steam([steam_app_id], api_key)
+                        if result['updated'] > 0:
+                            print("✅ Name aktualisiert")
                         else:
-                            print(f"❌ Namen-Update fehlgeschlagen: {result.get('error')}")
+                            print("❌ Name konnte nicht aktualisiert werden")
             
             elif choice == "13":
                 # Apps mit generischen Namen anzeigen
-                print("\n🔍 APPS MIT GENERISCHEN NAMEN")
+                print("\n🔤 APPS MIT GENERISCHEN NAMEN")
                 print("=" * 35)
                 
-                candidates = price_tracker.get_name_update_candidates()
+                generic_apps = price_tracker.get_apps_with_generic_names()
                 
-                if not candidates:
-                    print("✅ Alle Apps haben korrekte Namen!")
-                    continue
+                if generic_apps:
+                    print(f"🔍 {len(generic_apps)} Apps mit generischen Namen gefunden:")
+                    for app in generic_apps[:15]:
+                        print(f"   🆔 {app['steam_app_id']} - {app['name']}")
+                    
+                    if len(generic_apps) > 15:
+                        print(f"   ... und {len(generic_apps) - 15} weitere")
+                        
+                    if api_key:
+                        update_all = input("\nAlle Namen jetzt von Steam aktualisieren? (j/n): ").lower().strip()
+                        if update_all in ['j', 'ja', 'y', 'yes']:
+                            app_ids = [app['steam_app_id'] for app in generic_apps]
+                            result = price_tracker.update_app_names_from_steam(app_ids, api_key)
+                            print(f"✅ {result['updated']}/{result['total']} Namen aktualisiert")
+                else:
+                    print("✅ Keine Apps mit generischen Namen gefunden")
+            
+            # ========================
+            # ENHANCED: PROCESS MANAGEMENT OPTIONEN (14-15)
+            # ========================
+            
+            elif choice == "14":
+                # ENHANCED: Process Management Terminal starten
+                print("\n🔧 PROCESS MANAGEMENT TERMINAL STARTEN")
+                print("=" * 45)
                 
-                print(f"🔍 {len(candidates)} Apps mit generischen Namen:")
+                print("Das Enhanced Process Management Terminal bietet:")
+                print("• Übersicht aller aktiven Background-Prozesse")
+                print("• Kontrolle und Beendigung einzelner Prozesse")
+                print("• System-Ressourcen Monitoring")
+                print("• Zentrale Kontrolle aller Enhanced Scheduler")
+                print("• Parent-Process-Monitoring Status")
                 print()
                 
-                for i, app in enumerate(candidates, 1):
-                    attempts = app.get('name_update_attempts', 0)
-                    last_update = app.get('last_name_update', 'Nie')
-                    if last_update and last_update != 'Nie':
-                        last_update = last_update[:19]
-                    
-                    status = ""
-                    if attempts > 3:
-                        status = " ❌"
-                    elif attempts > 0:
-                        status = f" ⚠️({attempts})"
-                    
-                    print(f"{i:3d}. {app['name']}{status}")
-                    print(f"     🆔 {app['steam_app_id']} | Hinzugefügt: {app['added_at'][:10]} | Update: {last_update}")
-                
-                print(f"\n💡 Verwende Option 12 um Namen von Steam zu aktualisieren")
+                start_mgmt = input("Enhanced Process Management Terminal starten? (j/n): ").lower().strip()
+                if start_mgmt in ['j', 'ja', 'y', 'yes']:
+                    start_process_management_terminal()
             
-            # ========================
-            # CHARTS-SPEZIFISCHE OPTIONEN - VEREINFACHT
-            # ========================
-            
-            elif charts_enabled and choice == "14":
-                # VEREINFACHT: Charts-Tracking verwalten
-                print("\n🎯 CHARTS-TRACKING VERWALTEN")
+            elif choice == "15":
+                # ENHANCED: Process Status anzeigen
+                print("\n📊 ENHANCED PROCESS STATUS")
                 print("=" * 35)
                 
-                status = get_universal_scheduler_status(price_tracker)
-                charts_status = status.get('charts_scheduler_status')
-                
-                charts_running = charts_status and any(
-                    s.get('running', False) 
-                    for s in charts_status.get('schedulers', {}).values()
-                )
-                
-                if charts_running:
-                    print("🔄 Charts-Tracking läuft bereits")
+                try:
+                    process_status = get_enhanced_process_status()
                     
-                    # Zeige aktive Charts-Scheduler
-                    for scheduler_name, scheduler_info in charts_status.get('schedulers', {}).items():
-                        if scheduler_info.get('running'):
-                            interval = scheduler_info.get('interval_minutes', 0)
-                            interval_str = f"{interval // 60}h" if interval >= 60 else f"{interval}min"
-                            print(f"   ✅ {scheduler_name}: alle {interval_str}")
+                    print(f"🔧 Enhanced Process Manager Status:")
+                    print(f"   📊 Getrackte Prozesse: {process_status['total_tracked']}")
+                    print(f"   ✅ Laufende Prozesse: {process_status['running_processes']}")
+                    print(f"   💀 Tote Prozesse: {process_status['dead_processes']}")
                     
-                    stop = input("\nCharts-Tracking stoppen? (j/n): ").lower().strip()
-                    if stop in ['j', 'ja', 'y', 'yes']:
-                        if price_tracker.disable_charts_tracking():
-                            print("⏹️ Charts-Tracking gestoppt")
-                else:
-                    print("⏸️ Charts-Tracking ist inaktiv")
-                    start = input("Charts-Tracking starten? (j/n): ").lower().strip()
-                    
-                    if start in ['j', 'ja', 'y', 'yes']:
-                        charts_hours = input("Charts-Update Intervall in Stunden (Standard: 6): ").strip()
-                        price_hours = input("Charts-Preis-Update Intervall in Stunden (Standard: 4): ").strip()
+                    if process_status['processes']:
+                        print(f"\n📋 AKTIVE ENHANCED PROZESSE:")
+                        for scheduler_id, proc_info in process_status['processes'].items():
+                            if proc_info['is_running']:
+                                print(f"   ✅ {scheduler_id}")
+                                print(f"      PID: {proc_info['pid']}")
+                                print(f"      Gestartet: {proc_info['started_at'][:19]}")
+                                print(f"      Parent-Monitoring: {'✅' if proc_info.get('parent_monitoring') else '❌'}")
+                            else:
+                                print(f"   💀 {scheduler_id} (tot)")
+                    else:
+                        print("\n💡 Keine aktiven Enhanced Prozesse")
                         
-                        try:
-                            charts_hours = int(charts_hours) if charts_hours else 6
-                            price_hours = int(price_hours) if price_hours else 4
-                        except ValueError:
-                            charts_hours, price_hours = 6, 4
-                        
-                        if price_tracker.enable_charts_tracking(
-                            charts_update_hours=charts_hours,
-                            price_update_hours=price_hours,
-                            cleanup_hours=24
-                        ):
-                            print(f"✅ Charts-Tracking gestartet!")
-                            print(f"   📊 Charts-Updates: alle {charts_hours}h")
-                            print(f"   💰 Preis-Updates: alle {price_hours}h")
-                            print(f"   🧹 Cleanup: alle 24h")
-                            print("   💡 Läuft in separaten Terminals!")
+                except Exception as e:
+                    print(f"❌ Enhanced Process Status nicht verfügbar: {e}")
             
-            elif charts_enabled and choice == "15":
+            # ========================
+            # CHARTS-OPTIONEN (16-23) - nur wenn Charts verfügbar
+            # ========================
+            
+            elif charts_enabled and choice == "16":
                 # Charts sofort aktualisieren
                 print("\n📊 CHARTS SOFORT AKTUALISIEREN")
                 print("=" * 35)
                 
-                available_types = show_available_chart_types()
-                
-                chart_types_input = input("Chart-Typen (komma-getrennt) oder Enter für alle: ").strip()
-                
-                if chart_types_input:
-                    chart_types = [ct.strip() for ct in chart_types_input.split(',') if ct.strip() in available_types]
-                    if not chart_types:
-                        print("❌ Ungültige Chart-Typen")
-                        continue
-                else:
-                    chart_types = None
-                
-                print("🔄 Starte Charts-Update...")
-                result = price_tracker.update_charts_now(chart_types)
-                
-                if result.get('success', True):
-                    print("✅ Charts-Update abgeschlossen:")
-                    print(f"   📊 {result.get('total_games_found', 0)} Spiele gefunden")
-                    print(f"   ➕ {result.get('new_games_added', 0)} neue Spiele")
-                    print(f"   🔄 {result.get('existing_games_updated', 0)} aktualisiert")
+                if hasattr(price_tracker, 'charts_manager') and price_tracker.charts_manager:
+                    print("🔄 Aktualisiere Steam Charts...")
+                    result = price_tracker.charts_manager.update_all_charts()
                     
-                    if result.get('errors'):
-                        print(f"   ⚠️ {len(result['errors'])} Fehler aufgetreten")
+                    if result.get('success'):
+                        print(f"✅ Charts aktualisiert:")
+                        print(f"   📊 {result.get('updated_charts', 0)} Charts verarbeitet")
+                        print(f"   🎮 {result.get('new_games', 0)} neue Spiele gefunden")
+                        print(f"   ⏱️ Dauer: {result.get('duration', 0):.1f}s")
+                    else:
+                        print(f"❌ Charts-Update fehlgeschlagen: {result.get('error')}")
                 else:
-                    print(f"❌ Charts-Update fehlgeschlagen: {result.get('error', 'Unbekannter Fehler')}")
+                    print("❌ Charts-Manager nicht verfügbar")
             
-            elif charts_enabled and choice == "16":
+            elif charts_enabled and choice == "17":
                 # Charts-Preise aktualisieren
                 print("\n💰 CHARTS-PREISE AKTUALISIEREN")
                 print("=" * 35)
                 
-                chart_type = input("Chart-Typ (oder Enter für alle): ").strip()
-                if chart_type and chart_type not in show_available_chart_types():
-                    print("❌ Ungültiger Chart-Typ")
-                    continue
-                
-                print("🔄 Aktualisiere Charts-Preise...")
-                result = price_tracker.update_charts_prices_now(chart_type)
-                
-                if result.get('success', True):
-                    print("✅ Charts-Preisupdate abgeschlossen:")
-                    print(f"   📊 {result.get('total_games', 0)} Spiele verarbeitet")
-                    print(f"   💰 {result.get('successful', 0)} erfolgreich aktualisiert")
+                if hasattr(price_tracker, 'charts_manager') and price_tracker.charts_manager:
+                    print("🔄 Aktualisiere Preise für Charts-Spiele...")
+                    result = price_tracker.charts_manager.update_charts_prices()
                     
-                    if result.get('failed', 0) > 0:
-                        print(f"   ❌ {result['failed']} fehlgeschlagen")
-                else:
-                    print(f"❌ Charts-Preisupdate fehlgeschlagen: {result.get('error', 'Unbekannter Fehler')}")
-            
-            elif charts_enabled and choice == "17":
-                # Beste Charts-Deals
-                print("\n🏆 BESTE CHARTS-DEALS")
-                print("=" * 25)
-                
-                available_types = show_available_chart_types()
-                
-                if available_types:
-                    print("💡 Verfügbare Filter:")
-                    for i, chart_type in enumerate(available_types, 1):
-                        print(f"   {i}. {chart_type}")
-                    print(f"   {len(available_types) + 1}. alle (kein Filter)")
-                
-                chart_type_filter = input("Chart-Typ eingeben oder Enter für alle: ").strip()
-                
-                if chart_type_filter and chart_type_filter not in available_types:
-                    print(f"⚠️ Unbekannter Chart-Typ '{chart_type_filter}' - verwende alle Charts")
-                    chart_type_filter = None
-                elif not chart_type_filter:
-                    chart_type_filter = None
-                
-                deals = price_tracker.get_best_charts_deals(limit=15, chart_type=chart_type_filter)
-                
-                if deals:
-                    if chart_type_filter:
-                        print(f"🏆 Top {len(deals)} Deals für {chart_type_filter.upper()}:")
+                    if result.get('success'):
+                        print(f"✅ Charts-Preise aktualisiert:")
+                        print(f"   💰 {result.get('updated_prices', 0)} Spiele-Preise aktualisiert")
+                        print(f"   ⏱️ Dauer: {result.get('duration', 0):.1f}s")
                     else:
-                        print(f"🏆 Top {len(deals)} Charts-Deals (alle Typen):")
-                    print()
-                    
-                    for i, deal in enumerate(deals, 1):
-                        rank_info = f"#{deal.get('current_rank', '?')}" if deal.get('current_rank') else ""
-                        chart_info = f"[{deal.get('chart_type', 'Unknown')}]" if not chart_type_filter else ""
-                        
-                        print(f"{i:2d}. {deal['game_title'][:35]:<35} {rank_info} {chart_info}")
-                        print(f"    💰 €{deal['best_price']:.2f} (-{deal['discount_percent']}%) bei {deal['best_store']}")
-                        print(f"    🆔 App ID: {deal['steam_app_id']}")
-                        print()
+                        print(f"❌ Charts-Preis-Update fehlgeschlagen: {result.get('error')}")
                 else:
-                    print("❌ Keine Charts-Deals gefunden")
-                    print("💡 Führe zuerst Charts-Updates und Preisabfragen durch")
+                    print("❌ Charts-Manager nicht verfügbar")
             
             elif charts_enabled and choice == "18":
-                # NEU: Charts-Namen von Steam aktualisieren
-                update_charts_names_from_steam(price_tracker)
-            
-            elif charts_enabled and choice == "19":
-                # NEU: Charts-Spiele mit generischen Namen
-                show_charts_name_candidates(price_tracker)
-            
-            elif charts_enabled and choice == "20":
                 # Charts-Spiele anzeigen
-                print("\n📋 CHARTS-SPIELE ANZEIGEN")
-                print("=" * 30)
+                print("\n🎮 CHARTS-SPIELE ANZEIGEN")
+                print("=" * 28)
                 
-                available_types = show_available_chart_types()
-                
-                if available_types:
-                    print("💡 Verfügbare Filter:")
-                    for i, chart_type in enumerate(available_types, 1):
-                        print(f"   {i}. {chart_type}")
-                    print(f"   {len(available_types) + 1}. alle (kein Filter)")
-                
-                chart_type_filter = input("Chart-Typ eingeben oder Enter für alle: ").strip()
-                
-                if chart_type_filter and chart_type_filter not in available_types:
-                    print(f"⚠️ Unbekannter Chart-Typ '{chart_type_filter}' - verwende alle Charts")
-                    chart_type_filter = None
-                elif not chart_type_filter:
-                    chart_type_filter = None
-                
-                if hasattr(price_tracker.db_manager, 'get_active_chart_games'):
-                    active_games = price_tracker.db_manager.get_active_chart_games(chart_type_filter)
+                if hasattr(price_tracker, 'charts_manager') and price_tracker.charts_manager:
+                    games = price_tracker.charts_manager.get_chart_games_summary()
                     
-                    if active_games:
-                        if chart_type_filter:
-                            print(f"📊 {chart_type_filter.upper()} SPIELE ({len(active_games)}):")
-                        else:
-                            print(f"📊 ALLE CHARTS-SPIELE ({len(active_games)}):")
-                        print()
+                    if games:
+                        print(f"📊 {len(games)} Charts-Spiele:")
+                        for i, game in enumerate(games[:15], 1):
+                            chart_types = game.get('chart_types', 'N/A')
+                            rank = game.get('current_rank', 'N/A')
+                            print(f"{i:2d}. {game['name'][:35]:<35} | Charts: {chart_types} | Rang: {rank}")
                         
-                        current_chart = None
-                        for i, game in enumerate(active_games[:50], 1):  # Limitiere auf 50
-                            # Chart-Typ Header
-                            if game.get('chart_type') != current_chart and not chart_type_filter:
-                                current_chart = game.get('chart_type')
-                                print(f"\n📈 {current_chart.upper()}")
-                                print("-" * 30)
-                            
-                            rank = game.get('current_rank', 0)
-                            rank_display = f"#{rank:3d}" if rank > 0 else "   -"
-                            
-                            first_seen = game.get('first_seen', '')[:10]
-                            last_seen = game.get('last_seen', '')[:10]
-                            
-                            print(f"{rank_display} {game['name'][:40]:<40}")
-                            print(f"     🆔 {game['steam_app_id']} | 📅 {first_seen} - {last_seen}")
-                        
-                        if len(active_games) > 50:
-                            print(f"\n... und {len(active_games) - 50} weitere Spiele")
-                            print("💡 Verwende Chart-Typ Filter um spezifische Listen zu sehen")
+                        if len(games) > 15:
+                            print(f"... und {len(games) - 15} weitere")
                     else:
                         print("❌ Keine Charts-Spiele gefunden")
-                        if chart_type_filter:
-                            print(f"💡 Für Chart-Typ '{chart_type_filter}' keine Spiele vorhanden")
-                        print("💡 Führe zuerst ein Charts-Update durch")
                 else:
-                    print("❌ Charts-Spiele Funktion nicht verfügbar")
+                    print("❌ Charts-Manager nicht verfügbar")
+            
+            elif charts_enabled and choice == "19":
+                # Charts-Trends anzeigen
+                print("\n📈 CHARTS-TRENDS ANZEIGEN")
+                print("=" * 28)
+                
+                if hasattr(price_tracker, 'charts_manager') and price_tracker.charts_manager:
+                    trends = price_tracker.charts_manager.get_trending_games()
+                    
+                    if trends:
+                        print("🔥 Trending Steam Charts Games:")
+                        for i, trend in enumerate(trends[:10], 1):
+                            direction = "📈" if trend.get('rank_change', 0) > 0 else "📉" if trend.get('rank_change', 0) < 0 else "➡️"
+                            print(f"{i:2d}. {direction} {trend['name'][:30]:<30} | Rang: #{trend.get('current_rank', 'N/A')}")
+                    else:
+                        print("❌ Keine Trend-Daten verfügbar")
+                else:
+                    print("❌ Charts-Manager nicht verfügbar")
+            
+            elif charts_enabled and choice == "20":
+                # Charts-Cleanup
+                print("\n🧹 CHARTS-CLEANUP AUSFÜHREN")
+                print("=" * 32)
+                
+                if hasattr(price_tracker, 'charts_manager') and price_tracker.charts_manager:
+                    print("🗑️ Bereinige alte Charts-Daten...")
+                    
+                    # Alte Charts-Spiele entfernen (>30 Tage)
+                    removed = price_tracker.charts_manager.cleanup_old_chart_games(days_threshold=30)
+                    
+                    if removed > 0:
+                        print(f"✅ {removed} alte Charts-Einträge entfernt")
+                    else:
+                        print("✅ Keine alten Einträge zum Entfernen")
+                        
+                    # Datenbank optimieren
+                    print("🔧 Optimiere Datenbank...")
+                    if hasattr(price_tracker.db_manager, 'vacuum_database'):
+                        price_tracker.db_manager.vacuum_database()
+                        print("✅ Datenbank optimiert")
+                else:
+                    print("❌ Charts-Manager nicht verfügbar")
             
             elif charts_enabled and choice == "21":
-                # VEREINFACHT: Vollautomatik einrichten
-                print("\n🚀 VOLLAUTOMATIK EINRICHTEN")
-                print("=" * 35)
+                # Charts-Management
+                print("\n🔧 CHARTS-MANAGEMENT")
+                print("=" * 25)
                 
-                print("Diese Funktion richtet vollautomatisches Tracking ein für:")
-                print("• Standard Apps (Wishlist, manuell hinzugefügte)")
-                print("• Steam Charts (automatisch erkannte beliebte Spiele)")
-                print("• Automatische Preisabfragen für beide Kategorien")
-                print("• Automatisches Cleanup alter Charts-Spiele")
-                print("• Automatische Namen-Updates bei Downtime")
-                print("• ALLE Tasks laufen in separaten Terminals!")
+                print("1. Charts-Statistiken anzeigen")
+                print("2. Spezifische Charts abrufen")
+                print("3. Charts-Konfiguration")
+                
+                charts_choice = input("Auswahl (1-3): ").strip()
+                
+                if charts_choice == "1":
+                    # Charts-Statistiken
+                    show_enhanced_charts_statistics(price_tracker)
+                    
+                elif charts_choice == "2":
+                    # Spezifische Charts abrufen
+                    print("\nVerfügbare Chart-Typen:")
+                    print("• topsellers")
+                    print("• toprated") 
+                    print("• trending")
+                    print("• new")
+                    print("• upcoming")
+                    
+                    chart_type = input("\nChart-Typ: ").strip().lower()
+                    if chart_type:
+                        if hasattr(price_tracker, 'charts_manager') and price_tracker.charts_manager:
+                            result = price_tracker.charts_manager.fetch_specific_chart(chart_type)
+                            if result.get('success'):
+                                print(f"✅ {chart_type} Chart aktualisiert")
+                            else:
+                                print(f"❌ Fehler: {result.get('error')}")
+                        else:
+                            print("❌ Charts-Manager nicht verfügbar")
+                    
+                elif charts_choice == "3":
+                    # Charts-Konfiguration
+                    print("\nAktuelle Charts-Konfiguration:")
+                    print("• Rate Limit: 1.0s zwischen Requests")
+                    print("• Max Charts pro Update: 100")
+                    print("• Cleanup-Intervall: 30 Tage")
+            
+            elif charts_enabled and choice == "22":
+                # Charts-Background-Tracking
+                print("\n📊 CHARTS-BACKGROUND-TRACKING")
+                print("=" * 37)
+                
+                # Status prüfen
+                charts_status = None
+                if hasattr(price_tracker, 'charts_scheduler'):
+                    charts_status = price_tracker.charts_scheduler.get_scheduler_status()
+                
+                if charts_status and charts_status.get('total_running', 0) > 0:
+                    print("✅ Charts-Background-Tracking läuft")
+                    print(f"   📊 Aktive Scheduler: {charts_status['total_running']}")
+                    
+                    for name, info in charts_status.get('schedulers', {}).items():
+                        if info.get('running'):
+                            interval = info.get('interval_minutes', 0)
+                            interval_str = f"{interval // 60}h" if interval >= 60 else f"{interval}min"
+                            print(f"   • {name}: alle {interval_str}")
+                    
+                    stop_charts = input("\nCharts-Background-Tracking stoppen? (j/n): ").lower().strip()
+                    if stop_charts in ['j', 'ja', 'y', 'yes']:
+                        if price_tracker.disable_charts_tracking():
+                            print("⏹️ Charts-Background-Tracking gestoppt")
+                else:
+                    print("⏸️ Charts-Background-Tracking ist inaktiv")
+                    start_charts = input("Charts-Background-Tracking starten? (j/n): ").lower().strip()
+                    
+                    if start_charts in ['j', 'ja', 'y', 'yes']:
+                        update_hours = input("Charts-Update Intervall in Stunden (Standard: 6): ").strip()
+                        price_hours = input("Charts-Preise Intervall in Stunden (Standard: 4): ").strip()
+                        
+                        try:
+                            update_hours = int(update_hours) if update_hours else 6
+                            price_hours = int(price_hours) if price_hours else 4
+                        except ValueError:
+                            update_hours, price_hours = 6, 4
+                        
+                        if price_tracker.enable_charts_tracking(
+                            charts_interval_hours=update_hours,
+                            charts_price_interval_hours=price_hours
+                        ):
+                            print("✅ Charts-Background-Tracking gestartet!")
+                            print(f"   📊 Charts-Updates: alle {update_hours}h")
+                            print(f"   💰 Charts-Preise: alle {price_hours}h")
+            
+            elif charts_enabled and choice == "23":
+                # Enhanced Vollautomatik einrichten
+                print("\n🚀 ENHANCED VOLLAUTOMATIK EINRICHTEN")
+                print("=" * 45)
+                
+                print("Enhanced Vollautomatik umfasst:")
+                print("• 💰 Automatische Preis-Updates für alle Apps")
+                print("• 📊 Automatische Charts-Updates")
+                print("• 💰 Automatische Charts-Preise Updates")
+                print("• 🔤 Automatische Namen-Updates")
+                print("• 🧹 Automatisches Charts-Cleanup")
+                print("• 🔧 Automatisches Process-Cleanup beim Exit")
+                print("• 👁️ Parent-Process-Monitoring in allen Terminals")
+                print("• 💓 Sign of Life mit Status-Anzeigen")
+                print("• ALLE Tasks laufen in separaten Enhanced Terminals!")
                 print()
                 
-                confirm = input("Vollautomatik einrichten? (j/n): ").lower().strip()
+                confirm = input("Enhanced Vollautomatik einrichten? (j/n): ").lower().strip()
                 if confirm in ['j', 'ja', 'y', 'yes']:
-                    print("\n⚙️ KONFIGURATION:")
+                    print("\n⚙️ ENHANCED KONFIGURATION:")
                     normal_hours = input("Intervall normale Apps (Stunden, Standard: 6): ").strip()
                     charts_hours = input("Intervall Charts-Updates (Stunden, Standard: 6): ").strip()
                     charts_price_hours = input("Intervall Charts-Preise (Stunden, Standard: 4): ").strip()
@@ -1248,7 +953,6 @@ def main():
                     except ValueError:
                         normal_hours, charts_hours, charts_price_hours, name_minutes = 6, 6, 4, 30
                     
-                    # VEREINFACHT: Setup mit Universal Background Scheduler
                     try:
                         from price_tracker import setup_full_automation
                         
@@ -1259,48 +963,44 @@ def main():
                             charts_price_interval=charts_price_hours,
                             name_interval=name_minutes
                         ):
-                            print("\n✅ VOLLAUTOMATIK ERFOLGREICH EINGERICHTET!")
-                            print("\n📋 AKTIVE AUTOMATION:")
+                            print("\n✅ ENHANCED VOLLAUTOMATIK ERFOLGREICH EINGERICHTET!")
+                            print("\n📋 AKTIVE ENHANCED AUTOMATION:")
                             print(f"   💰 Standard-Preise: alle {normal_hours}h")
                             print(f"   📊 Charts-Updates: alle {charts_hours}h")
                             print(f"   💰 Charts-Preise: alle {charts_price_hours}h")
                             print(f"   🔤 Namen-Updates: alle {name_minutes}min")
                             print(f"   🧹 Charts-Cleanup: alle 24h")
-                            print("\n💡 ALLE TASKS LAUFEN IN SEPARATEN TERMINALS!")
-                            print("💡 Überprüfe die Terminal-Fenster für Live-Status!")
+                            print("\n💡 ENHANCED FEATURES:")
+                            print("   🔧 Automatisches Process-Cleanup aktiviert")
+                            print("   👁️ Parent-Process-Monitoring in allen Terminals")
+                            print("   💓 Sign of Life mit Status-Anzeigen")
+                            print("   📊 Process Management Terminal verfügbar")
                         else:
-                            print("❌ Fehler beim Einrichten der Vollautomatik")
+                            print("❌ Fehler beim Einrichten der Enhanced Vollautomatik")
                             
                     except Exception as e:
-                        print(f"❌ Fehler beim Einrichten der Vollautomatik: {e}")
+                        print(f"❌ Fehler beim Einrichten: {e}")
             
             # Beenden
-            elif (not charts_enabled and choice == "14") or (charts_enabled and choice == "22"):
-                print("\n👋 BEENDEN")
-                print("=" * 10)
+            elif (not charts_enabled and choice == "16") or (charts_enabled and choice == "24"):
+                print("\n👋 ENHANCED STEAM PRICE TRACKER BEENDEN")
+                print("=" * 45)
                 
-                # Alle Background-Scheduler stoppen
-                status = get_universal_scheduler_status(price_tracker)
-                total_active = status.get('total_active_schedulers', 0)
+                # Enhanced Process Status anzeigen
+                process_status = get_enhanced_process_status()
+                total_active = process_status.get('running_processes', 0)
                 
                 if total_active > 0:
-                    print(f"⏹️ Stoppe {total_active} aktive Background-Scheduler...")
-                    
-                    # Price Tracker Scheduler stoppen
-                    price_tracker.stop_background_scheduler()
-                    
-                    # Charts Scheduler stoppen (falls aktiv)
-                    if charts_enabled:
-                        price_tracker.disable_charts_tracking()
-                
-                # Scheduler-Ressourcen aufräumen
-                try:
-                    price_tracker.cleanup_scheduler_resources()
-                except:
-                    pass
+                    print(f"⏹️ Stoppe {total_active} aktive Enhanced Background-Prozesse...")
+                    print("💡 Automatisches Cleanup wird beim Exit ausgeführt...")
+                else:
+                    print("ℹ️ Keine aktiven Enhanced Background-Prozesse")
                 
                 print("💾 Datenbankverbindungen werden automatisch geschlossen...")
-                print("✅ Enhanced Steam Price Tracker beendet. Auf Wiedersehen!")
+                print("🧹 Enhanced Process-Cleanup wird ausgeführt...")
+                print("✅ Enhanced Steam Price Tracker v2.0 wird beendet...")
+                print("\n💡 Alle Subprozesse werden automatisch gestoppt!")
+                print("👋 Auf Wiedersehen!")
                 break
             
             else:
@@ -1308,9 +1008,11 @@ def main():
                 
         except KeyboardInterrupt:
             print("\n⏹️ Abgebrochen durch Benutzer")
+            print("🧹 Automatisches Enhanced Cleanup wird ausgeführt...")
+            break
         except Exception as e:
             print(f"❌ Unerwarteter Fehler: {e}")
-            logger.exception("Unerwarteter Fehler in main()")
+            logger.exception("Unerwarteter Fehler in Enhanced main()")
 
 if __name__ == "__main__":
     main()
