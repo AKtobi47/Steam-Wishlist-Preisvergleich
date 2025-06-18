@@ -1,0 +1,12 @@
+# Elasticsearch und Analytics
+elasticsearch>=8.11.0
+elasticsearch-dsl>=8.11.0
+
+# Optional: Elasticsearch Helpers
+elasticsearch-curator>=5.8.4
+
+# Optional: Pandas für erweiterte Datenanalyse
+pandas>=2.0.0
+numpy>=1.24.0
+matplotlib>=3.7.0
+seaborn>=0.12.0

@@ -1,0 +1,5 @@
+{
+  "title": "steam-tracked-apps*",
+  "timeFieldName": "added_at",
+  "fields": "[{\"name\":\"steam_app_id\",\"type\":\"string\",\"searchable\":true,\"aggregatable\":true},{\"name\":\"name\",\"type\":\"string\",\"searchable\":true,\"aggregatable\":false},{\"name\":\"name.keyword\",\"type\":\"string\",\"searchable\":true,\"aggregatable\":true},{\"name\":\"added_at\",\"type\":\"date\",\"searchable\":true,\"aggregatable\":true},{\"name\":\"last_price_update\",\"type\":\"date\",\"searchable\":true,\"aggregatable\":true},{\"name\":\"active\",\"type\":\"boolean\",\"searchable\":true,\"aggregatable\":true},{\"name\":\"days_tracked\",\"type\":\"number\",\"searchable\":true,\"aggregatable\":true},{\"name\":\"has_generic_name\",\"type\":\"boolean\",\"searchable\":true,\"aggregatable\":true},{\"name\":\"price_update_frequency\",\"type\":\"string\",\"searchable\":true,\"aggregatable\":true},{\"name\":\"total_snapshots\",\"type\":\"number\",\"searchable\":true,\"aggregatable\":true}]"
+}
