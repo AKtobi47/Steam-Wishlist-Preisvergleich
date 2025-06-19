@@ -2,7 +2,6 @@
   "version": "3.0.0",
   "last_updated": "2025-01-20T10:00:00Z",
   "description": "Steam Price Tracker - Vollständige Konfiguration",
-  
   "database": {
     "path": "steam_price_tracker.db",
     "backup_enabled": true,
@@ -14,7 +13,6 @@
     "cache_size": 10000,
     "temp_store": "memory"
   },
-  
   "tracking": {
     "default_interval_hours": 6,
     "max_apps_per_update": 100,
@@ -32,25 +30,47 @@
       "low_priority_hours": 12
     }
   },
-  
   "cheapshark": {
     "rate_limit_seconds": 1.5,
     "timeout_seconds": 15,
     "store_ids": "1,3,7,11,15,27",
     "stores": {
-      "1": {"name": "Steam", "enabled": true, "priority": 1},
-      "3": {"name": "GreenManGaming", "enabled": true, "priority": 2},
-      "7": {"name": "GOG", "enabled": true, "priority": 3},
-      "11": {"name": "HumbleStore", "enabled": true, "priority": 4},
-      "15": {"name": "Fanatical", "enabled": true, "priority": 5},
-      "27": {"name": "GamesPlanet", "enabled": true, "priority": 6}
+      "1": {
+        "name": "Steam",
+        "enabled": true,
+        "priority": 1
+      },
+      "3": {
+        "name": "GreenManGaming",
+        "enabled": true,
+        "priority": 2
+      },
+      "7": {
+        "name": "GOG",
+        "enabled": true,
+        "priority": 3
+      },
+      "11": {
+        "name": "HumbleStore",
+        "enabled": true,
+        "priority": 4
+      },
+      "15": {
+        "name": "Fanatical",
+        "enabled": true,
+        "priority": 5
+      },
+      "27": {
+        "name": "GamesPlanet",
+        "enabled": true,
+        "priority": 6
+      }
     },
     "cache_enabled": true,
     "cache_ttl_seconds": 3600,
     "max_retries": 3,
     "backoff_factor": 2.0
   },
-  
   "steam_api": {
     "rate_limit_seconds": 1.0,
     "timeout_seconds": 10,
@@ -63,13 +83,17 @@
       "app_list": "https://api.steampowered.com/ISteamApps/GetAppList/v2/"
     }
   },
-  
   "charts": {
-    "enabled": false,
+    "enabled": true,
     "update_interval_hours": 6,
     "price_interval_hours": 4,
     "cleanup_interval_hours": 24,
-    "chart_types": ["most_played", "top_releases", "best_sellers", "weekly_top_sellers"],
+    "chart_types": [
+      "most_played",
+      "top_releases",
+      "best_sellers",
+      "weekly_top_sellers"
+    ],
     "chart_counts": {
       "most_played": 100,
       "top_releases": 50,
@@ -87,7 +111,6 @@
     "parallel_processing": true,
     "max_concurrent_charts": 3
   },
-  
   "scheduler": {
     "enabled": true,
     "enhanced_scheduler": true,
@@ -125,7 +148,6 @@
       }
     }
   },
-  
   "export": {
     "format": "csv",
     "directory": "exports",
@@ -145,16 +167,20 @@
     "xlsx": {
       "engine": "xlsxwriter",
       "sheet_name": "Steam Price Data",
-      "freeze_panes": [1, 0]
+      "freeze_panes": [
+        1,
+        0
+      ]
     },
     "auto_export": {
       "enabled": false,
       "interval_hours": 24,
-      "formats": ["csv"],
+      "formats": [
+        "csv"
+      ],
       "retention_days": 30
     }
   },
-  
   "elasticsearch": {
     "enabled": false,
     "host": "localhost",
@@ -193,7 +219,6 @@
       }
     }
   },
-  
   "kibana": {
     "host": "localhost",
     "port": 5601,
@@ -220,7 +245,6 @@
       }
     ]
   },
-  
   "logging": {
     "level": "INFO",
     "file": "logs/steam_tracker.log",
@@ -232,14 +256,23 @@
     "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     "date_format": "%Y-%m-%d %H:%M:%S",
     "loggers": {
-      "price_tracker": {"level": "INFO"},
-      "steam_charts": {"level": "INFO"},
-      "background_scheduler": {"level": "INFO"},
-      "elasticsearch": {"level": "WARNING"},
-      "urllib3": {"level": "WARNING"}
+      "price_tracker": {
+        "level": "INFO"
+      },
+      "steam_charts": {
+        "level": "INFO"
+      },
+      "background_scheduler": {
+        "level": "INFO"
+      },
+      "elasticsearch": {
+        "level": "WARNING"
+      },
+      "urllib3": {
+        "level": "WARNING"
+      }
     }
   },
-  
   "notifications": {
     "enabled": false,
     "discord": {
@@ -287,7 +320,6 @@
       }
     }
   },
-  
   "performance": {
     "request_pool_size": 10,
     "max_concurrent_downloads": 5,
@@ -315,17 +347,18 @@
       "thread_pool_size": 20
     }
   },
-  
   "security": {
     "encrypt_api_keys": false,
     "encryption_key": "",
     "session_timeout_minutes": 60,
     "api_rate_limit_per_minute": 60,
-    "allowed_hosts": ["localhost", "127.0.0.1"],
+    "allowed_hosts": [
+      "localhost",
+      "127.0.0.1"
+    ],
     "cors_enabled": false,
     "cors_origins": []
   },
-  
   "backup": {
     "auto_backup": true,
     "interval_hours": 24,
@@ -343,7 +376,6 @@
       "region": "us-east-1"
     }
   },
-  
   "monitoring": {
     "health_check_enabled": true,
     "metrics_enabled": false,
@@ -359,7 +391,6 @@
       ]
     }
   },
-  
   "features": {
     "experimental": false,
     "beta": false,
@@ -377,7 +408,6 @@
       "multi_currency": false
     }
   },
-  
   "locale": {
     "timezone": "Europe/Berlin",
     "locale": "de_DE.UTF-8",
@@ -387,7 +417,6 @@
     "decimal_separator": ",",
     "thousands_separator": "."
   },
-  
   "cli_tools": {
     "batch_processor": {
       "enabled": true,
@@ -407,7 +436,6 @@
       "wait_for_healthy": true
     }
   },
-  
   "development": {
     "debug_mode": false,
     "profiling_enabled": false,

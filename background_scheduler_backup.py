@@ -736,7 +736,7 @@ class EnhancedBackgroundScheduler:
                 self._cleanup_finished_processes()
                 
                 # Kurz warten
-                time.sleep(60)  # Prüfe alle 60 Sekunden
+                time.sleep(30)  # Prüfe alle 30 Sekunden
                 
             except Exception as e:
                 logger.error(f"❌ Scheduler-Fehler: {e}")
@@ -1089,7 +1089,7 @@ read
             time_diff = (datetime.now() - last_heartbeat).total_seconds()
             
             # Wenn Heartbeat zu alt ist, Task als tot markieren
-            if time_diff > task.heartbeat_interval * 5:
+            if time_diff > task.heartbeat_interval * 3:
                 logger.warning(f"⚠️ Task {task.scheduler_type} Heartbeat zu alt ({time_diff:.1f}s)")
                 task.running = False
                 
@@ -1116,7 +1116,7 @@ read
         for task_type in finished_tasks:
             if task_type in self.processes:
                 del self.processes[task_type]
-            logger.debug(f"🧹 Task {task_type} cleanup abgeschlossen")
+            logger.info(f"🧹 Task {task_type} cleanup abgeschlossen")
     
     def _cleanup_processes(self):
         """Stoppt alle laufenden Prozesse"""
@@ -1173,7 +1173,7 @@ def create_enhanced_price_tracker_scheduler() -> EnhancedBackgroundScheduler:
         task_function=EnhancedSchedulerTasks.enhanced_price_tracking_task(),
         interval_minutes=360,  # 6 Stunden
         dependencies=["price_tracker", "steam_wishlist_manager"],
-        heartbeat_interval=60,
+        heartbeat_interval=30,
         show_progress_bar=True
     )
     
@@ -1182,7 +1182,7 @@ def create_enhanced_price_tracker_scheduler() -> EnhancedBackgroundScheduler:
         task_function=EnhancedSchedulerTasks.enhanced_name_update_task(),
         interval_minutes=30,  # 30 Minuten
         dependencies=["price_tracker", "steam_wishlist_manager"],
-        heartbeat_interval=60,
+        heartbeat_interval=20,
         show_progress_bar=True
     )
     
@@ -1206,7 +1206,7 @@ def create_enhanced_charts_scheduler() -> EnhancedBackgroundScheduler:
         task_function=EnhancedSchedulerTasks.enhanced_charts_update_task(),
         interval_minutes=360,  # 6 Stunden
         dependencies=["price_tracker", "steam_wishlist_manager", "steam_charts_manager"],
-        heartbeat_interval=60,
+        heartbeat_interval=45,
         show_progress_bar=True
     )
     
@@ -1216,7 +1216,7 @@ def create_enhanced_charts_scheduler() -> EnhancedBackgroundScheduler:
         task_function=EnhancedSchedulerTasks.enhanced_charts_price_update_task(),
         interval_minutes=240,  # 4 Stunden
         dependencies=["price_tracker", "steam_wishlist_manager"],
-        heartbeat_interval=60,
+        heartbeat_interval=30,
         show_progress_bar=True
     )
     
