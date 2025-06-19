@@ -1,25 +1,20 @@
-# Elasticsearch Konfiguration für Steam Price Tracker
-cluster.name: steam-analytics
-node.name: steam-elasticsearch-node
-path.data: /usr/share/elasticsearch/data
-path.logs: /usr/share/elasticsearch/logs
+# Elasticsearch Configuration for Steam Price Tracker
+cluster.name: steam-price-tracker
+node.name: node-1
+
+# Network
 network.host: 0.0.0.0
 http.port: 9200
+
+# Discovery
 discovery.type: single-node
 
-# Sicherheit deaktiviert für lokale Entwicklung
-xpack.security.enabled: false
-xpack.security.enrollment.enabled: false
-xpack.security.http.ssl.enabled: false
-xpack.security.transport.ssl.enabled: false
-
-# Performance-Einstellungen
+# Memory
 bootstrap.memory_lock: true
-indices.query.bool.max_clause_count: 10000
 
-# Index-Einstellungen
-action.auto_create_index: true
-action.destructive_requires_name: false
-
-# Monitoring
+# Security (für Development)
+xpack.security.enabled: false
 xpack.monitoring.collection.enabled: true
+
+# Indices
+action.auto_create_index: true

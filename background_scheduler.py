@@ -1,1084 +1,727 @@
 #!/usr/bin/env python3
 """
-Enhanced Universal Background Scheduler v2.0 - Vollständig integrierte Version
-ALLE ORIGINAL FEATURES + Enhanced Process Management mit automatischem Cleanup
-Erweitert um vollständiges Process Tracking und automatisches Cleanup
+Enhanced Universal Background Scheduler v2.0 mit Process Management
+Steam Price Tracker - Separate Terminal-Execution für alle Background-Tasks
+Unterstützt Parent-Process-Monitoring, Sign of Life und Process Management Terminal
 """
 
-import os
-import sys
-import time
 import subprocess
 import threading
+import time
+import logging
 import json
 import signal
-import atexit
-import psutil
+import sys
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Callable, Any
-import logging
+from dataclasses import dataclass
+from queue import Queue, Empty
+import psutil
 
+# Logging Setup
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# =====================================================================
-# ENHANCED PROCESS MANAGEMENT SYSTEM
-# =====================================================================
-
-class ProcessManager:
-    """
-    Zentrale Process-Verwaltung für automatisches Cleanup
-    Verfolgt alle gestarteten Subprozesse und beendet sie automatisch
-    """
-    
-    def __init__(self):
-        self.tracked_processes = {}  # scheduler_id -> process_info
-        self.process_lock = threading.Lock()
-        self.cleanup_registered = False
-        
-        # Automatisches Cleanup beim Exit registrieren
-        self._register_cleanup_handlers()
-    
-    def _register_cleanup_handlers(self):
-        """Registriert Cleanup-Handler für verschiedene Exit-Szenarien"""
-        if self.cleanup_registered:
-            return
-        
-        # Normal exit
-        atexit.register(self.cleanup_all_processes)
-        
-        # Signal handlers für Ctrl+C, etc.
-        signal.signal(signal.SIGINT, self._signal_handler)
-        signal.signal(signal.SIGTERM, self._signal_handler)
-        
-        self.cleanup_registered = True
-        logger.info("✅ Enhanced Process Cleanup Handler registriert")
-    
-    def _signal_handler(self, signum, frame):
-        """Handler für Signals - führt Cleanup aus"""
-        logger.info(f"⚠️ Signal {signum} empfangen - führe Process Cleanup aus...")
-        self.cleanup_all_processes()
-        sys.exit(0)
-    
-    def register_process(self, scheduler_id: str, process: subprocess.Popen, 
-                        scheduler_type: str, script_path: str):
-        """
-        Registriert einen Process für automatisches Cleanup
-        
-        Args:
-            scheduler_id: Eindeutige ID des Schedulers
-            process: Subprocess.Popen Objekt
-            scheduler_type: Typ des Schedulers
-            script_path: Pfad zum ausgeführten Script
-        """
-        with self.process_lock:
-            self.tracked_processes[scheduler_id] = {
-                'process': process,
-                'pid': process.pid,
-                'scheduler_type': scheduler_type,
-                'script_path': script_path,
-                'started_at': datetime.now().isoformat(),
-                'parent_monitoring': True,
-                'is_running': True
-            }
-        
-        logger.info(f"✅ Process registriert: {scheduler_id} (PID: {process.pid})")
-    
-    def unregister_process(self, scheduler_id: str):
-        """Entfernt Process aus Tracking"""
-        with self.process_lock:
-            if scheduler_id in self.tracked_processes:
-                del self.tracked_processes[scheduler_id]
-                logger.info(f"📝 Process unregistriert: {scheduler_id}")
-    
-    def is_process_running(self, scheduler_id: str) -> bool:
-        """Prüft ob Process noch läuft"""
-        with self.process_lock:
-            if scheduler_id not in self.tracked_processes:
-                return False
-            
-            process_info = self.tracked_processes[scheduler_id]
-            process = process_info['process']
-            
-            try:
-                # Prüfe Process-Status
-                if process.poll() is None:
-                    # Process läuft noch
-                    process_info['is_running'] = True
-                    return True
-                else:
-                    # Process ist beendet
-                    process_info['is_running'] = False
-                    return False
-            except:
-                process_info['is_running'] = False
-                return False
-    
-    def stop_process(self, scheduler_id: str) -> bool:
-        """
-        Stoppt einen spezifischen Process
-        
-        Args:
-            scheduler_id: ID des zu stoppenden Schedulers
-            
-        Returns:
-            True wenn erfolgreich gestoppt
-        """
-        with self.process_lock:
-            if scheduler_id not in self.tracked_processes:
-                return False
-            
-            process_info = self.tracked_processes[scheduler_id]
-            process = process_info['process']
-            
-            try:
-                # Versuche graceful shutdown
-                if os.name == 'nt':  # Windows
-                    process.terminate()
-                else:  # Unix/Linux/Mac
-                    process.terminate()
-                
-                # Warte kurz auf graceful shutdown
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    # Force kill falls nötig
-                    process.kill()
-                    process.wait()
-                
-                process_info['is_running'] = False
-                logger.info(f"⏹️ Process gestoppt: {scheduler_id}")
-                return True
-                
-            except Exception as e:
-                logger.error(f"❌ Fehler beim Stoppen von Process {scheduler_id}: {e}")
-                return False
-    
-    def cleanup_all_processes(self):
-        """Stoppt alle getrackten Prozesse"""
-        logger.info("🧹 Enhanced Process Cleanup gestartet...")
-        
-        with self.process_lock:
-            active_processes = list(self.tracked_processes.keys())
-        
-        if not active_processes:
-            logger.info("ℹ️ Keine aktiven Prozesse zu bereinigen")
-            return
-        
-        stopped_count = 0
-        for scheduler_id in active_processes:
-            if self.stop_process(scheduler_id):
-                stopped_count += 1
-        
-        logger.info(f"✅ Enhanced Process Cleanup abgeschlossen: {stopped_count} Prozesse gestoppt")
-    
-    def get_process_status(self) -> Dict:
-        """Liefert Status aller getrackten Prozesse"""
-        with self.process_lock:
-            total_tracked = len(self.tracked_processes)
-            running_processes = 0
-            dead_processes = 0
-            
-            process_status = {}
-            
-            for scheduler_id, process_info in self.tracked_processes.items():
-                is_running = self.is_process_running(scheduler_id)
-                
-                if is_running:
-                    running_processes += 1
-                else:
-                    dead_processes += 1
-                
-                process_status[scheduler_id] = {
-                    'pid': process_info['pid'],
-                    'scheduler_type': process_info['scheduler_type'],
-                    'started_at': process_info['started_at'],
-                    'is_running': is_running,
-                    'parent_monitoring': process_info.get('parent_monitoring', True)
-                }
-        
-        return {
-            'total_tracked': total_tracked,
-            'running_processes': running_processes,
-            'dead_processes': dead_processes,
-            'processes': process_status
-        }
-
-# Globaler Process Manager
-_global_process_manager = ProcessManager()
-
-# =====================================================================
-# ENHANCED BACKGROUND SCHEDULER
-# =====================================================================
+@dataclass
+class SchedulerTask:
+    """Enhanced Task Definition für Background Scheduler"""
+    scheduler_type: str
+    task_function: str
+    interval_minutes: int
+    task_config: Dict = None
+    dependencies: List[str] = None
+    heartbeat_interval: int = 60  # Sekunden
+    show_progress_bar: bool = False
+    last_run: datetime = None
+    next_run: datetime = None
+    running: bool = False
+    process: subprocess.Popen = None
+    heartbeat_file: Path = None
 
 class EnhancedBackgroundScheduler:
     """
-    Enhanced Background Scheduler mit automatischem Process Management
-    Erweitert um vollständiges Process Tracking und automatisches Cleanup
-    ALLE URSPRÜNGLICHEN FEATURES + Enhanced Features
+    Enhanced Universal Background Scheduler v2.0
+    Führt alle Tasks in separaten Terminal-Prozessen aus
+    Mit Parent-Process-Monitoring und Sign of Life
     """
     
-    def __init__(self, scheduler_name: str, base_config: Dict = None):
+    def __init__(self, scheduler_name: str = "BackgroundScheduler", base_config: Dict = None):
         """
         Initialisiert Enhanced Background Scheduler
         
         Args:
-            scheduler_name: Eindeutiger Name für diesen Scheduler
-            base_config: Basis-Konfiguration für den Scheduler
+            scheduler_name: Name des Schedulers
+            base_config: Basis-Konfiguration für alle Tasks
         """
         self.scheduler_name = scheduler_name
         self.base_config = base_config or {}
+        self.tasks: Dict[str, SchedulerTask] = {}
+        self.running = False
+        self.scheduler_thread = None
+        self.stop_event = threading.Event()
         
-        # Scheduler-Status
-        self.running_processes = {}  # scheduler_type -> process_info
-        self.scheduler_configs = {}  # scheduler_type -> config
+        # Process Management
+        self.processes: Dict[str, subprocess.Popen] = {}
+        self.heartbeat_dir = Path("heartbeats")
+        self.heartbeat_dir.mkdir(exist_ok=True)
         
-        # Process Manager Integration
-        self.process_manager = _global_process_manager
+        # Sign of Life Monitoring
+        self.parent_pid = os.getpid()
+        self.monitoring_active = False
+        self.monitoring_thread = None
         
-        # Basis-Verzeichnisse
-        self.temp_dir = Path("temp_schedulers")
-        self.temp_dir.mkdir(exist_ok=True)
-        
-        # Python-Pfad für korrekte Imports
-        self.project_root = Path.cwd()
-        
-        logger.info(f"✅ Enhanced Background Scheduler '{scheduler_name}' mit Process Management initialisiert")
+        logger.info(f"✅ Enhanced Background Scheduler '{scheduler_name}' v2.0 initialisiert")
     
-    def register_scheduler(self, 
+    def register_scheduler(self,
                           scheduler_type: str,
                           task_function: str,
                           interval_minutes: int,
                           task_config: Dict = None,
                           dependencies: List[str] = None,
-                          heartbeat_interval: int = 30,
-                          show_progress_bar: bool = True) -> bool:
+                          heartbeat_interval: int = 60,
+                          show_progress_bar: bool = False):
         """
-        Registriert einen neuen Scheduler-Typ mit Enhanced Features
+        Registriert einen neuen Task im Scheduler
         
         Args:
-            scheduler_type: Typ des Schedulers (z.B. 'price_updates', 'name_updates')
-            task_function: Python-Funktion die ausgeführt werden soll
-            interval_minutes: Intervall in Minuten
-            task_config: Konfiguration für die Task
-            dependencies: Erforderliche Python-Module
-            heartbeat_interval: Heartbeat-Intervall in Sekunden (Standard: 30)
-            show_progress_bar: Ob Fortschrittsbalken angezeigt werden soll
-            
-        Returns:
-            True wenn erfolgreich registriert
+            scheduler_type: Eindeutiger Task-Typ
+            task_function: Task-Funktion als String oder Callable
+            interval_minutes: Ausführungsintervall in Minuten
+            task_config: Task-spezifische Konfiguration
+            dependencies: Erforderliche Module/Bibliotheken
+            heartbeat_interval: Herzschlag-Intervall in Sekunden
+            show_progress_bar: Ob Progress Bar angezeigt werden soll
+        """
+        # Heartbeat-Datei für Task
+        heartbeat_file = self.heartbeat_dir / f"{scheduler_type}_heartbeat.json"
+        
+        task = SchedulerTask(
+            scheduler_type=scheduler_type,
+            task_function=task_function if isinstance(task_function, str) else str(task_function),
+            interval_minutes=interval_minutes,
+            task_config=task_config or {},
+            dependencies=dependencies or [],
+            heartbeat_interval=heartbeat_interval,
+            show_progress_bar=show_progress_bar,
+            heartbeat_file=heartbeat_file
+        )
+        
+        # Nächste Ausführung berechnen
+        task.next_run = datetime.now() + timedelta(minutes=interval_minutes)
+        
+        self.tasks[scheduler_type] = task
+        logger.info(f"📋 Task '{scheduler_type}' registriert (Intervall: {interval_minutes}min)")
+    
+    def start_scheduler(self):
+        """Startet den Enhanced Background Scheduler"""
+        if self.running:
+            logger.warning("⚠️ Scheduler läuft bereits")
+            return
+        
+        self.running = True
+        self.stop_event.clear()
+        
+        # Scheduler-Thread starten
+        self.scheduler_thread = threading.Thread(target=self._run_scheduler, daemon=False)
+        self.scheduler_thread.start()
+        
+        # Parent-Process-Monitoring starten
+        self._start_parent_monitoring()
+        
+        logger.info(f"🚀 Enhanced Background Scheduler '{self.scheduler_name}' gestartet")
+    
+    def stop_scheduler(self, cleanup: bool = True):
+        """
+        Stoppt den Enhanced Background Scheduler
+        
+        Args:
+            cleanup: Ob alle laufenden Prozesse beendet werden sollen
+        """
+        if not self.running:
+            logger.info("ℹ️ Scheduler war nicht aktiv")
+            return
+        
+        logger.info("⏹️ Stoppe Enhanced Background Scheduler...")
+        
+        # Stop-Event setzen
+        self.stop_event.set()
+        self.running = False
+        
+        # Monitoring stoppen
+        self.monitoring_active = False
+        
+        # Alle laufenden Prozesse beenden
+        if cleanup:
+            self._cleanup_processes()
+        
+        # Auf Scheduler-Thread warten
+        if self.scheduler_thread and self.scheduler_thread.is_alive():
+            self.scheduler_thread.join(timeout=10)
+        
+        logger.info("✅ Enhanced Background Scheduler gestoppt")
+    
+    def _run_scheduler(self):
+        """Hauptschleife des Enhanced Schedulers"""
+        logger.info(f"🔄 Scheduler-Thread '{self.scheduler_name}' gestartet")
+        
+        while not self.stop_event.is_set():
+            try:
+                current_time = datetime.now()
+                
+                # Prüfe alle registrierten Tasks
+                for task_type, task in self.tasks.items():
+                    if not task.running and current_time >= task.next_run:
+                        self._execute_task_in_terminal(task)
+                    
+                    # Prüfe Heartbeat
+                    self._check_task_heartbeat(task)
+                
+                # Cleanup beendeter Prozesse
+                self._cleanup_finished_processes()
+                
+                # Kurz warten
+                time.sleep(30)  # Prüfe alle 30 Sekunden
+                
+            except Exception as e:
+                logger.error(f"❌ Scheduler-Fehler: {e}")
+                time.sleep(60)
+        
+        logger.info("⏹️ Scheduler-Thread beendet")
+    
+    def _execute_task_in_terminal(self, task: SchedulerTask):
+        """
+        Führt einen Task in separatem Terminal-Prozess aus
+        
+        Args:
+            task: Auszuführender Task
         """
         try:
-            self.scheduler_configs[scheduler_type] = {
-                'task_function': task_function,
-                'interval_minutes': interval_minutes,
-                'task_config': task_config or {},
-                'dependencies': dependencies or [],
-                'heartbeat_interval': heartbeat_interval,
-                'show_progress_bar': show_progress_bar,
-                'registered_at': datetime.now().isoformat(),
-                'enabled': False
-            }
+            logger.info(f"🚀 Starte Task '{task.scheduler_type}' in separatem Terminal")
             
-            logger.info(f"✅ Enhanced Scheduler '{scheduler_type}' registriert (Intervall: {interval_minutes}min, Heartbeat: {heartbeat_interval}s)")
-            return True
+            # Python-Script für Task erstellen
+            script_content = self._generate_task_script(task)
+            script_file = Path(f"temp_task_{task.scheduler_type}.py")
             
-        except Exception as e:
-            logger.error(f"❌ Fehler beim Registrieren von Enhanced Scheduler '{scheduler_type}': {e}")
-            return False
-    
-    def start_scheduler(self, scheduler_type: str, **kwargs) -> bool:
-        """
-        ENHANCED: Startet Scheduler mit automatischem Process Tracking
-        
-        Args:
-            scheduler_type: Typ des zu startenden Schedulers
-            **kwargs: Zusätzliche Parameter für den Scheduler
+            with open(script_file, 'w', encoding='utf-8') as f:
+                f.write(script_content)
             
-        Returns:
-            True wenn erfolgreich gestartet
-        """
-        if scheduler_type not in self.scheduler_configs:
-            logger.error(f"❌ Scheduler-Typ '{scheduler_type}' nicht registriert")
-            return False
-        
-        scheduler_id = f"{self.scheduler_name}_{scheduler_type}"
-        
-        if self.process_manager.is_process_running(scheduler_id):
-            logger.warning(f"⚠️ Scheduler '{scheduler_type}' läuft bereits")
-            return True
-        
-        try:
-            # Enhanced Scheduler-Script erstellen
-            script_path = self._create_enhanced_scheduler_script_v2(scheduler_type, **kwargs)
+            # Separate Terminal-Execution je nach OS
+            if os.name == 'nt':  # Windows
+                cmd = ['start', 'cmd', '/c', f'python {script_file} && pause']
+                process = subprocess.Popen(cmd, shell=True, creationflags=subprocess.CREATE_NEW_CONSOLE)
+            else:  # Linux/Mac
+                cmd = ['gnome-terminal', '--', 'python3', str(script_file)]
+                process = subprocess.Popen(cmd)
             
-            # Separaten Terminal-Prozess starten
-            process = self._start_enhanced_terminal_process(script_path, scheduler_type)
+            # Process Management
+            task.process = process
+            task.running = True
+            task.last_run = datetime.now()
+            task.next_run = datetime.now() + timedelta(minutes=task.interval_minutes)
             
-            if process:
-                # Process Manager Registration
-                self.process_manager.register_process(
-                    scheduler_id, process, scheduler_type, script_path
-                )
-                
-                # Lokale Registration
-                self.running_processes[scheduler_type] = {
-                    'process': process,
-                    'scheduler_id': scheduler_id,
-                    'started_at': datetime.now().isoformat()
-                }
-                
-                self.scheduler_configs[scheduler_type]['enabled'] = True
-                self.scheduler_configs[scheduler_type]['started_at'] = datetime.now().isoformat()
-                
-                logger.info(f"✅ Enhanced Scheduler '{scheduler_type}' gestartet (PID: {process.pid})")
-                return True
-            else:
-                logger.error(f"❌ Fehler beim Starten des Enhanced Terminal-Prozesses")
-                return False
-                
-        except Exception as e:
-            logger.error(f"❌ Fehler beim Starten von Enhanced Scheduler '{scheduler_type}': {e}")
-            return False
-    
-    def stop_scheduler(self, scheduler_type: str) -> bool:
-        """
-        ENHANCED: Stoppt Scheduler mit automatischem Process Cleanup
-        
-        Args:
-            scheduler_type: Typ des zu stoppenden Schedulers
+            self.processes[task.scheduler_type] = process
             
-        Returns:
-            True wenn erfolgreich gestoppt
-        """
-        if scheduler_type not in self.scheduler_configs:
-            logger.error(f"❌ Scheduler-Typ '{scheduler_type}' nicht registriert")
-            return False
-        
-        scheduler_id = f"{self.scheduler_name}_{scheduler_type}"
-        
-        try:
-            # Process Manager stoppen
-            success = self.process_manager.stop_process(scheduler_id)
+            # Heartbeat initialisieren
+            self._init_task_heartbeat(task)
             
-            # Lokale Registrierung aufräumen
-            if scheduler_type in self.running_processes:
-                del self.running_processes[scheduler_type]
-            
-            self.scheduler_configs[scheduler_type]['enabled'] = False
-            self.scheduler_configs[scheduler_type]['stopped_at'] = datetime.now().isoformat()
-            
-            if success:
-                logger.info(f"⏹️ Enhanced Scheduler '{scheduler_type}' gestoppt")
-            else:
-                logger.warning(f"⚠️ Enhanced Scheduler '{scheduler_type}' war bereits gestoppt")
-            
-            return True
+            logger.info(f"✅ Task '{task.scheduler_type}' gestartet (PID: {process.pid})")
             
         except Exception as e:
-            logger.error(f"❌ Fehler beim Stoppen von Enhanced Scheduler '{scheduler_type}': {e}")
-            return False
+            logger.error(f"❌ Fehler beim Starten von Task '{task.scheduler_type}': {e}")
+            task.running = False
     
-    def is_scheduler_running(self, scheduler_type: str) -> bool:
-        """Prüft ob Scheduler läuft"""
-        if scheduler_type not in self.scheduler_configs:
-            return False
-        
-        scheduler_id = f"{self.scheduler_name}_{scheduler_type}"
-        return self.process_manager.is_process_running(scheduler_id)
-    
-    def get_scheduler_status(self, scheduler_type: str = None) -> Dict:
+    def _generate_task_script(self, task: SchedulerTask) -> str:
         """
-        Liefert Enhanced Status der Scheduler
+        Generiert Python-Script für Task-Ausführung
         
         Args:
-            scheduler_type: Spezifischer Scheduler oder None für alle
+            task: Task-Definition
             
         Returns:
-            Status-Dictionary mit Enhanced Informationen
+            Python-Script als String
         """
-        if scheduler_type:
-            # Status für spezifischen Scheduler
-            if scheduler_type not in self.scheduler_configs:
-                return {'error': f"Scheduler '{scheduler_type}' nicht registriert"}
-            
-            config = self.scheduler_configs[scheduler_type]
-            scheduler_id = f"{self.scheduler_name}_{scheduler_type}"
-            
-            # Process Manager Status
-            process_status = self.process_manager.get_process_status()
-            process_info = process_status.get('processes', {}).get(scheduler_id, {})
-            
-            return {
-                'scheduler_type': scheduler_type,
-                'scheduler_id': scheduler_id,
-                'registered': True,
-                'enabled': config.get('enabled', False),
-                'running': self.is_scheduler_running(scheduler_type),
-                'interval_minutes': config.get('interval_minutes', 0),
-                'heartbeat_interval': config.get('heartbeat_interval', 30),
-                'show_progress_bar': config.get('show_progress_bar', True),
-                'task_function': config.get('task_function', ''),
-                'registered_at': config.get('registered_at', ''),
-                'started_at': config.get('started_at', ''),
-                'stopped_at': config.get('stopped_at', ''),
-                'process_info': process_info
-            }
-        else:
-            # Status für alle Scheduler
-            process_status = self.process_manager.get_process_status()
-            
-            all_status = {
-                'scheduler_name': self.scheduler_name,
-                'total_registered': len(self.scheduler_configs),
-                'total_running': len([st for st in self.scheduler_configs if self.is_scheduler_running(st)]),
-                'process_manager_status': process_status,
-                'schedulers': {}
-            }
-            
-            for st in self.scheduler_configs:
-                all_status['schedulers'][st] = self.get_scheduler_status(st)
-            
-            return all_status
+        dependencies_import = "\n".join([f"import {dep}" for dep in task.dependencies])
+        
+        # Heartbeat-Funktion
+        heartbeat_code = f'''
+def update_heartbeat():
+    import json
+    from datetime import datetime
+    heartbeat_data = {{
+        "task_type": "{task.scheduler_type}",
+        "last_heartbeat": datetime.now().isoformat(),
+        "status": "running",
+        "parent_pid": {self.parent_pid}
+    }}
+    with open("{task.heartbeat_file}", "w") as f:
+        json.dump(heartbeat_data, f)
+'''
+        
+        # Progress Bar Code (falls aktiviert)
+        progress_code = """
+try:
+    from tqdm import tqdm
+    progress_available = True
+except ImportError:
+    progress_available = False
     
-    def cleanup_all_processes(self):
-        """Stoppt alle Scheduler und räumt Prozesse auf"""
-        logger.info(f"🧹 Enhanced Cleanup für Scheduler '{self.scheduler_name}'...")
-        
-        # Alle Scheduler stoppen
-        for scheduler_type in list(self.scheduler_configs.keys()):
-            if self.is_scheduler_running(scheduler_type):
-                self.stop_scheduler(scheduler_type)
-        
-        # Temporäre Dateien aufräumen
-        self.cleanup_all_files()
-        
-        logger.info(f"✅ Enhanced Cleanup abgeschlossen für '{self.scheduler_name}'")
+    class DummyTqdm:
+        def __init__(self, *args, **kwargs):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def update(self, *args):
+            pass
+        def set_description(self, desc):
+            print(f"📊 {desc}")
     
-    def cleanup_all_files(self):
-        """Räumt temporäre Scheduler-Dateien auf"""
-        try:
-            if self.temp_dir.exists():
-                for file_path in self.temp_dir.glob(f"*{self.scheduler_name}*"):
-                    try:
-                        file_path.unlink()
-                    except:
-                        pass  # Ignoriere Fehler beim Löschen
-        except Exception as e:
-            logger.warning(f"⚠️ Fehler beim Aufräumen der Dateien: {e}")
-    
-    def _create_enhanced_scheduler_script_v2(self, scheduler_type: str, **kwargs) -> str:
-        """
-        ENHANCED v2: Erstellt Script mit Heartbeat-System für automatisches Cleanup
+    tqdm = DummyTqdm
+""" if task.show_progress_bar else ""
         
-        Args:
-            scheduler_type: Typ des Schedulers
-            **kwargs: Zusätzliche Parameter
-            
-        Returns:
-            Pfad zum erstellten Enhanced Script
-        """
-        config = self.scheduler_configs[scheduler_type]
-        interval_minutes = config['interval_minutes']
-        heartbeat_interval = config.get('heartbeat_interval', 30)
-        show_progress_bar = config.get('show_progress_bar', True)
-        
-        # ENHANCED v2: Script mit Parent-Process-Monitoring
-        script_content = f'''#!/usr/bin/env python3
+        script = f'''#!/usr/bin/env python3
 """
-ENHANCED Background Scheduler v2.0: {scheduler_type}
-Mit Parent-Process-Monitoring für automatisches Cleanup
-Scheduler: {self.scheduler_name}
-ENHANCED mit Sign of Life und Auto-Exit wenn Parent stirbt
+Enhanced Background Task: {task.scheduler_type}
+Generated by Enhanced Universal Background Scheduler v2.0
 """
 
 import sys
-import time
-import json
-import threading
 import os
-import psutil
-from datetime import datetime, timedelta
-from pathlib import Path
+import signal
+import time
+from datetime import datetime
+{dependencies_import}
 
-# Aktuelles Verzeichnis zum Python-Pfad hinzufügen
-project_root = Path("{self.project_root}")
-sys.path.insert(0, str(project_root))
+# Heartbeat und Progress Setup
+{heartbeat_code}
+{progress_code}
 
-# Parent Process ID für Monitoring
-PARENT_PID = {os.getpid()}
+# Signal Handler für sauberen Exit
+def signal_handler(sig, frame):
+    print("\\n🛑 Task wird beendet...")
+    sys.exit(0)
 
-# Konfiguration
-SCHEDULER_TYPE = "{scheduler_type}"
-SCHEDULER_NAME = "{self.scheduler_name}"
-INTERVAL_MINUTES = {config['interval_minutes']}
-HEARTBEAT_INTERVAL = {heartbeat_interval}
-SHOW_PROGRESS_BAR = {show_progress_bar}
-TASK_CONFIG = {json.dumps(config.get('task_config', {}), indent=4)}
-BASE_CONFIG = {json.dumps(self.base_config, indent=4)}
-KWARGS = {json.dumps(kwargs, indent=4)}
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
-# =====================================================================
-# ENHANCED v2: PARENT PROCESS MONITORING
-# =====================================================================
+# Task-Konfiguration
+TASK_CONFIG = {json.dumps(task.task_config, indent=2)}
+BASE_CONFIG = {json.dumps(self.base_config, indent=2)}
 
-class ParentMonitor:
-    """Überwacht Parent-Process und beendet sich automatisch falls Parent stirbt"""
+print("=" * 60)
+print(f"🚀 Enhanced Background Task: {task.scheduler_type}")
+print(f"⏰ Gestartet: {{datetime.now().strftime('%H:%M:%S')}}")
+print("=" * 60)
+
+# Heartbeat starten
+update_heartbeat()
+
+try:
+    # Task-Funktion ausführen
+{task.task_function}
     
-    def __init__(self, parent_pid):
-        self.parent_pid = parent_pid
-        self.running = True
-        self.monitor_thread = None
-        self.check_interval = 5  # Prüfe alle 5 Sekunden
+    print("✅ Task erfolgreich abgeschlossen")
+    
+except Exception as e:
+    print(f"❌ Task-Fehler: {{e}}")
+    import traceback
+    traceback.print_exc()
+
+finally:
+    # Abschluss-Heartbeat
+    import json
+    heartbeat_data = {{
+        "task_type": "{task.scheduler_type}",
+        "last_heartbeat": datetime.now().isoformat(),
+        "status": "completed",
+        "parent_pid": {self.parent_pid}
+    }}
+    with open("{task.heartbeat_file}", "w") as f:
+        json.dump(heartbeat_data, f)
+    
+    print("🏁 Task-Ausführung beendet")
+'''
+        return script
+    
+    def _init_task_heartbeat(self, task: SchedulerTask):
+        """Initialisiert Heartbeat für Task"""
+        heartbeat_data = {
+            "task_type": task.scheduler_type,
+            "last_heartbeat": datetime.now().isoformat(),
+            "status": "starting",
+            "parent_pid": self.parent_pid,
+            "process_pid": task.process.pid if task.process else None
+        }
         
-    def start_monitoring(self):
+        with open(task.heartbeat_file, 'w') as f:
+            json.dump(heartbeat_data, f)
+    
+    def _check_task_heartbeat(self, task: SchedulerTask):
+        """Prüft Heartbeat eines Tasks"""
+        if not task.heartbeat_file.exists():
+            return
+        
+        try:
+            with open(task.heartbeat_file, 'r') as f:
+                heartbeat_data = json.load(f)
+            
+            last_heartbeat = datetime.fromisoformat(heartbeat_data['last_heartbeat'])
+            time_since = (datetime.now() - last_heartbeat).total_seconds()
+            
+            # Heartbeat-Timeout prüfen
+            if time_since > task.heartbeat_interval * 2:  # 2x Intervall als Timeout
+                logger.warning(f"⚠️ Task '{task.scheduler_type}' Heartbeat-Timeout ({time_since:.0f}s)")
+                
+                # Task als nicht laufend markieren
+                if task.running:
+                    task.running = False
+                    if task.scheduler_type in self.processes:
+                        del self.processes[task.scheduler_type]
+        
+        except Exception as e:
+            logger.error(f"❌ Fehler beim Prüfen des Heartbeats für '{task.scheduler_type}': {e}")
+    
+    def _cleanup_finished_processes(self):
+        """Bereinigt beendete Prozesse"""
+        finished_tasks = []
+        
+        for task_type, process in self.processes.items():
+            if process.poll() is not None:  # Prozess ist beendet
+                finished_tasks.append(task_type)
+                
+                # Task als nicht laufend markieren
+                if task_type in self.tasks:
+                    self.tasks[task_type].running = False
+                
+                # Temp-Datei löschen
+                temp_file = Path(f"temp_task_{task_type}.py")
+                if temp_file.exists():
+                    temp_file.unlink()
+                
+                logger.info(f"🏁 Task '{task_type}' beendet (Exit Code: {process.returncode})")
+        
+        # Beendete Prozesse aus Dictionary entfernen
+        for task_type in finished_tasks:
+            del self.processes[task_type]
+    
+    def _cleanup_processes(self):
+        """Beendet alle laufenden Prozesse"""
+        for task_type, process in self.processes.items():
+            try:
+                if process.poll() is None:  # Prozess läuft noch
+                    logger.info(f"⏹️ Beende Task-Prozess '{task_type}'")
+                    process.terminate()
+                    
+                    # Warte kurz auf sauberes Beenden
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        logger.warning(f"⚠️ Erzwinge Beendigung von '{task_type}'")
+                        process.kill()
+            except Exception as e:
+                logger.error(f"❌ Fehler beim Beenden von Task '{task_type}': {e}")
+        
+        self.processes.clear()
+    
+    def _start_parent_monitoring(self):
         """Startet Parent-Process-Monitoring"""
-        self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
-        self.monitor_thread.start()
-        print(f"👁️ Parent-Process-Monitoring gestartet (Parent PID: {{self.parent_pid}})")
-        
-    def stop_monitoring(self):
-        """Stoppt Monitoring"""
-        self.running = False
-        
-    def _monitor_loop(self):
-        """Hauptschleife für Parent-Monitoring"""
-        while self.running:
+        self.monitoring_active = True
+        self.monitoring_thread = threading.Thread(target=self._monitor_parent_process, daemon=True)
+        self.monitoring_thread.start()
+        logger.info("👁️ Parent-Process-Monitoring gestartet")
+    
+    def _monitor_parent_process(self):
+        """Überwacht Parent-Process und beendet Scheduler bei Parent-Exit"""
+        while self.monitoring_active:
             try:
                 # Prüfe ob Parent-Process noch existiert
                 if not psutil.pid_exists(self.parent_pid):
-                    print(f"\\n💀 Parent-Process {{self.parent_pid}} ist nicht mehr aktiv!")
-                    print("⏹️ Beende Scheduler automatisch...")
-                    os._exit(0)  # Forciere Exit
-                    
-                # Zusätzlich: Prüfe ob Parent-Process ein Python-Prozess ist
-                try:
-                    parent_proc = psutil.Process(self.parent_pid)
-                    if not any('python' in cmd.lower() for cmd in parent_proc.cmdline()):
-                        print(f"\\n⚠️ Parent-Process {{self.parent_pid}} ist kein Python-Prozess mehr!")
-                        print("⏹️ Beende Scheduler automatisch...")
-                        os._exit(0)
-                except psutil.NoSuchProcess:
-                    print(f"\\n💀 Parent-Process {{self.parent_pid}} nicht gefunden!")
-                    print("⏹️ Beende Scheduler automatisch...")
-                    os._exit(0)
-                    
-                time.sleep(self.check_interval)
+                    logger.warning(f"⚠️ Parent-Process (PID: {self.parent_pid}) nicht mehr verfügbar")
+                    logger.info("🛑 Stoppe Scheduler aufgrund Parent-Exit")
+                    self.stop_scheduler(cleanup=True)
+                    break
+                
+                time.sleep(30)  # Prüfe alle 30 Sekunden
                 
             except Exception as e:
-                print(f"\\n❌ Fehler beim Parent-Monitoring: {{e}}")
-                time.sleep(self.check_interval)
-
-# =====================================================================
-# ENHANCED v2: SIGN OF LIFE SYSTEM
-# =====================================================================
-
-class EnhancedSignOfLife:
-    """Enhanced Sign of Life mit Ticker und Status-Anzeigen"""
+                logger.error(f"❌ Parent-Monitoring Fehler: {e}")
+                time.sleep(60)
     
-    def __init__(self, scheduler_type, heartbeat_interval=30):
-        self.scheduler_type = scheduler_type
-        self.heartbeat_interval = heartbeat_interval
-        self.running = False
-        self.ticker_thread = None
-        self.last_heartbeat = datetime.now()
-        
-        # Ticker-Zeichen für Animation
-        self.ticker_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-        self.ticker_index = 0
-        
-    def start_ticker(self):
-        """Startet Sign of Life Ticker"""
-        self.running = True
-        self.ticker_thread = threading.Thread(target=self._ticker_loop, daemon=True)
-        self.ticker_thread.start()
-        
-    def stop_ticker(self):
-        """Stoppt Ticker"""
-        self.running = False
-        
-    def _ticker_loop(self):
-        """Hauptschleife für Sign of Life Ticker"""
-        while self.running:
-            try:
-                # Ticker-Animation
-                ticker = self.ticker_chars[self.ticker_index % len(self.ticker_chars)]
-                self.ticker_index += 1
-                
-                # Status-Info
-                now = datetime.now()
-                uptime = now - self.last_heartbeat
-                uptime_str = f"{{int(uptime.total_seconds())}}s"
-                
-                # Parent-Status prüfen
-                parent_status = "✅" if psutil.pid_exists(PARENT_PID) else "💀"
-                
-                # Status-Zeile ausgeben (überschreibt vorherige Zeile)
-                status_line = f"\\r{{ticker}} {{self.scheduler_type}} | Uptime: {{uptime_str}} | Parent: {{parent_status}} | {{now.strftime('%H:%M:%S')}}"
-                print(status_line, end='', flush=True)
-                
-                time.sleep(1)  # 1 Sekunde Ticker-Intervall
-                
-            except Exception as e:
-                time.sleep(1)
-
-# =====================================================================
-# ENHANCED SLEEP FUNCTION
-# =====================================================================
-
-def enhanced_sleep_with_monitoring(seconds):
-    """Sleep-Funktion mit Parent-Monitoring"""
-    sleep_interval = 5  # Prüfe alle 5 Sekunden
-    total_slept = 0
-    
-    while total_slept < seconds:
-        # Prüfe Parent-Process
-        if not psutil.pid_exists(PARENT_PID):
-            print(f"\\n💀 Parent-Process {{PARENT_PID}} gestorben während Sleep!")
-            os._exit(0)
-        
-        # Sleep in kleinen Intervallen
-        current_sleep = min(sleep_interval, seconds - total_slept)
-        time.sleep(current_sleep)
-        total_slept += current_sleep
-
-# =====================================================================
-# TASK EXECUTION
-# =====================================================================
-
-def execute_enhanced_task():
-    """Führt die Enhanced Task aus"""
-    try:
-        # Task-Function ausführen
-{self._format_task_function_enhanced(config['task_function'])}
-        
-        return True
-        
-    except Exception as e:
-        print(f"\\n❌ Fehler bei Task-Ausführung: {{e}}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-# =====================================================================
-# ENHANCED MAIN LOOP
-# =====================================================================
-
-print("🚀 ENHANCED BACKGROUND SCHEDULER v2.0")
-print(f"📊 Scheduler: {{SCHEDULER_NAME}}")
-print(f"🎯 Task: {{SCHEDULER_TYPE}}")
-print(f"⏰ Intervall: {{INTERVAL_MINUTES}} Minuten")
-print(f"💓 Heartbeat: {{HEARTBEAT_INTERVAL}} Sekunden")
-print(f"👁️ Parent-Monitoring: AKTIVIERT")
-print("=" * 60)
-
-# Dependencies importieren
-{self._generate_import_statements_enhanced(config.get('dependencies', []))}
-
-# Enhanced Parent-Monitor starten
-parent_monitor = ParentMonitor(PARENT_PID)
-parent_monitor.start_monitoring()
-
-# Enhanced Sign of Life starten
-enhanced_sign_of_life = EnhancedSignOfLife(SCHEDULER_TYPE, HEARTBEAT_INTERVAL)
-enhanced_sign_of_life.start_ticker()
-
-# Erste Ausführung
-print(f"\\n🔄 Erste Ausführung von {{SCHEDULER_TYPE}}...")
-execute_enhanced_task()
-
-# Enhanced Scheduler Loop
-cycle = 1
-try:
-    while True:
-        # Parent-Process-Check
-        if not psutil.pid_exists(PARENT_PID):
-            print(f"\\n💀 Parent-Process {{PARENT_PID}} ist gestorben!")
-            break
-        
-        # Sign of Life temporär stoppen für Task-Ausführung
-        enhanced_sign_of_life.stop_ticker()
-        
-        print(f"\\n🔄 === ENHANCED ZYKLUS {{cycle}} - {{datetime.now().strftime('%H:%M:%S')}} ===")
-        
-        success = execute_enhanced_task()
-        
-        if success:
-            print(f"✅ Enhanced Task erfolgreich ausgeführt")
-        else:
-            print(f"❌ Enhanced Task fehlgeschlagen")
-        
-        print(f"⏳ Nächste Ausführung in {{INTERVAL_MINUTES}} Minuten...")
-        print(f"👁️ Parent-Process {{PARENT_PID}} Status: {{'AKTIV' if psutil.pid_exists(PARENT_PID) else 'TOT'}}")
-        
-        # Enhanced Sleep mit Parent-Monitoring
-        enhanced_sleep_with_monitoring(INTERVAL_MINUTES * 60)
-        
-        # Sign of Life neu starten
-        enhanced_sign_of_life.start_ticker()
-        
-        cycle += 1
-
-except KeyboardInterrupt:
-    print("\\n⏹️ Enhanced Scheduler gestoppt durch Benutzer")
-except ImportError as e:
-    print(f"❌ Import-Fehler: {{e}}")
-except Exception as e:
-    print(f"❌ Unerwarteter Fehler: {{e}}")
-    import traceback
-    traceback.print_exc()
-finally:
-    parent_monitor.stop_monitoring()
-    enhanced_sign_of_life.stop_ticker()
-    print("\\n👋 Enhanced Background Scheduler v2.0 beendet")
-'''
-        
-        # Script-Datei erstellen
-        script_filename = f"enhanced_scheduler_{self.scheduler_name}_{scheduler_type}_v2.py"
-        script_path = self.temp_dir / script_filename
-        
-        with open(script_path, 'w', encoding='utf-8') as f:
-            f.write(script_content)
-        
-        return str(script_path)
-    
-    def _generate_import_statements_enhanced(self, dependencies: List[str]) -> str:
-        """Enhanced Import-Statements mit besserer Fehlerbehandlung"""
-        if not dependencies:
-            return "    # Keine zusätzlichen Dependencies"
-        
-        imports = []
-        for dep in dependencies:
-            if '.' in dep:
-                module, submodule = dep.rsplit('.', 1)
-                imports.append(f"""    try:
-        from {module} import {submodule}
-        print(f"✅ Enhanced Import: {submodule} from {module}")
-    except ImportError as e:
-        print(f"❌ Enhanced Import Failed: {submodule} from {module}: {{e}}")
-        raise""")
-            else:
-                imports.append(f"""    try:
-        import {dep}
-        print(f"✅ Enhanced Import: {dep}")
-    except ImportError as e:
-        print(f"❌ Enhanced Import Failed: {dep}: {{e}}")
-        raise""")
-        
-        return '\n'.join(imports)
-    
-    def _format_task_function_enhanced(self, task_function: str) -> str:
-        """Enhanced Task-Funktion Formatierung"""
-        task_function = task_function.strip()
-        lines = task_function.split('\n')
-        indented_lines = []
-        
-        for line in lines:
-            if line.strip():
-                indented_lines.append('            ' + line.lstrip())
-            else:
-                indented_lines.append('')
-        
-        return '\n'.join(indented_lines)
-    
-    def _start_enhanced_terminal_process(self, script_path: str, scheduler_type: str) -> Optional[subprocess.Popen]:
+    def get_process_status(self) -> Dict:
         """
-        ENHANCED: Startet Terminal mit verbessertem Process Management
+        Gibt detaillierten Status aller Prozesse zurück
         
-        Args:
-            script_path: Pfad zum Python-Script
-            scheduler_type: Typ des Schedulers
-            
         Returns:
-            Subprocess.Popen Objekt oder None
+            Dict mit Process-Status-Informationen
         """
-        terminal_title = f"🔄 {self.scheduler_name}_{scheduler_type} - ENHANCED v2.0"
+        status = {
+            'scheduler_running': self.running,
+            'scheduler_name': self.scheduler_name,
+            'total_tasks': len(self.tasks),
+            'running_processes': len(self.processes),
+            'processes': {},
+            'heartbeats': {}
+        }
         
+        # Process-Status
+        for task_type, process in self.processes.items():
+            try:
+                process_info = {
+                    'pid': process.pid,
+                    'running': process.poll() is None,
+                    'command': ' '.join(process.args) if hasattr(process, 'args') else 'N/A'
+                }
+                status['processes'][task_type] = process_info
+            except Exception as e:
+                status['processes'][task_type] = {'error': str(e)}
+        
+        # Heartbeat-Status
+        for task_type, task in self.tasks.items():
+            if task.heartbeat_file.exists():
+                try:
+                    with open(task.heartbeat_file, 'r') as f:
+                        heartbeat_data = json.load(f)
+                    status['heartbeats'][task_type] = heartbeat_data
+                except Exception as e:
+                    status['heartbeats'][task_type] = {'error': str(e)}
+        
+        return status
+    
+    def show_process_management_terminal(self):
+        """Zeigt Process Management Terminal"""
         try:
-            if os.name == 'nt':  # Windows
-                batch_content = f'''@echo off
-title {terminal_title}
-color 0A
-echo 🚀 ENHANCED Background Scheduler v2.0
-echo ================================================================
-echo 📊 Scheduler: {self.scheduler_name}
-echo 🎯 Task: {scheduler_type}
-echo 👁️ Parent-Monitoring: AKTIVIERT
-echo 💓 Sign of Life: AKTIVIERT
-echo ⏰ Zeit: %date% %time%
-echo ================================================================
-echo 💡 Automatisches Cleanup wenn Hauptprogramm beendet wird
-echo 💡 Parent-Process-Monitoring für saubere Beendigung
-echo.
-cd /d "{self.project_root}"
-python "{script_path}"
-echo.
-echo 💡 Enhanced Background Scheduler beendet
-pause
-'''
-                
-                batch_filename = f"start_{self.scheduler_name}_{scheduler_type}_enhanced.bat"
-                batch_path = self.temp_dir / batch_filename
-                
-                with open(batch_path, 'w', encoding='utf-8') as f:
-                    f.write(batch_content)
-                
-                # Neues Terminal-Fenster starten
-                process = subprocess.Popen(
-                    ['cmd', '/c', 'start', '/wait', str(batch_path)],
-                    cwd=str(self.project_root),
-                    creationflags=subprocess.CREATE_NEW_CONSOLE
-                )
-                
-            else:  # Unix/Linux/macOS
-                # Unix-Terminal-Script
-                shell_content = f'''#!/bin/bash
-echo "🚀 ENHANCED Background Scheduler v2.0"
-echo "================================================================"
-echo "📊 Scheduler: {self.scheduler_name}"
-echo "🎯 Task: {scheduler_type}"
-echo "👁️ Parent-Monitoring: AKTIVIERT"
-echo "💓 Sign of Life: AKTIVIERT"
-echo "⏰ Zeit: $(date)"
-echo "================================================================"
-echo "💡 Automatisches Cleanup wenn Hauptprogramm beendet wird"
-echo "💡 Parent-Process-Monitoring für saubere Beendigung"
-echo
-cd "{self.project_root}"
-python3 "{script_path}"
-echo
-echo "💡 Enhanced Background Scheduler beendet"
-read -p "Drücke Enter zum Schließen..."
-'''
-                
-                shell_filename = f"start_{self.scheduler_name}_{scheduler_type}_enhanced.sh"
-                shell_path = self.temp_dir / shell_filename
-                
-                with open(shell_path, 'w', encoding='utf-8') as f:
-                    f.write(shell_content)
-                
-                # Ausführbar machen
-                os.chmod(shell_path, 0o755)
-                
-                # Terminal starten (verschiedene Optionen je nach System)
-                terminal_commands = [
-                    ['gnome-terminal', '--title', terminal_title, '--', 'bash', str(shell_path)],
-                    ['xterm', '-title', terminal_title, '-e', f'bash {shell_path}'],
-                    ['konsole', '--title', terminal_title, '-e', f'bash {shell_path}'],
-                    ['xfce4-terminal', '--title', terminal_title, '-e', f'bash {shell_path}'],
-                    ['mate-terminal', '--title', terminal_title, '-e', f'bash {shell_path}'],
-                    ['terminal', '--title', terminal_title, '-e', f'bash {shell_path}'],  # macOS
-                ]
-                
-                process = None
-                for cmd in terminal_commands:
-                    try:
-                        process = subprocess.Popen(
-                            cmd,
-                            cwd=str(self.project_root),
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL
-                        )
-                        break
-                    except (FileNotFoundError, subprocess.SubprocessError):
-                        continue
-                
-                if process is None:
-                    logger.warning("⚠️ Kein geeignetes Terminal gefunden, starte im Hintergrund")
-                    process = subprocess.Popen(
-                        ['python3', str(script_path)],
-                        cwd=str(self.project_root)
-                    )
+            print("\n" + "=" * 70)
+            print("🖥️  ENHANCED BACKGROUND SCHEDULER - PROCESS MANAGEMENT TERMINAL")
+            print("=" * 70)
             
-            # Kurz warten um sicherzustellen dass Prozess gestartet ist
-            time.sleep(1)
+            status = self.get_process_status()
             
-            return process
+            print(f"📊 Scheduler: {status['scheduler_name']} ({'🟢 AKTIV' if status['scheduler_running'] else '🔴 INAKTIV'})")
+            print(f"📋 Tasks: {status['total_tasks']} registriert, {status['running_processes']} laufend")
+            
+            print("\n🔄 LAUFENDE PROZESSE:")
+            print("-" * 50)
+            
+            if status['processes']:
+                for task_type, process_info in status['processes'].items():
+                    if 'error' in process_info:
+                        print(f"❌ {task_type}: {process_info['error']}")
+                    else:
+                        status_icon = "🟢" if process_info['running'] else "🔴"
+                        print(f"{status_icon} {task_type} (PID: {process_info['pid']})")
+            else:
+                print("   Keine aktiven Prozesse")
+            
+            print("\n💓 HEARTBEAT-STATUS:")
+            print("-" * 50)
+            
+            if status['heartbeats']:
+                for task_type, heartbeat in status['heartbeats'].items():
+                    if 'error' in heartbeat:
+                        print(f"❌ {task_type}: {heartbeat['error']}")
+                    else:
+                        last_beat = heartbeat.get('last_heartbeat', 'N/A')
+                        task_status = heartbeat.get('status', 'unknown')
+                        print(f"💓 {task_type}: {task_status} (letzte Aktivität: {last_beat})")
+            else:
+                print("   Keine Heartbeat-Daten verfügbar")
+            
+            print("\n" + "=" * 70)
             
         except Exception as e:
-            logger.error(f"❌ Fehler beim Starten des Enhanced Terminal-Prozesses: {e}")
-            return None
+            print(f"❌ Fehler im Process Management Terminal: {e}")
 
 # =====================================================================
-# ORIGINAL BACKGROUND SCHEDULER (für Kompatibilität)
-# =====================================================================
-
-class BackgroundScheduler(EnhancedBackgroundScheduler):
-    """
-    Kompatibilitäts-Wrapper für ursprüngliche BackgroundScheduler API
-    Leitet alle Aufrufe an EnhancedBackgroundScheduler weiter
-    """
-    
-    def __init__(self, scheduler_name: str, base_config: Dict = None):
-        """Initialisiert als Enhanced Version"""
-        super().__init__(scheduler_name, base_config)
-        logger.info(f"✅ BackgroundScheduler '{scheduler_name}' initialisiert (Enhanced Mode)")
-
-# =====================================================================
-# ENHANCED SCHEDULER TASKS
+# ENHANCED SCHEDULER TASKS v2.0
 # =====================================================================
 
 class EnhancedSchedulerTasks:
-    """
-    Enhanced Task-Definitionen für alle Background-Operationen
-    ALLE URSPRÜNGLICHEN TASKS + Enhanced Features
-    """
+    """Enhanced Task-Definitionen für Background Scheduler v2.0"""
     
     @staticmethod
     def enhanced_price_tracking_task():
-        """Enhanced Task für Preis-Tracking"""
+        """Enhanced Task für Price Tracking mit Sign of Life"""
         return '''
-# Enhanced Price Tracking Task
-print("💰 Enhanced Preis-Tracking Task gestartet...")
-
-from price_tracker import create_price_tracker
-from steam_wishlist_manager import load_api_key_from_env
-
-api_key = load_api_key_from_env()
-tracker = create_price_tracker(api_key=api_key, enable_charts=False)
-
-print("🔄 Starte Enhanced Batch-Verarbeitung aller Apps...")
+# Enhanced Price Tracking Task v2.0
+print("💰 Enhanced Price Tracking gestartet...")
 print(f"⏰ Start: {datetime.now().strftime('%H:%M:%S')}")
 
-# Nur Apps verarbeiten die älter als 6 Stunden sind
-result = tracker.process_all_pending_apps_optimized(hours_threshold=6)
+# Heartbeat alle 30 Sekunden
+import threading
 
-print(f"✅ Enhanced Preis-Update abgeschlossen:")
-print(f"   📊 {result['total_successful']}/{result['total_apps']} Apps aktualisiert")
-print(f"   ⏱️ Dauer: {result['total_duration']:.1f}s")
-print(f"   ⚡ Geschwindigkeit: {result.get('apps_per_second', 0):.1f} Apps/s")
-print(f"🏁 Enhanced Task abgeschlossen um {datetime.now().strftime('%H:%M:%S')}")
+def heartbeat_timer():
+    while True:
+        update_heartbeat()
+        time.sleep(30)
+
+heartbeat_thread = threading.Thread(target=heartbeat_timer, daemon=True)
+heartbeat_thread.start()
+
+try:
+    # Price Tracker laden
+    from price_tracker import create_price_tracker
+    from steam_wishlist_manager import load_api_key_from_env
+    
+    api_key = load_api_key_from_env()
+    tracker = create_price_tracker(api_key=api_key)
+    
+    # Batch-Update durchführen
+    print("🔄 Führe optimiertes Batch-Update durch...")
+    result = tracker.process_all_pending_apps_optimized(hours_threshold=6)
+    
+    print(f"✅ Price Tracking abgeschlossen:")
+    print(f"   📊 {result['total_successful']}/{result['total_apps']} Apps erfolgreich")
+    print(f"   ⏱️ Dauer: {result['total_duration']:.1f}s")
+    print(f"   ⚡ {result['apps_per_second']:.1f} Apps/s")
+    
+    if result['errors']:
+        print(f"   ⚠️ {len(result['errors'])} Fehler aufgetreten")
+
+except Exception as e:
+    print(f"❌ Enhanced Price Tracking Fehler: {e}")
+    import traceback
+    traceback.print_exc()
+
+print(f"🏁 Enhanced Price Tracking abgeschlossen um {datetime.now().strftime('%H:%M:%S')}")
 '''
     
     @staticmethod
     def enhanced_name_update_task():
         """Enhanced Task für Namen-Updates"""
         return '''
-# Enhanced Name Update Task
-print("🔤 Enhanced Namen-Update Task gestartet...")
+# Enhanced Name Update Task v2.0
+print("📝 Enhanced Name Update gestartet...")
+print(f"⏰ Start: {datetime.now().strftime('%H:%M:%S')}")
 
-from price_tracker import create_price_tracker
-from steam_wishlist_manager import load_api_key_from_env
+# Heartbeat alle 20 Sekunden
+import threading
 
-api_key = load_api_key_from_env()
-if not api_key:
-    print("❌ Kein Steam API Key verfügbar")
-    return
+def heartbeat_timer():
+    while True:
+        update_heartbeat()
+        time.sleep(20)
 
-tracker = create_price_tracker(api_key=api_key, enable_charts=False)
+heartbeat_thread = threading.Thread(target=heartbeat_timer, daemon=True)
+heartbeat_thread.start()
 
-print("🔄 Suche Apps mit generischen Namen...")
-generic_apps = tracker.get_apps_with_generic_names()
-
-if generic_apps:
-    app_ids = [app['steam_app_id'] for app in generic_apps[:50]]  # Max 50 pro Durchlauf
-    print(f"🔄 Aktualisiere Namen für {len(app_ids)} Apps...")
+try:
+    # Price Tracker laden
+    from price_tracker import create_price_tracker
+    from steam_wishlist_manager import load_api_key_from_env
     
-    result = tracker.update_app_names_from_steam(app_ids, api_key)
+    api_key = load_api_key_from_env()
+    tracker = create_price_tracker(api_key=api_key)
     
-    print(f"✅ Enhanced Namen-Update abgeschlossen:")
-    print(f"   🔤 {result['updated']}/{result['total']} Namen aktualisiert")
-    print(f"   ⏭️ {result['skipped']} übersprungen")
-    print(f"   ❌ {result['failed']} fehlgeschlagen")
-else:
-    print("✅ Keine Apps mit generischen Namen gefunden")
+    # Namen-Updates durchführen
+    print("🔄 Suche Apps mit generischen Namen...")
+    apps_to_update = tracker.get_apps_with_generic_names(limit=20)
+    
+    if apps_to_update:
+        print(f"📝 Aktualisiere Namen für {len(apps_to_update)} Apps...")
+        updated_count = 0
+        
+        for app_id, current_name in apps_to_update:
+            try:
+                new_name = tracker.update_app_name(app_id)
+                if new_name and new_name != current_name:
+                    print(f"✅ {app_id}: '{current_name}' → '{new_name}'")
+                    updated_count += 1
+                time.sleep(1)  # Rate Limiting
+            except Exception as e:
+                print(f"❌ Fehler bei {app_id}: {e}")
+        
+        print(f"✅ {updated_count} Namen erfolgreich aktualisiert")
+    else:
+        print("✅ Alle App-Namen sind bereits aktuell")
 
-print(f"🏁 Enhanced Namen-Update abgeschlossen um {datetime.now().strftime('%H:%M:%S')}")
+except Exception as e:
+    print(f"❌ Enhanced Name Update Fehler: {e}")
+    import traceback
+    traceback.print_exc()
+
+print(f"🏁 Enhanced Name Update abgeschlossen um {datetime.now().strftime('%H:%M:%S')}")
 '''
     
     @staticmethod
     def enhanced_charts_update_task():
         """Enhanced Task für Charts-Updates"""
         return '''
-# Enhanced Charts Update Task
-print("📊 Enhanced Charts-Update Task gestartet...")
-
-from price_tracker import create_price_tracker
-from steam_wishlist_manager import load_api_key_from_env
-
-api_key = load_api_key_from_env()
-if not api_key:
-    print("❌ Kein Steam API Key verfügbar")
-    return
-
-tracker = create_price_tracker(api_key=api_key, enable_charts=True)
-
-if not tracker.charts_enabled:
-    print("❌ Charts nicht verfügbar")
-    return
-
-print("🔄 Starte Enhanced Steam Charts Update...")
+# Enhanced Charts Update Task v2.0
+print("📊 Enhanced Charts Update gestartet...")
 print(f"⏰ Start: {datetime.now().strftime('%H:%M:%S')}")
 
-result = tracker.charts_manager.update_all_charts()
+# Heartbeat alle 45 Sekunden
+import threading
 
-if result.get('success'):
-    print(f"✅ Enhanced Charts-Update abgeschlossen:")
-    print(f"   📊 {result.get('updated_charts', 0)} Charts verarbeitet")
-    print(f"   🎮 {result.get('new_games', 0)} neue Spiele gefunden")
-    print(f"   ⏱️ Dauer: {result.get('duration', 0):.1f}s")
-else:
-    print(f"❌ Enhanced Charts-Update fehlgeschlagen: {result.get('error')}")
+def heartbeat_timer():
+    while True:
+        update_heartbeat()
+        time.sleep(45)
 
-print(f"🏁 Enhanced Charts-Update abgeschlossen um {datetime.now().strftime('%H:%M:%S')}")
-'''
+heartbeat_thread = threading.Thread(target=heartbeat_timer, daemon=True)
+heartbeat_thread.start()
+
+try:
+    # Price Tracker mit Charts laden
+    from price_tracker import create_price_tracker
+    from steam_wishlist_manager import load_api_key_from_env
     
-    @staticmethod
-    def enhanced_charts_price_update_task():
-        """Enhanced Task für Charts-Preise"""
-        return '''
-# Enhanced Charts Price Update Task
-print("💰 Enhanced Charts-Preise Task gestartet...")
+    api_key = load_api_key_from_env()
+    tracker = create_price_tracker(api_key=api_key, enable_charts=True)
+    
+    if not tracker.charts_enabled:
+        print("❌ Charts-Manager nicht verfügbar")
+        exit(1)
+    
+    # Charts aktualisieren
+    print("📊 Aktualisiere Steam Charts...")
+    result = tracker.update_charts_now()
+    
+    if result.get('success', True):
+        print("✅ Charts-Update abgeschlossen:")
+        print(f"   📊 {result.get('total_games_found', 0)} Spiele gefunden")
+        print(f"   ➕ {result.get('new_games_added', 0)} neue Spiele")
+        print(f"   🔄 {result.get('existing_games_updated', 0)} aktualisiert")
+        
+        if result.get('errors'):
+            print(f"   ⚠️ {len(result['errors'])} Fehler aufgetreten")
+    else:
+        print(f"❌ Charts-Update fehlgeschlagen: {result.get('error', 'Unbekannter Fehler')}")
 
-from price_tracker import create_price_tracker
-from steam_wishlist_manager import load_api_key_from_env
+except Exception as e:
+    print(f"❌ Enhanced Charts Update Fehler: {e}")
+    import traceback
+    traceback.print_exc()
 
-api_key = load_api_key_from_env()
-tracker = create_price_tracker(api_key=api_key, enable_charts=True)
-
-if not tracker.charts_enabled:
-    print("❌ Charts nicht verfügbar")
-    return
-
-print("🔄 Starte Enhanced Charts-Preise Update...")
-print(f"⏰ Start: {datetime.now().strftime('%H:%M:%S')}")
-
-result = tracker.charts_manager.update_charts_prices()
-
-if result.get('success'):
-    print(f"✅ Enhanced Charts-Preise Update abgeschlossen:")
-    print(f"   💰 {result.get('updated_prices', 0)} Spiele-Preise aktualisiert")
-    print(f"   ⏱️ Dauer: {result.get('duration', 0):.1f}s")
-else:
-    print(f"❌ Enhanced Charts-Preise Update fehlgeschlagen: {result.get('error')}")
-
-print(f"🏁 Enhanced Charts-Preise Update abgeschlossen um {datetime.now().strftime('%H:%M:%S')}")
+print(f"🏁 Enhanced Charts Update abgeschlossen um {datetime.now().strftime('%H:%M:%S')}")
 '''
     
     @staticmethod
     def enhanced_charts_cleanup_task():
         """Enhanced Task für Charts-Cleanup"""
         return '''
-# Enhanced Charts Cleanup Task
-print("🧹 Enhanced Charts-Cleanup Task gestartet...")
-
-from price_tracker import create_price_tracker
-from steam_wishlist_manager import load_api_key_from_env
-
-api_key = load_api_key_from_env()
-tracker = create_price_tracker(api_key=api_key, enable_charts=True)
-
-if not tracker.charts_enabled:
-    print("❌ Charts nicht verfügbar")
-    return
-
-print("🧹 Starte umfassendes Enhanced Charts-Cleanup...")
+# Enhanced Charts Cleanup Task v2.0
+print("🧹 Enhanced Charts Cleanup gestartet...")
 print(f"⏰ Start: {datetime.now().strftime('%H:%M:%S')}")
 
-total_cleaned = 0
-
-# Charts-Spiele Cleanup
-if hasattr(tracker, 'charts_manager') and tracker.charts_manager:
+try:
+    # Price Tracker mit Charts laden
+    from price_tracker import create_price_tracker
+    from steam_wishlist_manager import load_api_key_from_env
+    
+    api_key = load_api_key_from_env()
+    tracker = create_price_tracker(api_key=api_key, enable_charts=True)
+    
+    if not tracker.charts_enabled:
+        print("❌ Charts-Manager nicht verfügbar")
+        exit(1)
+    
+    total_cleaned = 0
+    
+    # Charts-Spiele Cleanup
     print("🗑️ Bereinige alte Charts-Spiele (>30 Tage)...")
     removed = tracker.charts_manager.cleanup_old_chart_games(days_threshold=30)
     
@@ -1088,7 +731,7 @@ if hasattr(tracker, 'charts_manager') and tracker.charts_manager:
     else:
         print("✅ Keine alten Charts-Spiele zum Entfernen")
     
-    # Zusätzlich: Alte Preis-Snapshots bereinigen
+    # Alte Preis-Snapshots bereinigen
     print("🗑️ Bereinige alte Preis-Snapshots (>90 Tage)...")
     if hasattr(tracker.db_manager, 'cleanup_old_prices'):
         old_snapshots = tracker.db_manager.cleanup_old_prices(days=90)
@@ -1104,27 +747,29 @@ if hasattr(tracker, 'charts_manager') and tracker.charts_manager:
         tracker.db_manager.vacuum_database()
         print("✅ Datenbank optimiert")
     
-else:
-    print("❌ Charts-Manager nicht verfügbar")
+    if total_cleaned > 0:
+        print(f"🎉 Enhanced Cleanup abgeschlossen: {total_cleaned} Einträge bereinigt")
+    else:
+        print("✅ Enhanced Cleanup abgeschlossen - alles bereits sauber")
 
-if total_cleaned > 0:
-    print(f"🎉 Enhanced Cleanup abgeschlossen: {total_cleaned} Einträge bereinigt")
-else:
-    print("✅ Enhanced Cleanup abgeschlossen - alles bereits sauber")
+except Exception as e:
+    print(f"❌ Enhanced Charts Cleanup Fehler: {e}")
+    import traceback
+    traceback.print_exc()
 
-print(f"🏁 Enhanced Charts-Cleanup abgeschlossen um {datetime.now().strftime('%H:%M:%S')}")
+print(f"🏁 Enhanced Charts Cleanup abgeschlossen um {datetime.now().strftime('%H:%M:%S')}")
 '''
 
 # =====================================================================
-# ENHANCED CONVENIENCE FUNCTIONS
+# CONVENIENCE FUNCTIONS
 # =====================================================================
 
 def create_enhanced_price_tracker_scheduler() -> EnhancedBackgroundScheduler:
     """
-    Erstellt ENHANCED BackgroundScheduler für Price Tracker mit Sign of Life Features
+    Erstellt Enhanced BackgroundScheduler für Price Tracker
     
     Returns:
-        Konfigurierter EnhancedBackgroundScheduler mit Enhanced Features
+        Konfigurierter EnhancedBackgroundScheduler
     """
     scheduler = EnhancedBackgroundScheduler(
         scheduler_name="PriceTracker",
@@ -1181,15 +826,6 @@ def create_enhanced_charts_scheduler() -> EnhancedBackgroundScheduler:
     )
     
     scheduler.register_scheduler(
-        scheduler_type="charts_prices",
-        task_function=EnhancedSchedulerTasks.enhanced_charts_price_update_task(),
-        interval_minutes=240,
-        dependencies=["price_tracker", "steam_wishlist_manager"],
-        heartbeat_interval=30,
-        show_progress_bar=True
-    )
-    
-    scheduler.register_scheduler(
         scheduler_type="charts_cleanup",
         task_function=EnhancedSchedulerTasks.enhanced_charts_cleanup_task(),
         interval_minutes=1440,
@@ -1213,201 +849,72 @@ def create_charts_scheduler():
 # ENHANCED PROCESS MANAGEMENT TERMINAL
 # =====================================================================
 
-def create_process_management_terminal() -> bool:
-    """
-    Startet Enhanced Process Management Terminal für zentrale Kontrolle
-    
-    Returns:
-        True wenn erfolgreich gestartet
-    """
-    try:
-        terminal_script = '''#!/usr/bin/env python3
-"""
-Enhanced Process Management Terminal v2.0
-Zentrale Kontrolle für alle Background-Scheduler
-"""
-
-import os
-import sys
-import time
-import psutil
-from datetime import datetime
-from pathlib import Path
-
-# Project root hinzufügen
-project_root = Path.cwd()
-sys.path.insert(0, str(project_root))
-
-def show_process_status():
-    """Zeigt aktuellen Process-Status"""
-    try:
-        from background_scheduler import _global_process_manager
-        
-        status = _global_process_manager.get_process_status()
-        
-        print("\\n📊 ENHANCED PROCESS MANAGEMENT TERMINAL v2.0")
-        print("=" * 60)
-        print(f"⏰ Zeit: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"🔧 Getrackte Prozesse: {status['total_tracked']}")
-        print(f"✅ Laufende Prozesse: {status['running_processes']}")
-        print(f"💀 Tote Prozesse: {status['dead_processes']}")
-        
-        if status['processes']:
-            print("\\n📋 AKTIVE ENHANCED PROZESSE:")
-            for scheduler_id, proc_info in status['processes'].items():
-                status_icon = "✅" if proc_info['is_running'] else "💀"
-                print(f"   {status_icon} {scheduler_id}")
-                print(f"      PID: {proc_info['pid']}")
-                print(f"      Typ: {proc_info['scheduler_type']}")
-                print(f"      Gestartet: {proc_info['started_at'][:19]}")
-                print(f"      Parent-Monitoring: {'✅' if proc_info.get('parent_monitoring') else '❌'}")
-                print()
-        else:
-            print("\\n💡 Keine aktiven Enhanced Prozesse")
-            
-        return status
-        
-    except Exception as e:
-        print(f"❌ Fehler beim Laden des Process-Status: {e}")
-        return None
-
 def main():
-    """Hauptschleife des Process Management Terminals"""
-    print("🚀 ENHANCED PROCESS MANAGEMENT TERMINAL")
-    print("💡 Drücke Ctrl+C zum Beenden")
-    
+    """Process Management Terminal für Enhanced Background Scheduler"""
     try:
+        print("🖥️  ENHANCED BACKGROUND SCHEDULER - PROCESS MANAGEMENT TERMINAL")
+        print("=" * 70)
+        print("Verfügbare Scheduler:")
+        print("1. 🚀 Price Tracker Scheduler erstellen und starten")
+        print("2. 📊 Charts Scheduler erstellen und starten") 
+        print("3. 📋 Scheduler-Status anzeigen")
+        print("4. ⏹️ Alle Scheduler stoppen")
+        print("0. ❌ Beenden")
+        
+        schedulers = {}
+        
         while True:
-            # Status anzeigen
-            status = show_process_status()
-            
-            if status and status['processes']:
-                print("\\n🔧 VERFÜGBARE AKTIONEN:")
-                print("1. Status aktualisieren")
-                print("2. Prozess beenden")
-                print("3. Alle Prozesse beenden")
-                print("4. System-Ressourcen anzeigen")
-                print("5. Beenden")
+            try:
+                choice = input("\nWählen Sie eine Option: ").strip()
                 
-                # Automatische Aktualisierung alle 10 Sekunden
-                print("\\n⏳ Automatische Aktualisierung in 10 Sekunden...")
-                time.sleep(10)
+                if choice == "1":
+                    if "price_tracker" not in schedulers:
+                        schedulers["price_tracker"] = create_enhanced_price_tracker_scheduler()
+                        schedulers["price_tracker"].start_scheduler()
+                        print("✅ Price Tracker Scheduler gestartet")
+                    else:
+                        print("⚠️ Price Tracker Scheduler läuft bereits")
                 
-                # Clear screen
-                os.system('cls' if os.name == 'nt' else 'clear')
-            else:
-                print("\\n💤 Keine aktiven Prozesse - warte 5 Sekunden...")
-                time.sleep(5)
-                os.system('cls' if os.name == 'nt' else 'clear')
+                elif choice == "2":
+                    if "charts" not in schedulers:
+                        schedulers["charts"] = create_enhanced_charts_scheduler()
+                        schedulers["charts"].start_scheduler()
+                        print("✅ Charts Scheduler gestartet")
+                    else:
+                        print("⚠️ Charts Scheduler läuft bereits")
                 
-    except KeyboardInterrupt:
-        print("\\n👋 Enhanced Process Management Terminal beendet")
+                elif choice == "3":
+                    for name, scheduler in schedulers.items():
+                        print(f"\n📊 {name.upper()} SCHEDULER:")
+                        scheduler.show_process_management_terminal()
+                
+                elif choice == "4":
+                    for name, scheduler in schedulers.items():
+                        print(f"⏹️ Stoppe {name} Scheduler...")
+                        scheduler.stop_scheduler()
+                    schedulers.clear()
+                    print("✅ Alle Scheduler gestoppt")
+                
+                elif choice == "0":
+                    # Cleanup
+                    for scheduler in schedulers.values():
+                        scheduler.stop_scheduler()
+                    print("👋 Auf Wiedersehen!")
+                    break
+                
+                else:
+                    print("❌ Ungültige Option")
+                    
+            except KeyboardInterrupt:
+                print("\n🛑 Beende Process Management Terminal...")
+                for scheduler in schedulers.values():
+                    scheduler.stop_scheduler()
+                break
+            except Exception as e:
+                print(f"❌ Fehler: {e}")
+                
+    except Exception as e:
+        print(f"❌ Kritischer Fehler im Process Management Terminal: {e}")
 
 if __name__ == "__main__":
     main()
-'''
-        
-        # Script in temporäre Datei schreiben
-        temp_dir = Path("temp_schedulers")
-        temp_dir.mkdir(exist_ok=True)
-        
-        script_path = temp_dir / "enhanced_process_management_terminal.py"
-        with open(script_path, 'w', encoding='utf-8') as f:
-            f.write(terminal_script)
-        
-        # Terminal starten
-        terminal_title = "🔧 Enhanced Process Management Terminal v2.0"
-        
-        if os.name == 'nt':  # Windows
-            batch_content = f'''@echo off
-title {terminal_title}
-color 0B
-cd /d "{Path.cwd()}"
-python "{script_path}"
-pause
-'''
-            batch_path = temp_dir / "start_process_management.bat"
-            with open(batch_path, 'w', encoding='utf-8') as f:
-                f.write(batch_content)
-            
-            subprocess.Popen(
-                ['cmd', '/c', 'start', str(batch_path)],
-                cwd=str(Path.cwd()),
-                creationflags=subprocess.CREATE_NEW_CONSOLE
-            )
-            
-        else:  # Unix/Linux/macOS
-            shell_content = f'''#!/bin/bash
-echo "🔧 {terminal_title}"
-cd "{Path.cwd()}"
-python3 "{script_path}"
-read -p "Drücke Enter zum Schließen..."
-'''
-            shell_path = temp_dir / "start_process_management.sh"
-            with open(shell_path, 'w', encoding='utf-8') as f:
-                f.write(shell_content)
-            
-            os.chmod(shell_path, 0o755)
-            
-            # Terminal-Kommandos versuchen
-            terminal_commands = [
-                ['gnome-terminal', '--title', terminal_title, '--', 'bash', str(shell_path)],
-                ['xterm', '-title', terminal_title, '-e', f'bash {shell_path}'],
-                ['konsole', '--title', terminal_title, '-e', f'bash {shell_path}'],
-            ]
-            
-            for cmd in terminal_commands:
-                try:
-                    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    break
-                except (FileNotFoundError, subprocess.SubprocessError):
-                    continue
-        
-        return True
-        
-    except Exception as e:
-        logger.error(f"❌ Fehler beim Starten des Process Management Terminals: {e}")
-        return False
-
-# =====================================================================
-# ENHANCED TEST FUNCTIONS
-# =====================================================================
-
-def test_enhanced_scheduler_v2():
-    """Test-Funktion für Enhanced Scheduler v2.0"""
-    print("🧪 TESTE ENHANCED UNIVERSAL BACKGROUND SCHEDULER v2.0")
-    print("=" * 70)
-    print("💡 Features: Automatisches Cleanup, Parent-Monitoring, Process Management")
-    print()
-    
-    try:
-        # Enhanced Scheduler testen
-        price_scheduler = create_enhanced_price_tracker_scheduler()
-        charts_scheduler = create_enhanced_charts_scheduler()
-        
-        print("✅ Enhanced Scheduler erstellt")
-        
-        # Process Manager Status
-        process_status = _global_process_manager.get_process_status()
-        print(f"📊 Process Manager: {process_status['total_tracked']} getrackte Prozesse")
-        
-        # Management Terminal starten
-        if create_process_management_terminal():
-            print("✅ Process Management Terminal gestartet")
-        
-        print("\n🎉 Enhanced Scheduler v2.0 Test erfolgreich!")
-        print("💡 Automatisches Cleanup beim Hauptprogramm-Exit aktiviert!")
-        
-        return True
-        
-    except Exception as e:
-        print(f"❌ Enhanced Scheduler v2.0 Test fehlgeschlagen: {e}")
-        return False
-
-# Kompatibilitäts-Test-Funktion
-def test_enhanced_scheduler():
-    """Kompatibilitäts-Alias für Enhanced Test"""
-    return test_enhanced_scheduler_v2()
-
-if __name__ == "__main__":
-    test_enhanced_scheduler_v2()

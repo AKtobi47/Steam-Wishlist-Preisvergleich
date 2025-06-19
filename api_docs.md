@@ -24,6 +24,55 @@ Die Steam Price Tracker API ermöglicht automatisches Preis-Tracking für Steam-
 
 ---
 
+## 📋 Inhaltsverzeichnis
+
+### 🚀 Einstieg
+- [Getting Started Guide](#-getting-started-guide) - Schritt-für-Schritt Setup
+- [Authentifizierung](#-authentifizierung) - Steam API Key Setup
+- [Installation und Setup](#-installation-und-setup) - Lokale Installation & Docker
+
+### 📚 Referenz-Dokumentation
+- [Vollständige Klassen- und Methoden-Referenz](#-vollständige-klassen--und-methoden-referenz)
+  - [DatabaseManager](#databasemanager) - Datenbank-Verwaltung
+  - [SteamPriceTracker](#steampricetracker) - Haupt-Tracking-Klasse
+  - [SteamWishlistManager](#steamwishlistmanager) - Steam API Integration
+  - [SteamChartsManager](#steamchartsmanager) - Charts-Tracking
+  - [BackgroundScheduler](#backgroundscheduler) - Task-Scheduling
+  - [ConfigManager](#configmanager) - Konfigurationsverwaltung
+  - [CLI-Anwendungen](#cli-anwendungen) - Kommandozeilen-Tools
+
+### 💻 Funktions-Referenz
+- [CLI-Funktionen Referenz](#-cli-funktionen-referenz)
+  - [Steam Wishlist Manager](#steam-wishlist-manager) - Wishlist Import/Export
+  - [Price Tracker Manager](#price-tracker-manager) - Preis-Tracking
+  - [Batch Processing](#batch-processing) - Automatisierte Updates
+
+### ⚠️ Entwicklung
+- [Fehlerbehandlung](#️-fehlerbehandlung) - Error Handling & Debugging
+- [Code-Beispiele und Tutorials](#-code-beispiele-und-tutorials)
+  - [Tutorial 1: Vollständiges Wishlist-Tracking Setup](#tutorial-1-vollständiges-wishlist-tracking-setup)
+  - [Tutorial 2: Automatisches Deal-Monitoring](#tutorial-2-automatisches-deal-monitoring)
+  - [Tutorial 3: Preis-Alert System](#tutorial-3-preis-alert-system)
+
+### 🔧 Erweiterte Features
+- [Performance-Optimierung](#-performance-optimierung) - Batch-Processing & Caching
+- [Datenexport und -integration](#-datenexport-und--integration) - CSV/JSON Export
+- [Python-Bibliothek und Integration](#-python-bibliothek-und-integration) - Package-Integration
+- [Integration mit anderen Services](#-integration-mit-anderen-services)
+  - [Discord Bot Integration](#discord-bot-integration-lokal)
+  - [Web Dashboard Integration](#web-dashboard-integration-flask)
+  - [Telegram Bot Integration](#telegram-bot-integration)
+
+### 📊 Analytics & Monitoring
+- [Analytics und Monitoring](#-analytics-und-monitoring) - Prometheus Metriken
+- [Support und Wartung](#-support-und-wartung) - Logging & Health Checks
+
+### 🆘 Support
+- [Support und Community](#-support-und-community) - Hilfe & Beitragen
+- [Roadmap und zukünftige Features](#-roadmap-und-zukünftige-features) - Entwicklungsplan
+
+---
+
 ## 🏁 Getting Started Guide
 
 ### Voraussetzungen

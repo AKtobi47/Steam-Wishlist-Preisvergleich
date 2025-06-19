@@ -1,0 +1,79 @@
+{
+  "setup_completed_at": "2025-06-19T13:34:08.110997",
+  "features_available": {
+    "core": true,
+    "charts": true,
+    "batch_processor": true,
+    "charts_cli": true,
+    "elasticsearch": true,
+    "kibana_setup": false,
+    "main_app": true,
+    "docker_compose": true
+  },
+  "setup_log": [
+    {
+      "timestamp": "13:33:55",
+      "step": "Master Backup",
+      "success": true,
+      "details": "8 Dateien gesichert"
+    },
+    {
+      "timestamp": "13:33:55",
+      "step": "Directory Structure",
+      "success": true,
+      "details": "7 Verzeichnisse erstellt"
+    },
+    {
+      "timestamp": "13:34:05",
+      "step": "Python Dependencies",
+      "success": false,
+      "details": "Requirements Installation fehlgeschlagen: ERROR: Could not find a version that satisfies the requirement tkinter>=8.6 (from versions: none)\n\n[notice] A new release of pip is available: 25.0 -> 25.1.1\n[notice] To update, run: python.exe -m pip install --upgrade pip\nERROR: No matching distribution found for tkinter>=8.6\n"
+    },
+    {
+      "timestamp": "13:34:05",
+      "step": "Configuration Files",
+      "success": true,
+      "details": "Konfigurationsdateien erstellt"
+    },
+    {
+      "timestamp": "13:34:05",
+      "step": "Database Initialization",
+      "success": true,
+      "details": "Datenbank initialisiert"
+    },
+    {
+      "timestamp": "13:34:07",
+      "step": "Core Functionality Test",
+      "success": false,
+      "details": "'SteamPriceTracker' object has no attribute 'get_tracked_apps'"
+    },
+    {
+      "timestamp": "13:34:07",
+      "step": "Charts Integration",
+      "success": true,
+      "details": "Charts-Integration verfügbar"
+    },
+    {
+      "timestamp": "13:34:07",
+      "step": "CLI Tools Setup",
+      "success": true,
+      "details": "2 CLI-Tools verfügbar"
+    },
+    {
+      "timestamp": "13:34:08",
+      "step": "Elasticsearch Stack",
+      "success": true,
+      "details": "ELK Stack Setup abgeschlossen"
+    },
+    {
+      "timestamp": "13:34:08",
+      "step": "Startup Scripts",
+      "success": true,
+      "details": "start.bat und start.sh erstellt"
+    }
+  ],
+  "total_steps": 10,
+  "successful_steps": 8,
+  "failed_steps": 2,
+  "success_rate": 80.0
+}

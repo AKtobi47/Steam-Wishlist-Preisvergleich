@@ -1,33 +1,26 @@
-# Kibana Konfiguration für Steam Price Tracker
-server.name: steam-kibana
+# Kibana Configuration for Steam Price Tracker
+server.name: steam-price-tracker-kibana
 server.host: 0.0.0.0
 server.port: 5601
 
+# Elasticsearch
 elasticsearch.hosts: ["http://elasticsearch:9200"]
-elasticsearch.requestTimeout: 60000
 
-# Sicherheit deaktiviert für lokale Entwicklung
-xpack.security.enabled: false
-xpack.encryptedSavedObjects.encryptionKey: "steam-analytics-encryption-key-32-chars"
+# Monitoring
+monitoring.ui.container.elasticsearch.enabled: true
+
+# Dashboard Settings
+kibana.index: ".kibana"
 
 # Logging
-logging.appenders.file.type: file
-logging.appenders.file.fileName: /usr/share/kibana/logs/kibana.log
-logging.appenders.file.layout.type: json
+logging.appenders:
+  file:
+    type: file
+    fileName: /usr/share/kibana/logs/kibana.log
+    layout:
+      type: json
 
-logging.root.level: info
-logging.root.appenders: [default, file]
-
-# Telemetrie deaktivieren
-telemetry.enabled: false
-telemetry.optIn: false
-
-# Performance
-elasticsearch.shardTimeout: 30000
-elasticsearch.requestHeadersWhitelist: ["authorization"]
-
-# Data Views
-data.search.aggs.shards.max_buckets: 65536
-
-# Dashboard-Einstellungen
-newsfeed.enabled: false
+logging.root:
+  appenders:
+    - default
+    - file

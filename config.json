@@ -1,41 +1,425 @@
 {
+  "version": "3.0.0",
+  "last_updated": "2025-01-20T10:00:00Z",
+  "description": "Steam Price Tracker - Vollständige Konfiguration",
+  
   "database": {
     "path": "steam_price_tracker.db",
     "backup_enabled": true,
-    "backup_interval_hours": 24,
-    "cleanup_days": 90
+    "backup_directory": "backups",
+    "cleanup_days": 90,
+    "auto_vacuum": true,
+    "wal_mode": true,
+    "synchronous": "NORMAL",
+    "cache_size": 10000,
+    "temp_store": "memory"
   },
-  "cheapshark": {
-    "base_url": "https://www.cheapshark.com/api/1.0",
-    "rate_limit_seconds": 1.5,
-    "timeout_seconds": 15,
-    "retry_attempts": 3,
-    "max_consecutive_failures": 5
-  },
-  "steam_api": {
-    "base_url": "https://api.steampowered.com",
-    "store_url": "https://store.steampowered.com/api",
-    "rate_limit_seconds": 1.0,
-    "timeout_seconds": 15,
-    "retry_attempts": 3
-  },
+  
   "tracking": {
     "default_interval_hours": 6,
-    "stores": ["Steam", "GreenManGaming", "GOG", "HumbleStore", "Fanatical", "GamesPlanet"],
-    "store_ids": "1,3,7,11,15,27",
     "max_apps_per_update": 100,
-    "enable_price_alerts": true
+    "enable_automatic_tracking": false,
+    "batch_size": 50,
+    "concurrent_updates": 5,
+    "retry_attempts": 3,
+    "retry_delay": 5,
+    "timeout_seconds": 30,
+    "name_update_interval_minutes": 30,
+    "price_staleness_hours": 24,
+    "update_priorities": {
+      "high_priority_hours": 2,
+      "normal_priority_hours": 6,
+      "low_priority_hours": 12
+    }
   },
-  "exports": {
-    "default_format": "csv",
-    "include_metadata": true,
-    "date_format": "%Y-%m-%d",
-    "price_precision": 2
+  
+  "cheapshark": {
+    "rate_limit_seconds": 1.5,
+    "timeout_seconds": 15,
+    "store_ids": "1,3,7,11,15,27",
+    "stores": {
+      "1": {"name": "Steam", "enabled": true, "priority": 1},
+      "3": {"name": "GreenManGaming", "enabled": true, "priority": 2},
+      "7": {"name": "GOG", "enabled": true, "priority": 3},
+      "11": {"name": "HumbleStore", "enabled": true, "priority": 4},
+      "15": {"name": "Fanatical", "enabled": true, "priority": 5},
+      "27": {"name": "GamesPlanet", "enabled": true, "priority": 6}
+    },
+    "cache_enabled": true,
+    "cache_ttl_seconds": 3600,
+    "max_retries": 3,
+    "backoff_factor": 2.0
   },
-  "scheduler": {
+  
+  "steam_api": {
+    "rate_limit_seconds": 1.0,
+    "timeout_seconds": 10,
+    "max_retries": 3,
+    "cache_enabled": true,
+    "cache_ttl_seconds": 7200,
+    "endpoints": {
+      "app_details": "https://store.steampowered.com/api/appdetails/",
+      "user_owned_games": "https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/",
+      "app_list": "https://api.steampowered.com/ISteamApps/GetAppList/v2/"
+    }
+  },
+  
+  "charts": {
     "enabled": false,
-    "interval_hours": 6,
-    "max_workers": 1,
-    "cleanup_interval_hours": 168
+    "update_interval_hours": 6,
+    "price_interval_hours": 4,
+    "cleanup_interval_hours": 24,
+    "chart_types": ["most_played", "top_releases", "best_sellers", "weekly_top_sellers"],
+    "chart_counts": {
+      "most_played": 100,
+      "top_releases": 50,
+      "best_sellers": 100,
+      "weekly_top_sellers": 75
+    },
+    "steam_charts_endpoints": {
+      "most_played": "https://steamcharts.com/top",
+      "top_releases": "https://store.steampowered.com/charts/topselling/",
+      "best_sellers": "https://store.steampowered.com/charts/bestsellers/",
+      "weekly_top_sellers": "https://store.steampowered.com/charts/weeklytopsellers/"
+    },
+    "cache_enabled": true,
+    "cache_ttl_hours": 2,
+    "parallel_processing": true,
+    "max_concurrent_charts": 3
+  },
+  
+  "scheduler": {
+    "enabled": true,
+    "enhanced_scheduler": true,
+    "parent_process_monitoring": true,
+    "sign_of_life_interval": 30,
+    "heartbeat_interval": 60,
+    "process_management_terminal": true,
+    "auto_cleanup": true,
+    "separate_terminals": true,
+    "scheduler_types": {
+      "price_updates": {
+        "enabled": true,
+        "interval_hours": 6,
+        "task_function": "enhanced_price_tracking_task"
+      },
+      "name_updates": {
+        "enabled": true,
+        "interval_minutes": 30,
+        "task_function": "enhanced_name_update_task"
+      },
+      "charts_updates": {
+        "enabled": false,
+        "interval_hours": 6,
+        "task_function": "enhanced_charts_update_task"
+      },
+      "charts_prices": {
+        "enabled": false,
+        "interval_hours": 4,
+        "task_function": "enhanced_charts_price_task"
+      },
+      "charts_cleanup": {
+        "enabled": false,
+        "interval_hours": 24,
+        "task_function": "enhanced_charts_cleanup_task"
+      }
+    }
+  },
+  
+  "export": {
+    "format": "csv",
+    "directory": "exports",
+    "csv": {
+      "delimiter": ",",
+      "quote_char": "\"",
+      "escape_char": "\\",
+      "encoding": "utf-8",
+      "include_header": true,
+      "date_format": "%Y-%m-%d %H:%M:%S"
+    },
+    "json": {
+      "indent": 2,
+      "ensure_ascii": false,
+      "sort_keys": true
+    },
+    "xlsx": {
+      "engine": "xlsxwriter",
+      "sheet_name": "Steam Price Data",
+      "freeze_panes": [1, 0]
+    },
+    "auto_export": {
+      "enabled": false,
+      "interval_hours": 24,
+      "formats": ["csv"],
+      "retention_days": 30
+    }
+  },
+  
+  "elasticsearch": {
+    "enabled": false,
+    "host": "localhost",
+    "port": 9200,
+    "username": "",
+    "password": "",
+    "use_ssl": false,
+    "verify_certs": false,
+    "timeout": 30,
+    "max_retries": 3,
+    "index_prefix": "steam-tracker",
+    "bulk_size": 1000,
+    "refresh_interval": "30s",
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "indices": {
+      "price_snapshots": {
+        "name": "steam-price-snapshots",
+        "mapping_file": "elasticsearch/mappings/price_snapshots.json"
+      },
+      "tracked_apps": {
+        "name": "steam-tracked-apps",
+        "mapping_file": "elasticsearch/mappings/tracked_apps.json"
+      },
+      "charts_tracking": {
+        "name": "steam-charts-tracking",
+        "mapping_file": "elasticsearch/mappings/charts_tracking.json"
+      },
+      "charts_prices": {
+        "name": "steam-charts-prices",
+        "mapping_file": "elasticsearch/mappings/charts_prices.json"
+      },
+      "name_history": {
+        "name": "steam-name-history",
+        "mapping_file": "elasticsearch/mappings/name_history.json"
+      }
+    }
+  },
+  
+  "kibana": {
+    "host": "localhost",
+    "port": 5601,
+    "username": "",
+    "password": "",
+    "use_ssl": false,
+    "dashboards_enabled": true,
+    "auto_setup": true,
+    "dashboard_configs": [
+      {
+        "id": "steam-price-tracker-overview",
+        "title": "Steam Price Tracker - Overview",
+        "description": "Übersicht über alle Steam Price Tracker Daten"
+      },
+      {
+        "id": "steam-charts-analytics",
+        "title": "Steam Charts Analytics",
+        "description": "Detaillierte Analyse der Steam Charts"
+      },
+      {
+        "id": "price-analysis",
+        "title": "Price Analysis Dashboard",
+        "description": "Preis-Trend-Analysen und Deal-Tracking"
+      }
+    ]
+  },
+  
+  "logging": {
+    "level": "INFO",
+    "file": "logs/steam_tracker.log",
+    "rotation": true,
+    "max_size_mb": 10,
+    "backup_count": 5,
+    "console": true,
+    "structured": false,
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    "date_format": "%Y-%m-%d %H:%M:%S",
+    "loggers": {
+      "price_tracker": {"level": "INFO"},
+      "steam_charts": {"level": "INFO"},
+      "background_scheduler": {"level": "INFO"},
+      "elasticsearch": {"level": "WARNING"},
+      "urllib3": {"level": "WARNING"}
+    }
+  },
+  
+  "notifications": {
+    "enabled": false,
+    "discord": {
+      "enabled": false,
+      "webhook_url": "",
+      "username": "Steam Price Tracker",
+      "avatar_url": "",
+      "mentions": []
+    },
+    "slack": {
+      "enabled": false,
+      "webhook_url": "",
+      "channel": "#steam-deals",
+      "username": "Steam Price Tracker",
+      "icon_emoji": ":video_game:"
+    },
+    "email": {
+      "enabled": false,
+      "smtp_server": "smtp.gmail.com",
+      "smtp_port": 587,
+      "username": "",
+      "password": "",
+      "from_email": "",
+      "to_emails": [],
+      "use_tls": true
+    },
+    "triggers": {
+      "new_deals": {
+        "enabled": true,
+        "min_discount_percent": 50,
+        "cooldown_hours": 6
+      },
+      "price_drops": {
+        "enabled": true,
+        "min_drop_percent": 25,
+        "cooldown_hours": 12
+      },
+      "charts_changes": {
+        "enabled": false,
+        "position_change_threshold": 10
+      },
+      "errors": {
+        "enabled": false,
+        "error_count_threshold": 5
+      }
+    }
+  },
+  
+  "performance": {
+    "request_pool_size": 10,
+    "max_concurrent_downloads": 5,
+    "memory_limit_mb": 512,
+    "cache": {
+      "api_responses": {
+        "enabled": true,
+        "size": 1000,
+        "ttl_seconds": 3600
+      },
+      "database_queries": {
+        "enabled": true,
+        "size": 500,
+        "ttl_seconds": 300
+      }
+    },
+    "connection_pool": {
+      "size": 20,
+      "timeout": 30,
+      "keep_alive": true
+    },
+    "threading": {
+      "worker_threads": 4,
+      "max_workers": 10,
+      "thread_pool_size": 20
+    }
+  },
+  
+  "security": {
+    "encrypt_api_keys": false,
+    "encryption_key": "",
+    "session_timeout_minutes": 60,
+    "api_rate_limit_per_minute": 60,
+    "allowed_hosts": ["localhost", "127.0.0.1"],
+    "cors_enabled": false,
+    "cors_origins": []
+  },
+  
+  "backup": {
+    "auto_backup": true,
+    "interval_hours": 24,
+    "retention_count": 7,
+    "compression": true,
+    "backup_directory": "backups",
+    "include_exports": true,
+    "include_logs": false,
+    "remote_backup": {
+      "enabled": false,
+      "provider": "s3",
+      "bucket": "",
+      "access_key": "",
+      "secret_key": "",
+      "region": "us-east-1"
+    }
+  },
+  
+  "monitoring": {
+    "health_check_enabled": true,
+    "metrics_enabled": false,
+    "prometheus_metrics": false,
+    "metrics_port": 8080,
+    "status_page_enabled": false,
+    "uptime_monitoring": {
+      "enabled": false,
+      "check_interval_seconds": 300,
+      "endpoints": [
+        "http://localhost:9200/_cluster/health",
+        "http://localhost:5601/api/status"
+      ]
+    }
+  },
+  
+  "features": {
+    "experimental": false,
+    "beta": false,
+    "legacy_compatibility": true,
+    "advanced_analytics": false,
+    "machine_learning": false,
+    "feature_flags": {
+      "enhanced_scheduler_v2": true,
+      "elasticsearch_integration": false,
+      "discord_notifications": false,
+      "advanced_charts": true,
+      "price_prediction": false,
+      "deal_alerts": true,
+      "export_automation": false,
+      "multi_currency": false
+    }
+  },
+  
+  "locale": {
+    "timezone": "Europe/Berlin",
+    "locale": "de_DE.UTF-8",
+    "currency": "EUR",
+    "date_format": "%d.%m.%Y",
+    "time_format": "%H:%M:%S",
+    "decimal_separator": ",",
+    "thousands_separator": "."
+  },
+  
+  "cli_tools": {
+    "batch_processor": {
+      "enabled": true,
+      "default_hours_threshold": 6,
+      "default_limit": 20,
+      "auto_names_update": true
+    },
+    "charts_cli": {
+      "enabled": true,
+      "default_chart_type": "most_played",
+      "default_limit": 20,
+      "auto_export": false
+    },
+    "elasticsearch_setup": {
+      "enabled": true,
+      "auto_setup_dashboards": true,
+      "wait_for_healthy": true
+    }
+  },
+  
+  "development": {
+    "debug_mode": false,
+    "profiling_enabled": false,
+    "test_mode": false,
+    "mock_api": false,
+    "verbose": false,
+    "hot_reload": false,
+    "development_server": {
+      "enabled": false,
+      "host": "localhost",
+      "port": 5000,
+      "auto_reload": true
+    }
   }
 }

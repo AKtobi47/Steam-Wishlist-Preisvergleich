@@ -1,7 +1,8 @@
+#!/usr/bin/env python3
 """
-Steam Price Tracker - Updated Version mit Universal Background Scheduler
+Steam Price Tracker - Konsolidierte Version mit Enhanced Scheduler v2.0
 KONSOLIDIERT - Vereint Standard Price Tracking mit robuster Charts-Integration
-Nutzt universellen BackgroundScheduler für separate Terminal-Execution
+Nutzt Enhanced Universal Background Scheduler für separate Terminal-Execution
 """
 
 import requests
@@ -14,8 +15,12 @@ import logging
 from pathlib import Path
 from database_manager import DatabaseManager
 
-# Universal Background Scheduler importieren
-from background_scheduler import BackgroundScheduler, create_price_tracker_scheduler, create_charts_scheduler
+# Enhanced Universal Background Scheduler importieren
+from background_scheduler import (
+    EnhancedBackgroundScheduler, 
+    create_enhanced_price_tracker_scheduler, 
+    create_enhanced_charts_scheduler
+)
 
 # Logging Setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -23,11 +28,11 @@ logger = logging.getLogger(__name__)
 
 class SteamPriceTracker:
     """
-    Steam Preis-Tracker mit Universal Background Scheduler
-    UPDATED VERSION - Nutzt separaten Terminal-Execution für alle Background-Tasks
+    Steam Preis-Tracker mit Enhanced Universal Background Scheduler
+    KONSOLIDIERTE VERSION - Nutzt separaten Terminal-Execution für alle Background-Tasks
     """
     
-    # Store-Konfiguration basierend auf Projekt_SteamGoG.ipynb
+    # Store-Konfiguration
     STORES = {
         "1": "Steam",
         "3": "GreenManGaming", 
@@ -42,7 +47,7 @@ class SteamPriceTracker:
     
     def __init__(self, db_manager: DatabaseManager = None, api_key: str = None, enable_charts: bool = True):
         """
-        Initialisiert Steam Price Tracker mit Universal Background Scheduler
+        Initialisiert Steam Price Tracker mit Enhanced Universal Background Scheduler
         
         Args:
             db_manager: DatabaseManager Instanz
@@ -53,15 +58,15 @@ class SteamPriceTracker:
         self.api_key = api_key
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'SteamPriceTracker/2.1'
+            'User-Agent': 'SteamPriceTracker/3.0 Enhanced'
         })
         
         # Rate Limiting für CheapShark API
         self.last_cheapshark_request = 0
         self.cheapshark_rate_limit = 1.5  # 1.5 Sekunden zwischen Requests
         
-        # UPDATED: Universal Background Scheduler statt eigenem Threading
-        self.price_scheduler = create_price_tracker_scheduler()
+        # ENHANCED: Universal Background Scheduler statt eigenem Threading
+        self.price_scheduler = None
         self.charts_scheduler = None
         
         # Batch-Processing Konfiguration
@@ -75,17 +80,17 @@ class SteamPriceTracker:
         self.charts_enabled = False
         
         if enable_charts and api_key:
-            self._initialize_charts_integration_fixed(api_key)
+            self._initialize_charts_integration_enhanced(api_key)
         
-        logger.info("✅ Steam Price Tracker mit Universal Background Scheduler initialisiert")
+        logger.info("✅ Steam Price Tracker mit Enhanced Universal Background Scheduler initialisiert")
         if self.charts_enabled:
             logger.info("📊 Charts-Integration aktiviert")
         else:
             logger.info("📊 Charts-Integration deaktiviert (kein API Key oder nicht verfügbar)")
     
-    def _initialize_charts_integration_fixed(self, api_key: str):
+    def _initialize_charts_integration_enhanced(self, api_key: str):
         """
-        FIXED: Initialisiert Charts-Integration mit Universal Background Scheduler
+        ENHANCED: Initialisiert Charts-Integration mit Enhanced Universal Background Scheduler
         
         Args:
             api_key: Steam API Key
@@ -93,1167 +98,740 @@ class SteamPriceTracker:
         try:
             from steam_charts_manager import SteamChartsManager
             
-            logger.info("🔄 Initialisiere Charts-Integration...")
+            logger.info("🔄 Initialisiere Enhanced Charts-Integration...")
             
             self.charts_manager = SteamChartsManager(api_key, self.db_manager)
             self.charts_manager.set_price_tracker(self)
             
             # Charts-Tabellen in Datenbank sicherstellen
-            if hasattr(self.db_manager, 'init_charts_tables'):
+            if hasattr(self.db_manager, 'init_charts_tables_enhanced'):
+                self.db_manager.init_charts_tables_enhanced()
+            elif hasattr(self.db_manager, 'init_charts_tables'):
                 self.db_manager.init_charts_tables()
-            
-            # UPDATED: Charts-Scheduler erstellen
-            self.charts_scheduler = create_charts_scheduler()
             
             # Test ob Charts-Manager funktioniert
             try:
                 self.charts_enabled = True
-                logger.info("✅ Charts-Integration mit Universal Scheduler erfolgreich initialisiert")
+                logger.info("✅ Enhanced Charts-Integration erfolgreich initialisiert")
             except Exception as test_e:
                 logger.warning(f"⚠️ Charts-Manager Test fehlgeschlagen: {test_e}")
                 self.charts_enabled = False
-                self.charts_manager = None
-                self.charts_scheduler = None
-            
+               
         except ImportError:
-            logger.info("ℹ️ Charts-Module nicht verfügbar - Charts-Features deaktiviert")
+            logger.info("ℹ️ steam_charts_manager nicht verfügbar - Charts-Features deaktiviert")
             self.charts_enabled = False
-            self.charts_manager = None
-            self.charts_scheduler = None
         except Exception as e:
-            logger.warning(f"⚠️ Charts-Integration fehlgeschlagen: {e}")
+            logger.error(f"❌ Fehler bei Charts-Integration: {e}")
             self.charts_enabled = False
-            self.charts_manager = None
-            self.charts_scheduler = None
     
-    def _wait_for_cheapshark_rate_limit(self):
-        """Wartet für CheapShark API Rate Limiting"""
-        current_time = time.time()
-        time_since_last = current_time - self.last_cheapshark_request
-        
-        if time_since_last < self.cheapshark_rate_limit:
-            wait_time = self.cheapshark_rate_limit - time_since_last
-            logger.debug(f"⏳ Rate Limit: Warte {wait_time:.2f}s")
-            time.sleep(wait_time)
-        
-        self.last_cheapshark_request = time.time()
-    
-    # ========================
-    # APP NAME UPDATE FUNCTIONS (Enhanced)
-    # ========================
-    
-    def update_app_names_from_steam(self, app_ids: List[str] = None, api_key: str = None) -> Dict:
-        """
-        Aktualisiert App-Namen von Steam API
-        
-        Args:
-            app_ids: Liste von Steam App IDs (None = alle Apps mit generischen Namen)
-            api_key: Steam API Key
-            
-        Returns:
-            Dict mit Update-Statistiken
-        """
-        if api_key is None:
-            api_key = self.api_key
-        
-        if not api_key:
-            try:
-                from steam_wishlist_manager import load_api_key_from_env
-                api_key = load_api_key_from_env()
-            except ImportError:
-                pass
-        
-        if not api_key:
-            logger.error("❌ Kein Steam API Key verfügbar für Namen-Update")
-            return {
-                'success': False,
-                'error': 'No Steam API key available',
-                'updated': 0,
-                'failed': 0,
-                'total': 0
-            }
-        
-        # Apps bestimmen die aktualisiert werden sollen
-        if app_ids is None:
-            # Hole Apps mit generischen Namen
-            apps_to_update = self.get_name_update_candidates()
-            app_ids = [app['steam_app_id'] for app in apps_to_update]
-            logger.info(f"🔍 Aktualisiere Namen für {len(app_ids)} Apps mit generischen Namen")
-        else:
-            logger.info(f"🔍 Aktualisiere Namen für {len(app_ids)} spezifische Apps")
-        
-        if not app_ids:
-            logger.info("✅ Keine Apps für Namen-Update gefunden")
-            return {
-                'success': True,
-                'updated': 0,
-                'failed': 0,
-                'total': 0,
-                'message': 'No apps found for name update'
-            }
-        
-        # Steam Wishlist Manager für Namen-Abfrage
-        try:
-            from steam_wishlist_manager import SteamWishlistManager
-            steam_manager = SteamWishlistManager(api_key)
-            
-            # Namen bulk abrufen
-            logger.info(f"📥 Hole Namen von Steam API...")
-            name_mapping = steam_manager.get_multiple_app_names(app_ids)
-            
-            # Namen in Datenbank aktualisieren
-            updated = 0
-            failed = 0
-            
-            for app_id in app_ids:
-                if app_id in name_mapping:
-                    new_name = name_mapping[app_id]
-                    
-                    if hasattr(self.db_manager, 'update_app_name'):
-                        if self.db_manager.update_app_name(app_id, new_name, 'steam_api'):
-                            updated += 1
-                            logger.debug(f"✅ {app_id}: {new_name}")
-                        else:
-                            failed += 1
-                            logger.warning(f"⚠️ Datenbankfehler für {app_id}")
-                    else:
-                        # Fallback: Update über SQL
-                        try:
-                            with self.db_manager.get_connection() as conn:
-                                cursor = conn.cursor()
-                                cursor.execute('UPDATE tracked_apps SET name = ? WHERE steam_app_id = ?', 
-                                             (new_name, app_id))
-                                conn.commit()
-                                updated += 1
-                        except Exception:
-                            failed += 1
-                else:
-                    failed += 1
-                    logger.warning(f"⚠️ Kein Name gefunden für {app_id}")
-            
-            success_rate = (updated / len(app_ids)) * 100 if app_ids else 0
-            
-            logger.info(f"✅ Namen-Update abgeschlossen:")
-            logger.info(f"   📊 {updated}/{len(app_ids)} erfolgreich ({success_rate:.1f}%)")
-            logger.info(f"   ❌ {failed} fehlgeschlagen")
-            
-            return {
-                'success': True,
-                'updated': updated,
-                'failed': failed,
-                'total': len(app_ids),
-                'success_rate': success_rate
-            }
-            
-        except ImportError:
-            logger.error("❌ SteamWishlistManager nicht verfügbar")
-            return {
-                'success': False,
-                'error': 'SteamWishlistManager not available',
-                'updated': 0,
-                'failed': 0,
-                'total': len(app_ids)
-            }
-        except Exception as e:
-            logger.error(f"❌ Fehler beim Namen-Update: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'updated': 0,
-                'failed': 0,
-                'total': len(app_ids)
-            }
-    
-    def update_single_app_name(self, app_id: str, api_key: str = None) -> bool:
-        """
-        Aktualisiert Namen einer einzelnen App
-        
-        Args:
-            app_id: Steam App ID
-            api_key: Steam API Key
-            
-        Returns:
-            True wenn erfolgreich
-        """
-        result = self.update_app_names_from_steam([app_id], api_key)
-        return result.get('updated', 0) > 0
-    
-    def update_names_for_apps_with_generic_names(self, api_key: str = None) -> Dict:
-        """
-        Aktualisiert Namen für alle Apps mit generischen Namen
-        
-        Args:
-            api_key: Steam API Key
-            
-        Returns:
-            Update-Statistiken
-        """
-        return self.update_app_names_from_steam(None, api_key)
-    
-    def get_name_update_candidates(self) -> List[Dict]:
-        """
-        Gibt Apps zurück die Namen-Updates benötigen
-        
-        Returns:
-            Liste von Apps mit generischen Namen
-        """
-        if hasattr(self.db_manager, 'get_apps_with_generic_names'):
-            return self.db_manager.get_apps_with_generic_names()
-        
-        # Fallback: manuelle Abfrage
-        with self.db_manager.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT steam_app_id, name, added_at
-                FROM tracked_apps
-                WHERE active = 1 
-                AND (
-                    name LIKE 'Game %'
-                    OR name LIKE 'Unknown Game %'
-                    OR name = ''
-                    OR name IS NULL
-                )
-                ORDER BY added_at DESC
-            ''')
-            return [dict(row) for row in cursor.fetchall()]
-    
-    # ========================
-    # ENHANCED WISHLIST IMPORT
-    # ========================
-    
-    def import_steam_wishlist(self, steam_id: str, api_key: str = None, update_names: bool = True) -> Dict:
-        """
-        Enhanced Steam Wishlist Import mit Namen-Updates
-        
-        Args:
-            steam_id: Steam ID des Benutzers
-            api_key: Steam API Key
-            update_names: Ob Namen von Steam API aktualisiert werden sollen
-            
-        Returns:
-            Dict mit Import-Statistiken
-        """
-        if api_key is None:
-            api_key = self.api_key
-        
-        if not api_key:
-            try:
-                from steam_wishlist_manager import load_api_key_from_env
-                api_key = load_api_key_from_env()
-            except ImportError:
-                pass
-        
-        if not api_key:
-            return {'success': False, 'error': 'No Steam API key available'}
-        
-        try:
-            from steam_wishlist_manager import SteamWishlistManager
-            
-            wishlist_manager = SteamWishlistManager(api_key)
-            wishlist_data = wishlist_manager.get_simple_wishlist(steam_id)
-            
-            if not wishlist_data:
-                return {'success': False, 'error': 'Wishlist konnte nicht abgerufen werden'}
-            
-            imported = 0
-            skipped_existing = 0
-            names_updated = 0
-            errors = []
-            
-            for item in wishlist_data:
-                try:
-                    app_id = item['steam_app_id']
-                    name = item['name']
-                    
-                    # Prüfe ob bereits vorhanden
-                    existing_apps = self.get_tracked_apps()
-                    existing_app = next((app for app in existing_apps if app['steam_app_id'] == app_id), None)
-                    
-                    if existing_app:
-                        skipped_existing += 1
-                        
-                        # Namen-Update für bestehende App falls gewünscht
-                        if update_names and (
-                            existing_app['name'].startswith('Game ') or 
-                            existing_app['name'].startswith('Unknown Game') or
-                            existing_app['name'] != name
-                        ):
-                            if hasattr(self.db_manager, 'update_app_name'):
-                                if self.db_manager.update_app_name(app_id, name, 'wishlist_import'):
-                                    names_updated += 1
-                                    logger.debug(f"🔄 Name aktualisiert: {existing_app['name']} → {name}")
-                        
-                        continue
-                    
-                    # Zur Datenbank hinzufügen
-                    if self.add_app_to_tracking(app_id, name):
-                        imported += 1
-                        logger.debug(f"✅ App {name} hinzugefügt")
-                    else:
-                        errors.append(f"Database error for {app_id}: {name}")
-                        logger.warning(f"⚠️ Konnte App {name} nicht hinzufügen")
-                        
-                except Exception as e:
-                    errors.append(f"Error processing {item}: {str(e)}")
-                    logger.error(f"❌ Fehler bei Wishlist-Item: {e}")
-            
-            # Import-Statistiken
-            import_stats = {
-                'success': True,
-                'imported': imported,
-                'skipped_existing': skipped_existing,
-                'names_updated': names_updated,
-                'total_items': len(wishlist_data),
-                'errors': errors,
-                'import_completed_at': datetime.now().isoformat()
-            }
-            
-            logger.info(f"📥 Enhanced Wishlist-Import abgeschlossen:")
-            logger.info(f"   ✅ {imported} neue Apps hinzugefügt")
-            logger.info(f"   ⏭️ {skipped_existing} bereits vorhanden")
-            logger.info(f"   🔄 {names_updated} Namen aktualisiert")
-            logger.info(f"   📊 {imported + skipped_existing}/{len(wishlist_data)} Apps verarbeitet")
-            
-            if errors:
-                logger.warning(f"   ⚠️ {len(errors)} Fehler aufgetreten")
-            
-            return import_stats
-            
-        except ImportError:
-            logger.error("❌ SteamWishlistManager nicht verfügbar")
-            return {'success': False, 'error': 'SteamWishlistManager nicht verfügbar'}
-        except Exception as e:
-            logger.error(f"❌ Fehler beim Enhanced Wishlist-Import: {e}")
-            return {
-                'success': False,
-                'imported': 0,
-                'total_items': 0,
-                'error': str(e)
-            }
-    
-    # ========================
-    # CORE PRICE FETCHING
-    # ========================
-    
-    def get_game_prices_from_cheapshark(self, steam_app_id: str) -> Dict:
-        """
-        Holt Preise für Steam App von CheapShark API
-        
-        Args:
-            steam_app_id: Steam App ID
-            
-        Returns:
-            Dict mit Preisdaten oder Fehlerstatus
-        """
-        self._wait_for_cheapshark_rate_limit()
-        
-        url = "https://www.cheapshark.com/api/1.0/deals"
-        params = {
-            'steamAppID': steam_app_id,
-            'storeID': self.STORE_IDS
-        }
-        
-        try:
-            logger.debug(f"🔍 Preisabfrage für Steam App {steam_app_id}")
-            response = self.session.get(url, params=params, timeout=15)
-            
-            if response.status_code == 200:
-                data = response.json()
-                
-                if not data:
-                    logger.warning(f"⚠️ Keine Deals für App {steam_app_id} gefunden")
-                    return {
-                        'steam_app_id': steam_app_id,
-                        'game_title': f"Unknown Game {steam_app_id}",
-                        'prices': {},
-                        'timestamp': datetime.now().isoformat(),
-                        'status': 'no_deals_found'
-                    }
-                
-                # Game Title aus erstem Deal extrahieren
-                game_title = data[0].get('title', f"Game {steam_app_id}")
-                
-                # Preise für alle Stores initialisieren
-                prices = {}
-                for store_name in self.STORES.values():
-                    prices[store_name] = {
-                        'price': None,
-                        'original_price': None,
-                        'discount_percent': 0,
-                        'available': False
-                    }
-                
-                # Deals verarbeiten
-                for deal in data:
-                    store_id = deal.get('storeID')
-                    store_name = self.STORES.get(store_id)
-                    
-                    if store_name:
-                        sale_price = float(deal.get('salePrice', 0))
-                        normal_price = float(deal.get('normalPrice', 0))
-                        savings = float(deal.get('savings', 0))
-                        
-                        prices[store_name] = {
-                            'price': sale_price,
-                            'original_price': normal_price if normal_price > sale_price else sale_price,
-                            'discount_percent': round(savings),
-                            'available': True
-                        }
-                
-                logger.debug(f"✅ Preise für {game_title} abgerufen")
-                
-                return {
-                    'steam_app_id': steam_app_id,
-                    'game_title': game_title,
-                    'prices': prices,
-                    'timestamp': datetime.now().isoformat(),
-                    'status': 'success'
-                }
-                
-            else:
-                logger.error(f"❌ CheapShark API Fehler {response.status_code} für App {steam_app_id}")
-                return {
-                    'steam_app_id': steam_app_id,
-                    'game_title': None,
-                    'prices': {},
-                    'timestamp': datetime.now().isoformat(),
-                    'status': f'api_error_{response.status_code}'
-                }
-                
-        except requests.RequestException as e:
-            logger.error(f"❌ Request Fehler für App {steam_app_id}: {e}")
-            return {
-                'steam_app_id': steam_app_id,
-                'game_title': None,
-                'prices': {},
-                'timestamp': datetime.now().isoformat(),
-                'status': 'request_error'
-            }
-    
-    # ========================
-    # APP MANAGEMENT
-    # ========================
-    
-    def add_app_to_tracking(self, steam_app_id: str, name: str = None) -> bool:
-        """Fügt App zum Tracking hinzu"""
-        if name is None:
-            name = f"Game {steam_app_id}"
-        
-        return self.db_manager.add_tracked_app(steam_app_id, name)
-    
-    def remove_app_from_tracking(self, steam_app_id: str) -> bool:
-        """Entfernt App aus Tracking"""
-        return self.db_manager.remove_tracked_app(steam_app_id)
-    
-    def get_tracked_apps(self) -> List[Dict]:
-        """Gibt alle getrackte Apps zurück"""
-        return self.db_manager.get_tracked_apps()
-    
-    def get_apps_needing_price_update(self, hours_threshold: int = 6) -> List[Dict]:
-        """Gibt Apps zurück die ein Preisupdate benötigen"""
-        return self.db_manager.get_apps_needing_update(hours_threshold)
-    
-    # ========================
-    # PRICE TRACKING
-    # ========================
-    
-    def track_app_prices(self, steam_app_ids: List[str]) -> Dict:
-        """
-        Trackt Preise für mehrere Steam Apps
-        
-        Args:
-            steam_app_ids: Liste von Steam App IDs
-            
-        Returns:
-            Dict mit Statistiken
-        """
-        if not steam_app_ids:
-            return {'processed': 0, 'successful': 0, 'failed': 0, 'errors': []}
-        
-        logger.info(f"🔄 Starte Preis-Tracking für {len(steam_app_ids)} Apps...")
-        
-        processed = 0
-        successful = 0
-        failed = 0
-        errors = []
-        
-        for app_id in steam_app_ids:
-            try:
-                # Preise von CheapShark abrufen
-                price_data = self.get_game_prices_from_cheapshark(app_id)
-                
-                # In Datenbank speichern
-                if price_data['status'] == 'success':
-                    if self.db_manager.save_price_snapshot(
-                        price_data['steam_app_id'],
-                        price_data['game_title'],
-                        price_data['prices']
-                    ):
-                        successful += 1
-                        # Update last_price_update
-                        self.db_manager.update_app_last_price_update(app_id)
-                        
-                        # FIXED: Auch in Charts-DB speichern falls verfügbar
-                        if self.charts_enabled and hasattr(self.db_manager, 'save_charts_price_snapshot'):
-                            # Prüfe ob App in Charts ist
-                            if hasattr(self.db_manager, 'get_active_chart_games'):
-                                chart_games = [g for g in self.db_manager.get_active_chart_games() if g['steam_app_id'] == app_id]
-                                if chart_games:
-                                    chart_types = [g['chart_type'] for g in chart_games]
-                                    self.db_manager.save_charts_price_snapshot(
-                                        app_id, 
-                                        price_data['game_title'], 
-                                        price_data['prices'], 
-                                        chart_types
-                                    )
-                    else:
-                        failed += 1
-                        errors.append(f"Database error for {app_id}")
-                else:
-                    failed += 1
-                    errors.append(f"{app_id}: {price_data['status']}")
-                
-                processed += 1
-                
-                # Fortschrittsanzeige alle 10 Apps
-                if processed % 10 == 0:
-                    logger.info(f"📊 Fortschritt: {processed}/{len(steam_app_ids)} Apps verarbeitet")
-                
-            except Exception as e:
-                failed += 1
-                errors.append(f"{app_id}: {str(e)}")
-                logger.error(f"❌ Fehler bei App {app_id}: {e}")
-                processed += 1
-        
-        logger.info(f"✅ Preis-Tracking abgeschlossen: {successful}/{processed} erfolgreich")
-        
-        return {
-            'processed': processed,
-            'successful': successful,
-            'failed': failed,
-            'errors': errors
-        }
-    
-    def track_single_app_price(self, steam_app_id: str) -> bool:
-        """Trackt Preis für einzelne App"""
-        result = self.track_app_prices([steam_app_id])
-        return result['successful'] > 0
-    
-    # ========================
-    # BATCH PROCESSING
-    # ========================
-    
-    def process_all_pending_apps_optimized(self, hours_threshold: int = 6) -> Dict:
-        """
-        Verarbeitet alle Apps die Updates benötigen - OPTIMIERT
-        
-        Args:
-            hours_threshold: Apps älter als X Stunden
-            
-        Returns:
-            Dict mit Gesamt-Statistiken
-        """
-        if self.processing_active:
-            logger.warning("⚠️ Processing bereits aktiv")
-            return {'error': 'Processing already active'}
-        
-        self.processing_active = True
-        
-        try:
-            logger.info(f"🚀 Starte optimierte Gesamtverarbeitung (Threshold: {hours_threshold}h)")
-            
-            # Apps holen die Updates benötigen
-            pending_apps = self.get_apps_needing_price_update(hours_threshold)
-            
-            if not pending_apps:
-                logger.info("✅ Alle Apps sind aktuell - keine Verarbeitung nötig")
-                return {
-                    'total_apps': 0,
-                    'total_successful': 0,
-                    'total_failed': 0,
-                    'total_batches': 0,
-                    'total_duration': 0,
-                    'apps_per_second': 0,
-                    'success': True
-                }
-            
-            # Apps in Batches aufteilen
-            batches = [
-                pending_apps[i:i + self.batch_size] 
-                for i in range(0, len(pending_apps), self.batch_size)
-            ]
-            
-            logger.info(f"📦 Aufgeteilt in {len(batches)} Batches à {self.batch_size} Apps")
-            
-            # Gesamtstatistiken
-            total_start = time.time()
-            total_successful = 0
-            total_failed = 0
-            all_errors = []
-            
-            # Verarbeite jeden Batch
-            for batch_num, batch in enumerate(batches, 1):
-                logger.info(f"📦 Batch {batch_num}/{len(batches)}")
-                
-                # App IDs extrahieren
-                app_ids = [app['steam_app_id'] for app in batch]
-                
-                # Batch verarbeiten
-                batch_stats = self.track_app_prices(app_ids)
-                
-                total_successful += batch_stats['successful']
-                total_failed += batch_stats['failed']
-                all_errors.extend(batch_stats['errors'])
-                
-                # Kurze Pause zwischen Batches (für Rate Limiting)
-                if batch_num < len(batches):
-                    logger.info("⏳ Pause zwischen Batches...")
-                    time.sleep(2.0)
-            
-            total_duration = time.time() - total_start
-            total_apps = len(pending_apps)
-            
-            final_stats = {
-                'total_apps': total_apps,
-                'total_successful': total_successful,
-                'total_failed': total_failed,
-                'total_batches': len(batches),
-                'total_duration': round(total_duration, 2),
-                'apps_per_second': round(total_apps / total_duration, 2) if total_duration > 0 else 0,
-                'errors': all_errors,
-                'success': True
-            }
-            
-            logger.info(f"🎉 Optimierte Verarbeitung abgeschlossen:")
-            logger.info(f"   📊 {final_stats['total_successful']}/{final_stats['total_apps']} Apps erfolgreich")
-            logger.info(f"   ⏱️ Dauer: {final_stats['total_duration']}s")
-            logger.info(f"   ⚡ {final_stats['apps_per_second']:.1f} Apps/s")
-            
-            return final_stats
-            
-        except Exception as e:
-            logger.error(f"❌ Fehler bei optimierter Verarbeitung: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-        finally:
-            self.processing_active = False
-    
-    # ========================
-    # UNIVERSAL BACKGROUND SCHEDULER INTEGRATION - NEW
-    # ========================
+    # =====================================================================
+    # ENHANCED BACKGROUND SCHEDULER FUNKTIONEN
+    # =====================================================================
     
     def start_background_scheduler(self, 
                                   price_interval_hours: int = 6,
-                                  name_interval_minutes: int = 30) -> bool:
+                                  name_interval_minutes: int = 30):
         """
-        UPDATED: Startet Background-Scheduler für Price Tracking in separatem Terminal
+        Startet Enhanced Background Scheduler für Price Tracking
         
         Args:
-            price_interval_hours: Intervall für Preis-Updates in Stunden
-            name_interval_minutes: Intervall für Namen-Updates in Minuten
-            
-        Returns:
-            True wenn erfolgreich gestartet
+            price_interval_hours: Intervall für Preis-Updates
+            name_interval_minutes: Intervall für Namen-Updates
         """
         try:
-            # Price Updates Scheduler starten
-            if self.price_scheduler.start_scheduler(
-                'price_updates', 
-                interval_hours=price_interval_hours
-            ):
-                logger.info(f"✅ Preis-Update Scheduler gestartet (alle {price_interval_hours}h)")
+            if self.price_scheduler and self.price_scheduler.running:
+                logger.warning("⚠️ Price Scheduler läuft bereits")
+                return
             
-            # Name Updates Scheduler starten
-            if self.price_scheduler.start_scheduler(
-                'name_updates',
-                interval_minutes=name_interval_minutes
-            ):
-                logger.info(f"✅ Namen-Update Scheduler gestartet (alle {name_interval_minutes}min)")
+            # Enhanced Price Tracker Scheduler erstellen
+            self.price_scheduler = create_enhanced_price_tracker_scheduler()
+            
+            # Intervalle anpassen
+            if price_interval_hours != 6:
+                for task in self.price_scheduler.tasks.values():
+                    if task.scheduler_type == "price_updates":
+                        task.interval_minutes = price_interval_hours * 60
+                        task.next_run = datetime.now() + timedelta(hours=price_interval_hours)
+            
+            if name_interval_minutes != 30:
+                for task in self.price_scheduler.tasks.values():
+                    if task.scheduler_type == "name_updates":
+                        task.interval_minutes = name_interval_minutes
+                        task.next_run = datetime.now() + timedelta(minutes=name_interval_minutes)
+            
+            # Scheduler starten
+            self.price_scheduler.start_scheduler()
+            
+            logger.info(f"🚀 Enhanced Background Scheduler gestartet:")
+            logger.info(f"   💰 Preis-Updates: alle {price_interval_hours}h")
+            logger.info(f"   📝 Namen-Updates: alle {name_interval_minutes}min")
+            logger.info("💡 Alle Tasks laufen in separaten Terminals!")
             
             return True
             
         except Exception as e:
-            logger.error(f"❌ Fehler beim Starten des Background-Schedulers: {e}")
+            logger.error(f"❌ Fehler beim Starten des Background Schedulers: {e}")
             return False
     
-    def stop_background_scheduler(self) -> bool:
-        """
-        UPDATED: Stoppt alle Background-Scheduler
-        
-        Returns:
-            True wenn erfolgreich gestoppt
-        """
+    def stop_background_scheduler(self):
+        """Stoppt Enhanced Background Scheduler"""
         try:
-            stopped_count = self.price_scheduler.stop_all_schedulers()
-            logger.info(f"⏹️ {stopped_count} Price Tracker Scheduler gestoppt")
-            return True
-            
+            if self.price_scheduler:
+                self.price_scheduler.stop_scheduler()
+                self.price_scheduler = None
+                logger.info("⏹️ Enhanced Background Scheduler gestoppt")
+            else:
+                logger.info("ℹ️ Background Scheduler war nicht aktiv")
         except Exception as e:
-            logger.error(f"❌ Fehler beim Stoppen der Background-Scheduler: {e}")
-            return False
-    
-    def get_enhanced_scheduler_status(self) -> Dict:
-        """
-        UPDATED: Gibt erweiterten Scheduler-Status mit Universal Background Scheduler zurück
-        
-        Returns:
-            Dict mit erweiterten Scheduler-Informationen
-        """
-        status = {
-            'scheduler_type': 'Universal Background Scheduler',
-            'price_scheduler_status': self.price_scheduler.get_scheduler_status(),
-            'charts_scheduler_status': None,
-            'total_active_schedulers': 0
-        }
-        
-        # Price Scheduler Status auswerten
-        price_status = status['price_scheduler_status']
-        if price_status and 'schedulers' in price_status:
-            for scheduler_name, scheduler_info in price_status['schedulers'].items():
-                if scheduler_info.get('running'):
-                    status['total_active_schedulers'] += 1
-        
-        # Charts Scheduler Status (falls verfügbar)
-        if self.charts_enabled and self.charts_scheduler:
-            status['charts_scheduler_status'] = self.charts_scheduler.get_scheduler_status()
-            
-            charts_status = status['charts_scheduler_status']
-            if charts_status and 'schedulers' in charts_status:
-                for scheduler_name, scheduler_info in charts_status['schedulers'].items():
-                    if scheduler_info.get('running'):
-                        status['total_active_schedulers'] += 1
-        
-        # Compatibility-Felder für alte API
-        status['standard_scheduler_running'] = any(
-            s.get('running', False) 
-            for s in price_status.get('schedulers', {}).values()
-        ) if price_status else False
-        
-        status['charts_scheduler_running'] = any(
-            s.get('running', False) 
-            for s in status['charts_scheduler_status'].get('schedulers', {}).values()
-        ) if status['charts_scheduler_status'] else False
-        
-        return status
+            logger.error(f"❌ Fehler beim Stoppen des Background Schedulers: {e}")
     
     def get_scheduler_status(self) -> Dict:
         """
-        Kompatibilitäts-Wrapper für get_enhanced_scheduler_status
+        Gibt detaillierten Status des Enhanced Background Schedulers zurück
         
         Returns:
-            Dict mit Scheduler-Status
+            Dict mit Scheduler-Status-Informationen
         """
-        return self.get_enhanced_scheduler_status()
+        status = {
+            'scheduler_running': False,
+            'scheduler_type': 'Enhanced Universal Background Scheduler v2.0',
+            'charts_enabled': self.charts_enabled,
+            'processes': {},
+            'next_runs': {}
+        }
+        
+        # Price Scheduler Status
+        if self.price_scheduler:
+            price_status = self.price_scheduler.get_process_status()
+            status['scheduler_running'] = price_status['scheduler_running']
+            status['processes'].update(price_status['processes'])
+            
+            # Nächste Ausführungszeiten
+            for task_type, task in self.price_scheduler.tasks.items():
+                if task.next_run:
+                    status['next_runs'][task_type] = task.next_run.strftime('%H:%M:%S')
+        
+        # Charts Scheduler Status
+        if self.charts_scheduler:
+            charts_status = self.charts_scheduler.get_process_status()
+            status['processes'].update(charts_status['processes'])
+            
+            for task_type, task in self.charts_scheduler.tasks.items():
+                if task.next_run:
+                    status['next_runs'][f"charts_{task_type}"] = task.next_run.strftime('%H:%M:%S')
+        
+        return status
     
-    # Kompatibilitäts-Methoden für alte API
-    def start_scheduler(self, interval_hours: int = 6):
-        """
-        DEPRECATED: Kompatibilitäts-Wrapper für start_background_scheduler
-        Nutzt Universal Background Scheduler
-        """
-        logger.warning("⚠️ start_scheduler() ist deprecated - verwende start_background_scheduler()")
-        return self.start_background_scheduler(price_interval_hours=interval_hours)
+    # =====================================================================
+    # CHARTS-INTEGRATION FUNKTIONEN
+    # =====================================================================
     
-    def stop_scheduler(self):
-        """
-        DEPRECATED: Kompatibilitäts-Wrapper für stop_background_scheduler
-        """
-        logger.warning("⚠️ stop_scheduler() ist deprecated - verwende stop_background_scheduler()")
-        return self.stop_background_scheduler()
-    
-    # ========================
-    # CHARTS INTEGRATION - UPDATED
-    # ========================
-    
-    def enable_charts_tracking(self, 
+    def enable_charts_tracking(self,
                               charts_update_hours: int = 6,
                               price_update_hours: int = 4,
-                              cleanup_hours: int = 24) -> bool:
+                              cleanup_hours: int = 24):
         """
-        UPDATED: Aktiviert Charts-Tracking mit Universal Background Scheduler
+        Aktiviert Charts-Tracking mit Enhanced Background Scheduler
         
         Args:
             charts_update_hours: Intervall für Charts-Updates
-            price_update_hours: Intervall für Charts-Preis-Updates  
-            cleanup_hours: Intervall für Charts-Cleanup
-            
-        Returns:
-            True wenn erfolgreich aktiviert
+            price_update_hours: Intervall für Charts-Preise
+            cleanup_hours: Intervall für Cleanup
         """
         if not self.charts_enabled:
-            logger.warning("⚠️ Charts-Funktionalität nicht verfügbar")
-            return False
-        
-        if not self.charts_scheduler:
-            logger.error("❌ Charts-Scheduler nicht verfügbar")
+            logger.error("❌ Charts-Funktionalität nicht verfügbar")
             return False
         
         try:
-            # Charts Update Scheduler starten
-            if self.charts_scheduler.start_scheduler(
-                'charts_updates',
-                interval_hours=charts_update_hours
-            ):
-                logger.info(f"✅ Charts-Update Scheduler gestartet (alle {charts_update_hours}h)")
+            if self.charts_scheduler and self.charts_scheduler.running:
+                logger.warning("⚠️ Charts Scheduler läuft bereits")
+                return True
             
-            # Charts Price Update Scheduler starten
-            if self.charts_scheduler.start_scheduler(
-                'charts_prices',
-                interval_hours=price_update_hours
-            ):
-                logger.info(f"✅ Charts-Preis Scheduler gestartet (alle {price_update_hours}h)")
+            # Enhanced Charts Scheduler erstellen
+            self.charts_scheduler = create_enhanced_charts_scheduler()
             
-            # Charts Cleanup Scheduler starten
-            if self.charts_scheduler.start_scheduler(
-                'charts_cleanup',
-                interval_hours=cleanup_hours
-            ):
-                logger.info(f"✅ Charts-Cleanup Scheduler gestartet (alle {cleanup_hours}h)")
+            # Charts-Preis-Update Task hinzufügen
+            self.charts_scheduler.register_scheduler(
+                scheduler_type="charts_price_updates",
+                task_function=self._get_charts_price_update_task(),
+                interval_minutes=price_update_hours * 60,
+                dependencies=["price_tracker", "steam_wishlist_manager"],
+                heartbeat_interval=30,
+                show_progress_bar=True
+            )
             
-            logger.info("✅ Charts-Tracking mit Universal Background Scheduler aktiviert")
+            # Intervalle anpassen
+            for task in self.charts_scheduler.tasks.values():
+                if task.scheduler_type == "charts_updates":
+                    task.interval_minutes = charts_update_hours * 60
+                    task.next_run = datetime.now() + timedelta(hours=charts_update_hours)
+                elif task.scheduler_type == "charts_cleanup":
+                    task.interval_minutes = cleanup_hours * 60
+                    task.next_run = datetime.now() + timedelta(hours=cleanup_hours)
+            
+            # Charts Scheduler starten
+            self.charts_scheduler.start_scheduler()
+            
+            logger.info(f"📊 Enhanced Charts-Tracking aktiviert:")
+            logger.info(f"   📊 Charts-Updates: alle {charts_update_hours}h")
+            logger.info(f"   💰 Preis-Updates: alle {price_update_hours}h")
+            logger.info(f"   🧹 Cleanup: alle {cleanup_hours}h")
+            logger.info("💡 Charts-Tasks laufen in separaten Terminals!")
+            
             return True
             
         except Exception as e:
             logger.error(f"❌ Fehler beim Aktivieren des Charts-Trackings: {e}")
             return False
     
-    def disable_charts_tracking(self) -> bool:
-        """
-        UPDATED: Deaktiviert Charts-Tracking sicher
-        
-        Returns:
-            True wenn erfolgreich deaktiviert
-        """
-        if not self.charts_enabled or not self.charts_scheduler:
-            return True
-        
+    def disable_charts_tracking(self):
+        """Deaktiviert Charts-Tracking"""
         try:
-            stopped_count = self.charts_scheduler.stop_all_schedulers()
-            logger.info(f"⏹️ {stopped_count} Charts-Scheduler gestoppt")
-            return True
+            if self.charts_scheduler:
+                self.charts_scheduler.stop_scheduler()
+                self.charts_scheduler = None
+                logger.info("⏹️ Charts-Tracking deaktiviert")
+            else:
+                logger.info("ℹ️ Charts-Tracking war nicht aktiv")
         except Exception as e:
             logger.error(f"❌ Fehler beim Deaktivieren des Charts-Trackings: {e}")
-            return False
+    
+    def _get_charts_price_update_task(self) -> str:
+        """Generiert Charts-Preis-Update Task"""
+        return '''
+# Enhanced Charts-Preis-Update Task
+print("💰 Enhanced Charts-Preis-Update gestartet...")
+print(f"⏰ Start: {datetime.now().strftime('%H:%M:%S')}")
+
+# Heartbeat alle 30 Sekunden
+import threading
+
+def heartbeat_timer():
+    while True:
+        update_heartbeat()
+        time.sleep(30)
+
+heartbeat_thread = threading.Thread(target=heartbeat_timer, daemon=True)
+heartbeat_thread.start()
+
+try:
+    # Price Tracker mit Charts laden
+    from price_tracker import create_price_tracker
+    from steam_wishlist_manager import load_api_key_from_env
+    
+    api_key = load_api_key_from_env()
+    tracker = create_price_tracker(api_key=api_key, enable_charts=True)
+    
+    if not tracker.charts_enabled:
+        print("❌ Charts-Manager nicht verfügbar")
+        exit(1)
+    
+    # Charts-Spiele Preise aktualisieren
+    print("💰 Aktualisiere Preise für Charts-Spiele...")
+    result = tracker.update_charts_prices_now()
+    
+    if result.get('success', True):
+        print("✅ Charts-Preis-Update abgeschlossen:")
+        print(f"   📊 {result.get('total_games', 0)} Spiele verarbeitet")
+        print(f"   💰 {result.get('price_updates', 0)} Preise aktualisiert")
+        print(f"   🎯 {result.get('deals_found', 0)} Deals gefunden")
+        
+        if result.get('errors'):
+            print(f"   ⚠️ {len(result['errors'])} Fehler aufgetreten")
+    else:
+        print(f"❌ Charts-Preis-Update fehlgeschlagen: {result.get('error', 'Unbekannter Fehler')}")
+
+except Exception as e:
+    print(f"❌ Enhanced Charts-Preis-Update Fehler: {e}")
+    import traceback
+    traceback.print_exc()
+
+print(f"🏁 Enhanced Charts-Preis-Update abgeschlossen um {datetime.now().strftime('%H:%M:%S')}")
+'''
+    
+    # =====================================================================
+    # CHARTS CONVENIENCE FUNKTIONEN
+    # =====================================================================
     
     def update_charts_now(self, chart_types: List[str] = None) -> Dict:
         """
-        FIXED: Führt sofortiges Charts-Update durch mit Fehlerbehandlung
+        Führt sofortiges Charts-Update durch
         
         Args:
-            chart_types: Liste der zu aktualisierenden Chart-Typen
+            chart_types: Spezifische Chart-Typen (optional)
             
         Returns:
-            Update-Statistiken
+            Ergebnis-Dictionary
         """
         if not self.charts_enabled:
-            return {'success': False, 'error': 'Charts not enabled'}
-        
-        if not self.charts_manager:
-            return {'success': False, 'error': 'Charts manager not available'}
+            return {'success': False, 'error': 'Charts-Funktionalität nicht verfügbar'}
         
         try:
-            # Standard-Counts für Charts
-            counts = {
-                'most_played': 100,
-                'top_releases': 50,
-                'best_sellers': 100,
-                'weekly_top_sellers': 75
-            }
-            
-            # Nur spezifische Chart-Typen wenn angegeben
-            if chart_types:
-                counts = {ct: counts.get(ct, 50) for ct in chart_types if ct in counts}
-            
-            result = self.charts_manager.update_all_charts(counts)
+            logger.info("🔄 Führe manuelles Charts-Update durch...")
+            result = self.charts_manager.update_all_charts(chart_types)
+            logger.info(f"✅ Charts-Update abgeschlossen: {result.get('new_games_added', 0)} neue, {result.get('existing_games_updated', 0)} aktualisiert")
             return result
-            
         except Exception as e:
-            logger.error(f"❌ Fehler beim Charts-Update: {e}")
+            logger.error(f"❌ Charts-Update Fehler: {e}")
             return {'success': False, 'error': str(e)}
     
     def update_charts_prices_now(self, chart_type: str = None) -> Dict:
         """
-        FIXED: Führt sofortiges Preis-Update für Charts-Spiele durch
+        Führt sofortiges Charts-Preis-Update durch
         
         Args:
-            chart_type: Optionale Filterung nach Chart-Typ
+            chart_type: Spezifischer Chart-Typ (optional)
             
         Returns:
-            Update-Statistiken
+            Ergebnis-Dictionary
         """
         if not self.charts_enabled:
-            return {'success': False, 'error': 'Charts not enabled'}
-        
-        if not self.charts_manager:
-            return {'success': False, 'error': 'Charts manager not available'}
+            return {'success': False, 'error': 'Charts-Funktionalität nicht verfügbar'}
         
         try:
-            # Charts-Spiele holen die Updates benötigen
-            if hasattr(self.db_manager, 'get_chart_games_needing_price_update'):
-                pending_games = self.db_manager.get_chart_games_needing_price_update(hours_threshold=0)
-            else:
-                # Fallback: alle aktiven Charts-Spiele
-                if hasattr(self.db_manager, 'get_active_chart_games'):
-                    pending_games = self.db_manager.get_active_chart_games(chart_type)
-                else:
-                    return {'success': False, 'error': 'Charts database functions not available'}
+            logger.info("💰 Führe Charts-Preis-Update durch...")
             
-            if not pending_games:
-                return {'success': True, 'total_updated': 0, 'message': 'All prices current'}
+            # Aktive Charts-Spiele abrufen
+            chart_games = self.charts_manager.get_active_chart_games(chart_type)
             
-            # App IDs extrahieren
-            app_ids = list(set(game['steam_app_id'] for game in pending_games))
+            if not chart_games:
+                return {'success': True, 'total_games': 0, 'message': 'Keine Charts-Spiele zu aktualisieren'}
             
-            # Standard Preis-Tracking verwenden
-            result = self.track_app_prices(app_ids)
+            total_games = len(chart_games)
+            price_updates = 0
+            deals_found = 0
+            errors = []
             
-            return {
-                'success': True,
-                'total_games': len(app_ids),
-                'successful': result['successful'],
-                'failed': result['failed'],
-                'errors': result.get('errors', [])
-            }
+            logger.info(f"💰 Aktualisiere Preise für {total_games} Charts-Spiele...")
             
-        except Exception as e:
-            logger.error(f"❌ Fehler beim Charts-Preisupdate: {e}")
-            return {'success': False, 'error': str(e)}
-    
-    def get_best_charts_deals(self, limit: int = 15, chart_type: str = None) -> List[Dict]:
-        """
-        Gibt beste Deals für Charts-Spiele zurück (falls verfügbar)
-        
-        Args:
-            limit: Anzahl Deals
-            chart_type: Optionale Filterung nach Chart-Typ
-            
-        Returns:
-            Liste der besten Charts-Deals
-        """
-        if not self.charts_enabled:
-            return []
-        
-        try:
-            if hasattr(self.db_manager, 'get_charts_best_deals'):
-                return self.db_manager.get_charts_best_deals(limit, chart_type)
-            else:
-                return []
-        except Exception as e:
-            logger.error(f"❌ Fehler beim Abrufen der Charts-Deals: {e}")
-            return []
-    
-    def get_trending_price_drops(self, hours_back: int = 24, min_discount: int = 20) -> List[Dict]:
-        """
-        Gibt Charts-Spiele mit neuen Preissenkungen zurück (falls verfügbar)
-        
-        Args:
-            hours_back: Stunden zurückblicken
-            min_discount: Mindestrabatt in Prozent
-            
-        Returns:
-            Liste der Charts-Spiele mit neuen Deals
-        """
-        if not self.charts_enabled:
-            return []
-        
-        try:
-            # Vereinfachte Implementation - könnte erweitert werden
-            trending_deals = []
-            
-            if hasattr(self.db_manager, 'get_active_chart_games'):
-                active_games = self.db_manager.get_active_chart_games()
-                
-                for game in active_games[:20]:  # Limitiere für Performance
+            for game in chart_games:
+                try:
                     app_id = game['steam_app_id']
                     
-                    # Aktuelle Preise holen
-                    if hasattr(self.db_manager, 'get_charts_price_history'):
-                        recent_prices = self.db_manager.get_charts_price_history(app_id, days_back=2)
+                    # Preis für App aktualisieren
+                    price_result = self.get_app_prices(app_id)
+                    
+                    if price_result:
+                        # In Charts-Preis-Tabelle speichern
+                        if hasattr(self.charts_manager, 'save_chart_price'):
+                            self.charts_manager.save_chart_price(
+                                app_id=app_id,
+                                chart_type=game['chart_type'],
+                                price_data=price_result
+                            )
                         
-                        if len(recent_prices) >= 2:
-                            latest = recent_prices[0]
-                            
-                            # Prüfe auf Rabatte
-                            stores = ['steam', 'greenmangaming', 'gog', 'humblestore', 'fanatical', 'gamesplanet']
-                            
-                            for store in stores:
-                                latest_discount = latest.get(f'{store}_discount_percent', 0)
-                                
-                                if latest_discount >= min_discount and latest.get(f'{store}_available'):
-                                    trending_deals.append({
-                                        'steam_app_id': app_id,
-                                        'game_title': latest.get('game_title', game['name']),
-                                        'chart_type': game['chart_type'],
-                                        'store': store.title(),
-                                        'current_price': latest.get(f'{store}_price'),
-                                        'discount_percent': latest_discount,
-                                        'timestamp': latest['timestamp']
-                                    })
-                                    break
+                        price_updates += 1
+                        
+                        # Deals suchen
+                        best_deal = self._find_best_deal(price_result)
+                        if best_deal and best_deal.get('discount_percent', 0) > 10:
+                            deals_found += 1
+                    
+                    # Rate Limiting
+                    time.sleep(1.5)
+                    
+                except Exception as e:
+                    errors.append(f"Fehler bei {app_id}: {str(e)}")
+                    logger.debug(f"Charts-Preis-Update Fehler für {app_id}: {e}")
             
-            # Nach Rabatt sortieren
-            trending_deals.sort(key=lambda x: x['discount_percent'], reverse=True)
-            return trending_deals[:20]
+            result = {
+                'success': True,
+                'total_games': total_games,
+                'price_updates': price_updates,
+                'deals_found': deals_found,
+                'errors': errors
+            }
+            
+            logger.info(f"✅ Charts-Preis-Update: {price_updates}/{total_games} Apps aktualisiert, {deals_found} Deals")
+            return result
             
         except Exception as e:
-            logger.error(f"❌ Fehler beim Abrufen der Trending Price Drops: {e}")
-            return []
+            logger.error(f"❌ Charts-Preis-Update Fehler: {e}")
+            return {'success': False, 'error': str(e)}
     
-    # ========================
-    # ENHANCED STATISTICS
-    # ========================
-    
-    def get_enhanced_statistics(self) -> Dict:
+    def get_tracked_charts_summary(self) -> Dict:
         """
-        Gibt erweiterte Statistiken mit Charts-Daten zurück
+        Gibt Zusammenfassung der getrackte Charts zurück
         
         Returns:
-            Dict mit erweiterten Statistiken
+            Charts-Zusammenfassung
         """
-        # Basis-Statistiken
-        stats = self.get_statistics()
+        if not self.charts_enabled:
+            return {'error': 'Charts-Funktionalität nicht verfügbar'}
         
-        # Universal Background Scheduler Status
-        stats['background_scheduler'] = {
-            'price_tracker': self.price_scheduler.get_scheduler_status(),
-            'charts': self.charts_scheduler.get_scheduler_status() if self.charts_scheduler else None
-        }
+        try:
+            return self.charts_manager.get_chart_statistics()
+        except Exception as e:
+            logger.error(f"❌ Fehler beim Abrufen der Charts-Zusammenfassung: {e}")
+            return {'error': str(e)}
+    
+    # =====================================================================
+    # CORE PRICE TRACKING FUNKTIONEN (UNVERÄNDERT)
+    # =====================================================================
+    
+    def _wait_for_rate_limit(self):
+        """Wartet für Rate Limiting"""
+        elapsed = time.time() - self.last_cheapshark_request
+        if elapsed < self.cheapshark_rate_limit:
+            wait_time = self.cheapshark_rate_limit - elapsed
+            time.sleep(wait_time)
+        self.last_cheapshark_request = time.time()
+    
+    def get_app_prices(self, app_id: str, retries: int = 3) -> Optional[Dict]:
+        """
+        Holt aktuelle Preise für eine App von CheapShark
         
-        # Charts-Statistiken hinzufügen falls verfügbar
-        if self.charts_enabled and hasattr(self.db_manager, 'get_charts_statistics'):
+        Args:
+            app_id: Steam App ID
+            retries: Anzahl Wiederholungsversuche
+            
+        Returns:
+            Dictionary mit Preisinformationen oder None
+        """
+        for attempt in range(retries):
             try:
-                charts_stats = self.db_manager.get_charts_statistics()
-                stats['charts'] = charts_stats
-                stats['charts']['enabled'] = True
+                self._wait_for_rate_limit()
+                
+                url = "https://www.cheapshark.com/api/1.0/games"
+                params = {
+                    'steamAppID': app_id,
+                    'exact': 1
+                }
+                
+                response = self.session.get(url, params=params, timeout=15)
+                response.raise_for_status()
+                
+                data = response.json()
+                
+                if not data:
+                    logger.debug(f"Keine Preisdaten für App {app_id}")
+                    return None
+                
+                # Erstes Spiel aus Ergebnissen nehmen
+                game_data = data[0]
+                game_title = game_data.get('external', 'Unknown Game')
+                
+                # Preise für alle Stores sammeln
+                prices = {
+                    'game_title': game_title,
+                    'steam_app_id': app_id,
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+                # Alle verfügbaren Deals durchgehen
+                for deal in game_data.get('deals', []):
+                    store_id = deal['storeID']
+                    store_name = self.STORES.get(store_id, f"Store{store_id}")
+                    
+                    if store_id in self.STORES:
+                        prices[f'{store_name.lower()}_price'] = float(deal['price']) if deal['price'] else None
+                        prices[f'{store_name.lower()}_original_price'] = float(deal['retailPrice']) if deal['retailPrice'] else None
+                        prices[f'{store_name.lower()}_discount_percent'] = int(float(deal['savings'])) if deal['savings'] else 0
+                        prices[f'{store_name.lower()}_available'] = True
+                
+                return prices
+                
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"Request-Fehler bei App {app_id} (Versuch {attempt + 1}): {e}")
+                if attempt < retries - 1:
+                    time.sleep(2 ** attempt)  # Exponential backoff
             except Exception as e:
-                logger.warning(f"⚠️ Fehler beim Laden der Charts-Statistiken: {e}")
-                stats['charts'] = {'enabled': True, 'error': str(e)}
-        else:
-            stats['charts'] = {
-                'enabled': False,
-                'message': 'Charts-Funktionalität nicht verfügbar'
-            }
+                logger.error(f"Unerwarteter Fehler bei App {app_id}: {e}")
+                break
         
-        return stats
+        return None
     
-    # ========================
-    # DATA RETRIEVAL
-    # ========================
-    
-    def get_statistics(self) -> Dict:
-        """Gibt erweiterte Tracker-Statistiken zurück"""
-        return self.db_manager.get_statistics()
-    
-    def get_price_history(self, steam_app_id: str, days_back: int = 30) -> List[Dict]:
-        """Gibt Preisverlauf für App zurück"""
-        return self.db_manager.get_price_history(steam_app_id, days_back)
-    
-    def get_latest_prices(self, steam_app_id: str) -> Optional[Dict]:
-        """Gibt neueste Preise für App zurück"""
-        return self.db_manager.get_latest_prices(steam_app_id)
-    
-    def get_current_best_deals(self, limit: int = 10) -> List[Dict]:
-        """Gibt beste aktuelle Deals zurück"""
-        return self.db_manager.get_best_deals(limit)
-    
-    # ========================
-    # UTILITY METHODS
-    # ========================
-    
-    def print_price_summary(self, steam_app_id: str):
-        """Zeigt Preis-Zusammenfassung für eine App"""
-        price_data = self.get_game_prices_from_cheapshark(steam_app_id)
-        
-        if price_data['status'] != 'success':
-            print(f"❌ Keine Preisdaten für App {steam_app_id}")
-            return
-        
-        print(f"\n💰 AKTUELLE PREISE FÜR: {price_data['game_title']}")
-        print(f"Steam App ID: {steam_app_id}")
-        print(f"=" * 50)
-        
-        for store_name, price_info in price_data['prices'].items():
-            if price_info['available']:
-                price = price_info['price']
-                discount = price_info['discount_percent']
-                
-                status = f"€{price:.2f}"
-                if discount > 0:
-                    status += f" (-{discount}%)"
-                
-                print(f"{store_name:15}: {status}")
-            else:
-                print(f"{store_name:15}: Nicht verfügbar")
-        
-        print()
-    
-    def export_price_history_csv(self, steam_app_id: str, output_file: str = None) -> str:
-        """Exportiert Preisverlauf als CSV"""
-        if output_file is None:
-            output_file = f"price_history_{steam_app_id}.csv"
-        
-        history = self.get_price_history(steam_app_id, days_back=90)
-        
-        if not history:
-            logger.warning(f"Keine Preisdaten für Export verfügbar für App {steam_app_id}")
-            return None
-        
-        # CSV Header
-        csv_lines = ["date,Steam,GreenManGaming,GOG,HumbleStore,Fanatical,GamesPlanet"]
-        
-        # Daten verarbeiten
-        for snapshot in reversed(history):  # Älteste zuerst
-            date = snapshot['timestamp'][:10]  # YYYY-MM-DD
-            
-            prices = []
-            stores = ['steam', 'greenmangaming', 'gog', 'humblestore', 'fanatical', 'gamesplanet']
-            
-            for store in stores:
-                price_col = f"{store}_price"
-                available_col = f"{store}_available"
-                
-                if snapshot.get(available_col) and snapshot.get(price_col) is not None:
-                    prices.append(f"{snapshot[price_col]:.2f}")
-                else:
-                    prices.append("")
-            
-            csv_lines.append(f"{date},{','.join(prices)}")
-        
-        # Datei schreiben
-        output_path = Path(output_file)
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(csv_lines))
-        
-        logger.info(f"✅ CSV Export erstellt: {output_path}")
-        return str(output_path)
-    
-    def cleanup_scheduler_resources(self):
+    def add_app_to_tracking(self, app_id: str, name: str = None) -> bool:
         """
-        UPDATED: Bereinigt alle Scheduler-Ressourcen
+        Fügt eine App zum Tracking hinzu
+        
+        Args:
+            app_id: Steam App ID
+            name: Name der App (optional)
+            
+        Returns:
+            True wenn erfolgreich hinzugefügt
         """
         try:
-            # Price Tracker Scheduler aufräumen
-            self.price_scheduler.cleanup_all_files()
+            # Namen ermitteln falls nicht gegeben
+            if not name:
+                name = self._get_app_name_from_steam(app_id)
+                if not name:
+                    name = f"App {app_id}"
             
-            # Charts Scheduler aufräumen (falls verfügbar)
-            if self.charts_scheduler:
-                self.charts_scheduler.cleanup_all_files()
-            
-            logger.info("🧹 Alle Scheduler-Ressourcen bereinigt")
+            # In Datenbank hinzufügen
+            return self.db_manager.add_tracked_app(app_id, name)
             
         except Exception as e:
-            logger.warning(f"⚠️ Fehler beim Aufräumen der Scheduler-Ressourcen: {e}")
+            logger.error(f"Fehler beim Hinzufügen der App {app_id}: {e}")
+            return False
+    
+    def _get_app_name_from_steam(self, app_id: str) -> Optional[str]:
+        """
+        Holt App-Namen von Steam Store API
+        
+        Args:
+            app_id: Steam App ID
+            
+        Returns:
+            App-Name oder None
+        """
+        try:
+            url = f"https://store.steampowered.com/api/appdetails?appids={app_id}&l=german"
+            response = self.session.get(url, timeout=10)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            if app_id in data and data[app_id]['success']:
+                return data[app_id]['data']['name']
+                
+        except Exception as e:
+            logger.debug(f"Fehler beim Abrufen des App-Namens für {app_id}: {e}")
+        
+        return None
+    
+    def get_current_prices(self, limit: int = None) -> List[Dict]:
+        """
+        Gibt aktuelle Preise aller getrackte Apps zurück
+        
+        Args:
+            limit: Maximum Anzahl Apps (optional)
+            
+        Returns:
+            Liste mit aktuellen Preisinformationen
+        """
+        tracked_apps = self.db_manager.get_tracked_apps(limit=limit)
+        current_prices = []
+        
+        for app in tracked_apps:
+            app_id = app['steam_app_id']
+            latest_prices = self.db_manager.get_latest_prices(app_id)
+            
+            if latest_prices:
+                current_prices.append(latest_prices)
+        
+        return current_prices
+    
+    def get_best_deals(self, min_discount: int = 20, limit: int = 20) -> List[Dict]:
+        """
+        Findet die besten aktuellen Deals
+        
+        Args:
+            min_discount: Mindest-Rabatt in Prozent
+            limit: Maximum Anzahl Deals
+            
+        Returns:
+            Liste der besten Deals
+        """
+        return self.db_manager.get_best_deals(min_discount, limit)
+    
+    def _find_best_deal(self, price_data: Dict) -> Optional[Dict]:
+        """
+        Findet den besten Deal aus Preisdaten
+        
+        Args:
+            price_data: Dictionary mit Preisinformationen
+            
+        Returns:
+            Bester Deal oder None
+        """
+        best_deal = None
+        best_discount = 0
+        
+        for store_name in self.STORES.values():
+            price_key = f"{store_name.lower()}_price"
+            discount_key = f"{store_name.lower()}_discount_percent"
+            
+            if price_key in price_data and discount_key in price_data:
+                price = price_data[price_key]
+                discount = price_data[discount_key]
+                
+                if price and discount and discount > best_discount:
+                    best_discount = discount
+                    best_deal = {
+                        'store': store_name,
+                        'price': price,
+                        'discount_percent': discount
+                    }
+        
+        return best_deal
+    
+    def update_app_prices(self, app_id: str) -> bool:
+        """
+        Aktualisiert Preise für eine spezifische App
+        
+        Args:
+            app_id: Steam App ID
+            
+        Returns:
+            True wenn erfolgreich aktualisiert
+        """
+        try:
+            prices = self.get_app_prices(app_id)
+            
+            if prices:
+                # In Datenbank speichern
+                return self.db_manager.save_price_snapshot(prices)
+            else:
+                logger.warning(f"Keine Preise für App {app_id} erhalten")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Fehler beim Aktualisieren der Preise für App {app_id}: {e}")
+            return False
+    
+    def process_all_pending_apps_optimized(self, hours_threshold: int = 6) -> Dict:
+        """
+        Optimiertes Batch-Update für Apps die Updates benötigen
+        
+        Args:
+            hours_threshold: Apps älter als X Stunden aktualisieren
+            
+        Returns:
+            Dictionary mit Verarbeitungs-Statistiken
+        """
+        start_time = time.time()
+        
+        # Apps ermitteln die Updates benötigen
+        pending_apps = self.db_manager.get_apps_needing_update(hours_threshold)
+        
+        if not pending_apps:
+            return {
+                'total_apps': 0,
+                'total_successful': 0,
+                'total_duration': 0,
+                'apps_per_second': 0,
+                'errors': []
+            }
+        
+        total_apps = len(pending_apps)
+        successful_updates = 0
+        errors = []
+        
+        logger.info(f"🔄 Starte optimiertes Batch-Update für {total_apps} Apps (Schwellenwert: {hours_threshold}h)")
+        
+        # Batch-Processing
+        for i in range(0, total_apps, self.batch_size):
+            batch = pending_apps[i:i + self.batch_size]
+            batch_start = time.time()
+            
+            for app in batch:
+                app_id = app['steam_app_id']
+                
+                try:
+                    if self.update_app_prices(app_id):
+                        successful_updates += 1
+                    else:
+                        errors.append(f"Keine Preise für {app_id}")
+                        
+                except Exception as e:
+                    errors.append(f"Fehler bei {app_id}: {str(e)}")
+                
+                # Rate Limiting zwischen Apps
+                time.sleep(0.1)
+            
+            batch_duration = time.time() - batch_start
+            logger.info(f"📊 Batch {i//self.batch_size + 1}/{(total_apps-1)//self.batch_size + 1}: "
+                       f"{len(batch)} Apps in {batch_duration:.1f}s")
+            
+            # Pause zwischen Batches
+            time.sleep(1.0)
+        
+        total_duration = time.time() - start_time
+        apps_per_second = total_apps / total_duration if total_duration > 0 else 0
+        
+        result = {
+            'total_apps': total_apps,
+            'total_successful': successful_updates,
+            'total_duration': total_duration,
+            'apps_per_second': apps_per_second,
+            'errors': errors
+        }
+        
+        logger.info(f"✅ Batch-Update abgeschlossen: {successful_updates}/{total_apps} Apps erfolgreich "
+                   f"({apps_per_second:.1f} Apps/s, {len(errors)} Fehler)")
+        
+        return result
+    
+    def get_apps_with_generic_names(self, limit: int = 50) -> List[Tuple[str, str]]:
+        """
+        Findet Apps mit generischen Namen die Updates benötigen
+        
+        Args:
+            limit: Maximum Anzahl Apps
+            
+        Returns:
+            Liste mit (app_id, current_name) Tupeln
+        """
+        return self.db_manager.get_apps_with_generic_names(limit)
+    
+    def update_app_name(self, app_id: str) -> Optional[str]:
+        """
+        Aktualisiert den Namen einer App
+        
+        Args:
+            app_id: Steam App ID
+            
+        Returns:
+            Neuer Name oder None
+        """
+        try:
+            new_name = self._get_app_name_from_steam(app_id)
+            
+            if new_name:
+                if self.db_manager.update_app_name(app_id, new_name):
+                    logger.info(f"📝 App {app_id} Name aktualisiert: {new_name}")
+                    return new_name
+            
+        except Exception as e:
+            logger.error(f"Fehler beim Aktualisieren des App-Namens für {app_id}: {e}")
+        
+        return None
+    
+    def export_to_csv(self, filename: str = None) -> str:
+        """
+        Exportiert alle Daten als CSV
+        
+        Args:
+            filename: Dateiname (optional)
+            
+        Returns:
+            Pfad zur erstellten CSV-Datei
+        """
+        if not filename:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"steam_price_tracker_export_{timestamp}.csv"
+        
+        return self.db_manager.export_to_csv(filename)
+    
+    def get_database_statistics(self) -> Dict:
+        """
+        Gibt Datenbank-Statistiken zurück
+        
+        Returns:
+            Dictionary mit Statistiken
+        """
+        stats = self.db_manager.get_database_statistics()
+        
+        # Charts-Statistiken hinzufügen
+        if self.charts_enabled:
+            try:
+                charts_stats = self.get_tracked_charts_summary()
+                if 'error' not in charts_stats:
+                    stats['charts'] = charts_stats
+            except Exception as e:
+                logger.debug(f"Charts-Statistiken Fehler: {e}")
+        
+        return stats
 
-
-# ========================
-# CONVENIENCE FUNCTIONS - UPDATED
-# ========================
+# =====================================================================
+# CONVENIENCE FUNCTIONS - ENHANCED
+# =====================================================================
 
 def create_price_tracker(api_key: str = None, db_path: str = "steam_price_tracker.db", enable_charts: bool = True):
     """
-    Erstellt Steam Price Tracker mit Universal Background Scheduler
+    Erstellt Steam Price Tracker mit Enhanced Universal Background Scheduler
     
     Args:
         api_key: Steam API Key (optional, lädt aus .env)
@@ -1261,7 +839,7 @@ def create_price_tracker(api_key: str = None, db_path: str = "steam_price_tracke
         enable_charts: Ob Charts-Funktionalität aktiviert werden soll
         
     Returns:
-        SteamPriceTracker Instanz mit Universal Background Scheduler
+        SteamPriceTracker Instanz mit Enhanced Universal Background Scheduler
     """
     if api_key is None and enable_charts:
         try:
@@ -1284,7 +862,7 @@ def setup_full_automation(tracker: SteamPriceTracker,
                          charts_price_interval: int = 4,
                          name_interval: int = 30) -> bool:
     """
-    UPDATED: Richtet vollautomatisches Tracking mit Universal Background Scheduler ein
+    ENHANCED: Richtet vollautomatisches Tracking mit Enhanced Universal Background Scheduler ein
     
     Args:
         tracker: SteamPriceTracker Instanz
@@ -1313,33 +891,28 @@ def setup_full_automation(tracker: SteamPriceTracker,
             )
             logger.info(f"✅ Charts Automation: Updates alle {charts_interval}h, Preise alle {charts_price_interval}h")
         
-        logger.info("🚀 Vollautomatisches Tracking mit Universal Background Scheduler aktiviert!")
+        logger.info("🚀 Vollautomatisches Tracking mit Enhanced Universal Background Scheduler aktiviert!")
         logger.info("💡 Alle Tasks laufen in separaten Terminals!")
+        
         return True
         
     except Exception as e:
-        logger.error(f"❌ Fehler beim Setup der Automatisierung: {e}")
+        logger.error(f"❌ Fehler beim Einrichten der Vollautomation: {e}")
         return False
 
-def cleanup_all_background_schedulers():
-    """
-    Utility-Funktion zum Aufräumen aller Background-Scheduler-Ressourcen
-    """
+if __name__ == "__main__":
+    # Test-Ausführung
+    print("🧪 Steam Price Tracker - Test Mode")
+    
     try:
-        from pathlib import Path
+        # Tracker erstellen
+        tracker = create_price_tracker()
         
-        # Temporäre Scheduler-Dateien entfernen
-        temp_dir = Path("temp_schedulers")
-        if temp_dir.exists():
-            for file in temp_dir.glob("scheduler_*.py"):
-                file.unlink()
-            
-            try:
-                temp_dir.rmdir()
-            except OSError:
-                pass
+        print(f"✅ Tracker erstellt (Charts: {'✅' if tracker.charts_enabled else '❌'})")
         
-        logger.info("🧹 Alle Background-Scheduler-Ressourcen bereinigt")
+        # Status anzeigen
+        status = tracker.get_scheduler_status()
+        print(f"📊 Scheduler Status: {status}")
         
     except Exception as e:
-        logger.warning(f"⚠️ Fehler beim Aufräumen: {e}")
+        print(f"❌ Test-Fehler: {e}")
