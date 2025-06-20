@@ -1,5 +1,5 @@
 {
-  "setup_completed_at": "2025-06-19T13:34:08.110997",
+  "setup_completed_at": "2025-06-21T00:46:44.864323",
   "features_available": {
     "core": true,
     "charts": true,
@@ -12,61 +12,61 @@
   },
   "setup_log": [
     {
-      "timestamp": "13:33:55",
+      "timestamp": "00:46:34",
       "step": "Master Backup",
       "success": true,
       "details": "8 Dateien gesichert"
     },
     {
-      "timestamp": "13:33:55",
+      "timestamp": "00:46:34",
       "step": "Directory Structure",
       "success": true,
-      "details": "7 Verzeichnisse erstellt"
+      "details": "2 Verzeichnisse erstellt"
     },
     {
-      "timestamp": "13:34:05",
+      "timestamp": "00:46:41",
       "step": "Python Dependencies",
       "success": false,
-      "details": "Requirements Installation fehlgeschlagen: ERROR: Could not find a version that satisfies the requirement tkinter>=8.6 (from versions: none)\n\n[notice] A new release of pip is available: 25.0 -> 25.1.1\n[notice] To update, run: python.exe -m pip install --upgrade pip\nERROR: No matching distribution found for tkinter>=8.6\n"
+      "details": "Requirements Installation fehlgeschlagen: ERROR: Could not find a version that satisfies the requirement tkinter>=8.6 (from versions: none)\nERROR: No matching distribution found for tkinter>=8.6\n"
     },
     {
-      "timestamp": "13:34:05",
+      "timestamp": "00:46:41",
       "step": "Configuration Files",
       "success": true,
       "details": "Konfigurationsdateien erstellt"
     },
     {
-      "timestamp": "13:34:05",
+      "timestamp": "00:46:41",
       "step": "Database Initialization",
       "success": true,
       "details": "Datenbank initialisiert"
     },
     {
-      "timestamp": "13:34:07",
+      "timestamp": "00:46:43",
       "step": "Core Functionality Test",
       "success": false,
       "details": "'SteamPriceTracker' object has no attribute 'get_tracked_apps'"
     },
     {
-      "timestamp": "13:34:07",
+      "timestamp": "00:46:43",
       "step": "Charts Integration",
       "success": true,
       "details": "Charts-Integration verfügbar"
     },
     {
-      "timestamp": "13:34:07",
+      "timestamp": "00:46:43",
       "step": "CLI Tools Setup",
       "success": true,
       "details": "2 CLI-Tools verfügbar"
     },
     {
-      "timestamp": "13:34:08",
+      "timestamp": "00:46:44",
       "step": "Elasticsearch Stack",
       "success": true,
       "details": "ELK Stack Setup abgeschlossen"
     },
     {
-      "timestamp": "13:34:08",
+      "timestamp": "00:46:44",
       "step": "Startup Scripts",
       "success": true,
       "details": "start.bat und start.sh erstellt"

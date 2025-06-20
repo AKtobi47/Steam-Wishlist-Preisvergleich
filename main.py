@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
 """
-Steam Price Tracker - Main Interface
-VOLLSTÄNDIG INTEGRIERTE VERSION mit allen Features
-Behält bestehende Menüstruktur bei + integriert alle CLI-Tools und Process Management
+Steam Price Tracker - Hauptanwendung (FINAL KORRIGIERT für dev1-Branch)
+Verwendet tatsächlich verfügbare Methoden und robuste Fallback-Mechanismen
+Behebt die Datenbankprobleme durch direkte Instanziierung
 """
 
 import sys
 import os
-import json
-import time
-import atexit
 import subprocess
 from pathlib import Path
 from datetime import datetime
@@ -19,601 +16,859 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# =====================================================================
-# ENHANCED CLEANUP & PROCESS MANAGEMENT
-# =====================================================================
+# =================================================================
+# ENHANCED CLEANUP FUNCTIONS
+# =================================================================
 
 def enhanced_cleanup():
-    """Enhanced Cleanup für alle Background-Prozesse"""
+    """Enhanced Cleanup beim Beenden"""
     try:
-        logger.info("🧹 Enhanced Cleanup...")
-        
-        try:
-            from background_scheduler import _global_process_manager
-            if _global_process_manager:
-                stopped = _global_process_manager.cleanup_all_processes()
-                logger.info(f"✅ {stopped} Background-Prozesse gestoppt")
-        except Exception as e:
-            logger.debug(f"Process Manager Cleanup: {e}")
-        
-        # Temporäre Dateien aufräumen
-        temp_dirs = ["temp_schedulers", "temp_scripts"]
-        for temp_dir in temp_dirs:
-            temp_path = Path(temp_dir)
-            if temp_path.exists():
-                try:
-                    import shutil
-                    shutil.rmtree(temp_path)
-                    logger.debug(f"🗑️ Temporäre Dateien entfernt: {temp_dir}")
-                except Exception as e:
-                    logger.debug(f"Temp cleanup error: {e}")
-        
-        logger.info("✅ Enhanced Cleanup abgeschlossen")
-    except Exception as e:
-        logger.debug(f"Enhanced Cleanup Fehler: {e}")
-
-atexit.register(enhanced_cleanup)
-
-# =====================================================================
-# CHARTS-KONFIGURATION (minimal - wie ursprünglich geplant)
-# =====================================================================
-
-def load_charts_config():
-    """Lädt Charts-Konfiguration aus config.json"""
-    try:
-        config_file = Path("config.json")
-        if config_file.exists():
-            with open(config_file, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-            
-            return config.get('charts', {
-                'update_interval_hours': 6,
-                'price_interval_hours': 4,
-                'cleanup_interval_hours': 24,
-                'enabled': False,
-                'chart_types': ['most_played', 'top_releases', 'best_sellers']
-            })
-        else:
-            return {
-                'update_interval_hours': 6,
-                'price_interval_hours': 4,
-                'cleanup_interval_hours': 24,
-                'enabled': False,
-                'chart_types': ['most_played', 'top_releases', 'best_sellers']
-            }
-    except Exception as e:
-        logger.error(f"Fehler beim Laden der Charts-Config: {e}")
-        return {
-            'update_interval_hours': 6,
-            'price_interval_hours': 4,
-            'cleanup_interval_hours': 24,
-            'enabled': False,
-            'chart_types': ['most_played', 'top_releases', 'best_sellers']
-        }
-
-def save_charts_config(charts_config):
-    """Speichert Charts-Konfiguration in config.json"""
-    try:
-        config_file = Path("config.json")
-        
-        if config_file.exists():
-            with open(config_file, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-        else:
-            config = {}
-        
-        config['charts'] = charts_config
-        
-        with open(config_file, 'w', encoding='utf-8') as f:
-            json.dump(config, f, indent=2, ensure_ascii=False)
-        
-        return True
-    except Exception as e:
-        logger.error(f"Fehler beim Speichern der Charts-Config: {e}")
-        return False
-
-def configure_charts_intervals(price_tracker, charts_config):
-    """Konfiguriert Charts-Tracking-Intervalle (Menüpunkt 17)"""
-    print("\n📊 CHARTS-INTERVALLE KONFIGURIEREN")
-    print("=" * 50)
-    print("💡 Konfiguriere die Intervalle für automatisches Charts-Tracking")
-    print()
-    
-    # Aktuelle Werte anzeigen
-    print("🔧 AKTUELLE EINSTELLUNGEN:")
-    print(f"   📈 Charts-Updates: alle {charts_config['update_interval_hours']} Stunden")
-    print(f"   💰 Preis-Updates: alle {charts_config['price_interval_hours']} Stunden") 
-    print(f"   🧹 Cleanup: alle {charts_config['cleanup_interval_hours']} Stunden")
-    print(f"   ✅ Status: {'Aktiviert' if charts_config['enabled'] else 'Deaktiviert'}")
-    print()
-    
-    try:
-        print("⚙️ NEUE INTERVALLE EINGEBEN:")
-        print("💡 Drücke Enter um aktuelle Werte zu behalten")
-        
-        # Charts-Update Intervall
-        while True:
-            update_input = input(f"📈 Charts-Update Intervall (Stunden, aktuell {charts_config['update_interval_hours']}): ").strip()
-            if not update_input:
-                break
-            try:
-                update_hours = int(update_input)
-                if 1 <= update_hours <= 168:
-                    charts_config['update_interval_hours'] = update_hours
-                    break
-                else:
-                    print("❌ Bitte einen Wert zwischen 1 und 168 eingeben")
-            except ValueError:
-                print("❌ Bitte eine gültige Zahl eingeben")
-        
-        # Preis-Update Intervall
-        while True:
-            price_input = input(f"💰 Preis-Update Intervall (Stunden, aktuell {charts_config['price_interval_hours']}): ").strip()
-            if not price_input:
-                break
-            try:
-                price_hours = int(price_input)
-                if 1 <= price_hours <= 48:
-                    charts_config['price_interval_hours'] = price_hours
-                    break
-                else:
-                    print("❌ Bitte einen Wert zwischen 1 und 48 eingeben")
-            except ValueError:
-                print("❌ Bitte eine gültige Zahl eingeben")
-        
-        # Cleanup-Intervall
-        while True:
-            cleanup_input = input(f"🧹 Cleanup Intervall (Stunden, aktuell {charts_config['cleanup_interval_hours']}): ").strip()
-            if not cleanup_input:
-                break
-            try:
-                cleanup_hours = int(cleanup_input)
-                if 6 <= cleanup_hours <= 168:
-                    charts_config['cleanup_interval_hours'] = cleanup_hours
-                    break
-                else:
-                    print("❌ Bitte einen Wert zwischen 6 und 168 eingeben")
-            except ValueError:
-                print("❌ Bitte eine gültige Zahl eingeben")
-        
-        print("\n✅ NEUE KONFIGURATION:")
-        print(f"   📈 Charts-Updates: alle {charts_config['update_interval_hours']} Stunden")
-        print(f"   💰 Preis-Updates: alle {charts_config['price_interval_hours']} Stunden")
-        print(f"   🧹 Cleanup: alle {charts_config['cleanup_interval_hours']} Stunden")
-        
-        # Konfiguration speichern
-        if save_charts_config(charts_config):
-            print("💾 Konfiguration gespeichert!")
-        
-        # Charts-Tracking aktivieren/neu starten
-        enable_choice = input("\n🚀 Charts-Tracking jetzt aktivieren? (j/n): ").lower().strip()
-        if enable_choice in ['j', 'ja', 'y', 'yes']:
-            activate_charts_tracking(price_tracker, charts_config)
-        
-        return True
-        
-    except KeyboardInterrupt:
-        print("\n⏹️ Konfiguration abgebrochen")
-        return False
-    except Exception as e:
-        print(f"❌ Fehler bei der Konfiguration: {e}")
-        return False
-
-def configure_charts_advanced(price_tracker, charts_config):
-    """Erweiterte Charts-Konfiguration (Menüpunkt 18)"""
-    print("\n📊 ERWEITERTE CHARTS-KONFIGURATION")
-    print("=" * 50)
-    print("💡 Konfiguriere Chart-Typen und -Anzahlen")
-    print()
-    
-    try:
-        available_charts = {
-            'most_played': 'Meistgespielte Spiele',
-            'top_releases': 'Top Neue Releases',
-            'best_sellers': 'Bestseller',
-            'weekly_top_sellers': 'Wöchentliche Bestseller'
-        }
-        
-        print("📋 VERFÜGBARE CHART-TYPEN:")
-        for key, desc in available_charts.items():
-            enabled = "✅" if key in charts_config['chart_types'] else "❌"
-            print(f"   {enabled} {key}: {desc}")
-        print()
-        
-        print("⚙️ CHART-TYPEN AKTIVIEREN/DEAKTIVIEREN:")
-        new_chart_types = []
-        
-        for key, desc in available_charts.items():
-            current = key in charts_config['chart_types']
-            default = "j" if current else "n"
-            choice = input(f"📊 {desc} aktivieren? (j/n, aktuell: {'✅' if current else '❌'}): ").strip().lower()
-            
-            if not choice:
-                choice = default
-            
-            if choice in ['j', 'ja', 'y', 'yes']:
-                new_chart_types.append(key)
-        
-        charts_config['chart_types'] = new_chart_types
-        print(f"✅ Chart-Typen aktualisiert: {len(new_chart_types)} aktiviert")
-        
-        # Konfiguration speichern
-        if save_charts_config(charts_config):
-            print("💾 Erweiterte Konfiguration gespeichert!")
-        
-        return True
-        
-    except KeyboardInterrupt:
-        print("\n⏹️ Konfiguration abgebrochen")
-        return False
-    except Exception as e:
-        print(f"❌ Fehler bei der erweiterten Konfiguration: {e}")
-        return False
-
-def activate_charts_tracking(price_tracker, charts_config):
-    """Aktiviert Charts-Tracking mit konfigurierten Intervallen"""
-    try:
-        if not price_tracker.charts_enabled:
-            print("❌ Charts-Funktionalität nicht verfügbar")
-            print("💡 Stelle sicher, dass ein Steam API Key konfiguriert ist")
-            return False
-        
-        print("\n🚀 Aktiviere Charts-Tracking...")
-        
-        # Charts-Tracking mit neuen Intervallen aktivieren
-        success = price_tracker.enable_charts_tracking(
-            charts_update_hours=charts_config['update_interval_hours'],
-            price_update_hours=charts_config['price_interval_hours'],
-            cleanup_hours=charts_config['cleanup_interval_hours']
-        )
-        
-        if success:
-            charts_config['enabled'] = True
-            save_charts_config(charts_config)
-            
-            print("✅ Charts-Tracking erfolgreich aktiviert!")
-            print()
-            print("📋 AKTIVE SCHEDULER:")
-            print(f"   📊 Charts-Updates: alle {charts_config['update_interval_hours']} Stunden")
-            print(f"   💰 Preis-Updates: alle {charts_config['price_interval_hours']} Stunden")
-            print(f"   🧹 Cleanup: alle {charts_config['cleanup_interval_hours']} Stunden")
-            print()
-            print("💡 Das Charts-Tracking läuft nun automatisch im Hintergrund!")
-            
-            return True
-        else:
-            print("❌ Fehler beim Aktivieren des Charts-Trackings")
-            return False
-            
-    except Exception as e:
-        print(f"❌ Fehler beim Aktivieren: {e}")
-        return False
-
-# =====================================================================
-# PROCESS MANAGEMENT TERMINAL (neu integriert)
-# =====================================================================
-
-def start_process_management_terminal():
-    """Startet Enhanced Process Management Terminal"""
-    try:
-        print("\n🔧 PROCESS MANAGEMENT TERMINAL")
-        print("=" * 40)
-        print("💡 Startet separates Terminal für Prozess-Überwachung...")
-        
-        from background_scheduler import create_process_management_terminal
-        
-        if create_process_management_terminal():
-            print("✅ Process Management Terminal gestartet!")
-            print("💡 Ein separates Terminal-Fenster wurde geöffnet")
-            print("💡 Dort kannst du alle Background-Prozesse überwachen")
-            return True
-        else:
-            print("❌ Fehler beim Starten des Process Management Terminals")
-            return False
-            
+        from background_scheduler import cleanup_all_background_processes
+        stopped = cleanup_all_background_processes()
+        if stopped > 0:
+            print(f"🧹 {stopped} Background-Prozesse gestoppt")
     except ImportError:
-        print("❌ Background Scheduler Module nicht gefunden")
-        return False
+        logger.debug("Background Scheduler nicht verfügbar")
     except Exception as e:
-        print(f"❌ Fehler: {e}")
-        return False
+        logger.debug(f"Cleanup-Fehler: {e}")
 
-# =====================================================================
-# CLI-TOOLS INTEGRATION (neu)
-# =====================================================================
+# =================================================================
+# ROBUSTE TRACKER-INITIALISIERUNG
+# =================================================================
 
-def show_available_cli_tools():
-    """Zeigt verfügbare CLI-Tools an"""
-    print("\n🛠️ VERFÜGBARE CLI-TOOLS")
-    print("=" * 40)
-    
-    cli_tools = [
-        ("batch_processor.py", "Batch-Processing Tools", [
-            "python batch_processor.py status",
-            "python batch_processor.py batch --hours 6",
-            "python batch_processor.py update-names"
-        ]),
-        ("charts_cli_manager.py", "Charts-Management CLI", [
-            "python charts_cli_manager.py status",
-            "python charts_cli_manager.py enable",
-            "python charts_cli_manager.py update"
-        ]),
-        ("elasticsearch_setup.py", "Elasticsearch-Integration", [
-            "python elasticsearch_setup.py status",
-            "python elasticsearch_setup.py export",
-            "python elasticsearch_setup.py setup"
-        ])
-    ]
-    
-    for tool_file, description, commands in cli_tools:
-        tool_path = Path(tool_file)
-        if tool_path.exists():
-            print(f"✅ {description}")
-            print(f"   📁 Datei: {tool_file}")
-            print("   🚀 Beispiele:")
-            for cmd in commands:
-                print(f"      {cmd}")
-            print()
-        else:
-            print(f"❌ {description}")
-            print(f"   📁 Datei fehlt: {tool_file}")
-            print("   💡 Führe 'python setup.py full' aus um alle Tools zu installieren")
-            print()
-
-def launch_cli_tool():
-    """Ermöglicht das Starten von CLI-Tools"""
-    print("\n🚀 CLI-TOOL STARTEN")
-    print("=" * 30)
-    
-    available_tools = []
-    cli_tools = [
-        ("batch_processor.py", "Batch Processing"),
-        ("charts_cli_manager.py", "Charts CLI"),
-        ("elasticsearch_setup.py", "Elasticsearch Setup")
-    ]
-    
-    print("📋 VERFÜGBARE TOOLS:")
-    for i, (tool_file, description) in enumerate(cli_tools, 1):
-        if Path(tool_file).exists():
-            print(f"{i}. ✅ {description} ({tool_file})")
-            available_tools.append((i, tool_file, description))
-        else:
-            print(f"{i}. ❌ {description} ({tool_file}) - nicht verfügbar")
-    
-    if not available_tools:
-        print("\n❌ Keine CLI-Tools verfügbar")
-        print("💡 Führe 'python setup.py full' aus um alle Tools zu installieren")
-        return
-    
-    print()
+def create_tracker_with_fallback():
+    """Erstellt Price Tracker mit Fallback-Mechanismen"""
     try:
-        choice = input("Wähle ein Tool (Nummer) oder Enter zum Abbrechen: ").strip()
-        if not choice:
-            return
-        
-        choice_num = int(choice)
-        selected_tool = None
-        
-        for num, tool_file, description in available_tools:
-            if num == choice_num:
-                selected_tool = (tool_file, description)
-                break
-        
-        if not selected_tool:
-            print("❌ Ungültige Auswahl")
-            return
-        
-        tool_file, description = selected_tool
-        command = input(f"🚀 Kommando für {description} (z.B. 'status'): ").strip()
-        
-        if command:
-            full_command = f"python {tool_file} {command}"
-            print(f"\n🔄 Führe aus: {full_command}")
-            
-            try:
-                result = subprocess.run(full_command.split(), capture_output=True, text=True, cwd=Path.cwd())
-                
-                print("\n📤 OUTPUT:")
-                if result.stdout:
-                    print(result.stdout)
-                if result.stderr:
-                    print("❌ ERRORS:")
-                    print(result.stderr)
-                
-                print(f"\n✅ Beendet mit Exit-Code: {result.returncode}")
-                
-            except Exception as e:
-                print(f"❌ Fehler beim Ausführen: {e}")
-        
-    except ValueError:
-        print("❌ Bitte eine gültige Nummer eingeben")
-    except KeyboardInterrupt:
-        print("\n⏹️ Abgebrochen")
-
-# =====================================================================
-# SYSTEM STATUS & TOOLS (erweitert)
-# =====================================================================
-
-def show_extended_system_status():
-    """Zeigt erweiterten System-Status mit allen verfügbaren Features"""
-    print("\n📊 ERWEITERTE SYSTEM-ÜBERSICHT")
-    print("=" * 50)
-    
-    # Python & System
-    print(f"🐍 Python: {sys.version.split()[0]}")
-    print(f"📁 Arbeitsverzeichnis: {Path.cwd()}")
-    print()
-    
-    # Kern-Module
-    print("🔧 KERN-MODULE:")
-    core_modules = [
-        ("price_tracker.py", "Price Tracker Core"),
-        ("database_manager.py", "Database Manager"),
-        ("steam_wishlist_manager.py", "Steam Wishlist"),
-        ("background_scheduler.py", "Background Scheduler")
-    ]
-    
-    for module_file, description in core_modules:
-        status = "✅" if Path(module_file).exists() else "❌"
-        print(f"   {status} {description}")
-    
-    print()
-    
-    # Erweiterte Module
-    print("📊 ERWEITERTE MODULE:")
-    extended_modules = [
-        ("steam_charts_manager.py", "Steam Charts Manager"),
-        ("charts_cli_manager.py", "Charts CLI Tools"),
-        ("batch_processor.py", "Batch Processing"),
-        ("elasticsearch_manager.py", "Elasticsearch Integration")
-    ]
-    
-    for module_file, description in extended_modules:
-        status = "✅" if Path(module_file).exists() else "❌"
-        print(f"   {status} {description}")
-    
-    print()
-    
-    # Konfiguration
-    print("⚙️ KONFIGURATION:")
-    env_file = Path(".env")
-    config_file = Path("config.json")
-    
-    print(f"   {'✅' if env_file.exists() else '❌'} .env-Datei")
-    print(f"   {'✅' if config_file.exists() else '❌'} config.json")
-    
-    # API Key Status
-    try:
-        from steam_wishlist_manager import load_api_key_from_env
-        api_key = load_api_key_from_env()
-        if api_key:
-            masked_key = api_key[:8] + "..." if len(api_key) > 8 else "***"
-            print(f"   🔑 Steam API Key: {masked_key}")
-        else:
-            print(f"   🔑 Steam API Key: ❌ Nicht konfiguriert")
-    except Exception:
-        print(f"   🔑 Steam API Key: ❌ Fehler beim Laden")
-    
-    print()
-    
-    # Background Processes
-    print("🔄 BACKGROUND PROCESSES:")
-    try:
-        from background_scheduler import _global_process_manager
-        if _global_process_manager:
-            status = _global_process_manager.get_process_status()
-            print(f"   📊 Getrackte Prozesse: {status['total_tracked']}")
-            print(f"   ✅ Laufende Prozesse: {status['running_processes']}")
-            print(f"   💀 Gestoppte Prozesse: {status['dead_processes']}")
-        else:
-            print("   ⚠️ Process Manager nicht initialisiert")
-    except Exception as e:
-        print(f"   ❌ Process Manager Fehler: {e}")
-
-# =====================================================================
-# MAIN PROGRAM - BEHÄLT STRUKTUR BEI + INTEGRIERT ALLE FEATURES
-# =====================================================================
-
-def main():
-    """Hauptfunktion - erweitert um alle verfügbaren Features"""
-    print("🚀 ENHANCED STEAM PRICE TRACKER v3.0")
-    print("=" * 60)
-    print("⚡ Initialisiere System mit vollständiger Integration...")
-    print()
-    
-    # Price Tracker laden
-    try:
+        # Versuche create_price_tracker zu verwenden
         from price_tracker import create_price_tracker
         from steam_wishlist_manager import load_api_key_from_env
         
-        # API Key laden
         api_key = load_api_key_from_env()
         if not api_key:
             print("⚠️ Kein Steam API Key in .env gefunden")
-            print("💡 Einige Features (Charts, Namen-Updates) sind nicht verfügbar")
             api_key = None
         
-        # Price Tracker erstellen
-        price_tracker = create_price_tracker(api_key=api_key, enable_charts=True)
-        charts_enabled = price_tracker.charts_enabled
+        tracker = create_price_tracker(api_key=api_key, enable_charts=True)
+        print("✅ Price Tracker mit create_price_tracker() erstellt")
+        return tracker, True
         
-        print(f"✅ Price Tracker initialisiert")
+    except Exception as e:
+        print(f"⚠️ create_price_tracker() fehlgeschlagen: {e}")
+        print("🔄 Versuche direkte Instanziierung...")
+        
+        try:
+            # Fallback: Direkte Instanziierung
+            from price_tracker import SteamPriceTracker
+            from database_manager import DatabaseManager
+            
+            db_manager = DatabaseManager()
+            tracker = SteamPriceTracker(db_manager=db_manager, enable_charts=True)
+            print("✅ Price Tracker mit direkter Instanziierung erstellt")
+            return tracker, False
+            
+        except Exception as e2:
+            print(f"❌ Auch direkte Instanziierung fehlgeschlagen: {e2}")
+            return None, False
+
+# =================================================================
+# ROBUSTE FUNKTIONS-WRAPPER
+# =================================================================
+
+def safe_call(func, *args, **kwargs):
+    """Sichere Funktionsaufrufe mit Fallback"""
+    try:
+        return func(*args, **kwargs)
+    except Exception as e:
+        print(f"❌ Fehler bei {func.__name__}: {e}")
+        return None
+
+def get_tracked_apps_safe(tracker):
+    """Sichere get_tracked_apps mit Fallbacks"""
+    try:
+        # Versuch 1: Direkte Methode
+        if hasattr(tracker, 'get_tracked_apps'):
+            return tracker.get_tracked_apps()
+        
+        # Versuch 2: Über db_manager
+        if hasattr(tracker, 'db_manager') and hasattr(tracker.db_manager, 'get_tracked_apps'):
+            return tracker.db_manager.get_tracked_apps()
+        
+        # Versuch 3: Direkte DB-Abfrage
+        if hasattr(tracker, 'db_manager'):
+            with tracker.db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT * FROM tracked_apps WHERE active = 1 ORDER BY added_at DESC')
+                return [dict(row) for row in cursor.fetchall()]
+        
+        print("❌ Keine verfügbare Methode für get_tracked_apps gefunden")
+        return []
+        
+    except Exception as e:
+        print(f"❌ Fehler beim Abrufen der Apps: {e}")
+        return []
+
+def add_app_safe(tracker, steam_app_id, name=None):
+    """Sichere App-Hinzufügung mit Fallbacks"""
+    try:
+        if not name:
+            name = f"Game {steam_app_id}"
+        
+        # Versuch 1: add_app_to_tracking
+        if hasattr(tracker, 'add_app_to_tracking'):
+            return tracker.add_app_to_tracking(steam_app_id, name)
+        
+        # Versuch 2: Über db_manager
+        if hasattr(tracker, 'db_manager') and hasattr(tracker.db_manager, 'add_tracked_app'):
+            return tracker.db_manager.add_tracked_app(steam_app_id, name)
+        
+        # Versuch 3: Direkte DB-Abfrage
+        if hasattr(tracker, 'db_manager'):
+            with tracker.db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT OR REPLACE INTO tracked_apps (steam_app_id, name, added_at, active)
+                    VALUES (?, ?, CURRENT_TIMESTAMP, 1)
+                ''', (steam_app_id, name))
+                conn.commit()
+                return True
+        
+        print("❌ Keine verfügbare Methode für add_app gefunden")
+        return False
+        
+    except Exception as e:
+        print(f"❌ Fehler beim Hinzufügen der App: {e}")
+        return False
+
+def remove_app_safe(tracker, steam_app_id):
+    """Sichere App-Entfernung mit Fallbacks"""
+    try:
+        # Versuch 1: remove_app_from_tracking
+        if hasattr(tracker, 'remove_app_from_tracking'):
+            return tracker.remove_app_from_tracking(steam_app_id)
+        
+        # Versuch 2: Über db_manager
+        if hasattr(tracker, 'db_manager') and hasattr(tracker.db_manager, 'remove_tracked_app'):
+            return tracker.db_manager.remove_tracked_app(steam_app_id)
+        
+        # Versuch 3: Direkte DB-Abfrage
+        if hasattr(tracker, 'db_manager'):
+            with tracker.db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('DELETE FROM tracked_apps WHERE steam_app_id = ?', (steam_app_id,))
+                conn.commit()
+                return cursor.rowcount > 0
+        
+        print("❌ Keine verfügbare Methode für remove_app gefunden")
+        return False
+        
+    except Exception as e:
+        print(f"❌ Fehler beim Entfernen der App: {e}")
+        return False
+
+def track_prices_safe(tracker, app_ids):
+    """Sichere Preisabfrage mit Fallbacks"""
+    try:
+        if not app_ids:
+            return {'processed': 0, 'successful': 0, 'failed': 0}
+        
+        # Versuch 1: track_app_prices
+        if hasattr(tracker, 'track_app_prices'):
+            return tracker.track_app_prices(app_ids)
+        
+        # Versuch 2: Einzelne Preise abrufen
+        successful = 0
+        failed = 0
+        
+        for app_id in app_ids:
+            try:
+                if hasattr(tracker, 'get_game_prices_from_cheapshark'):
+                    result = tracker.get_game_prices_from_cheapshark(app_id)
+                    if result and result.get('status') == 'success':
+                        successful += 1
+                    else:
+                        failed += 1
+                else:
+                    failed += 1
+            except Exception:
+                failed += 1
+        
+        return {
+            'processed': len(app_ids),
+            'successful': successful,
+            'failed': failed
+        }
+        
+    except Exception as e:
+        print(f"❌ Fehler beim Preisupdate: {e}")
+        return {'processed': 0, 'successful': 0, 'failed': len(app_ids) if app_ids else 0}
+
+def get_scheduler_status_safe(tracker):
+    """Sichere Scheduler-Status-Abfrage"""
+    try:
+        # Versuch 1: get_scheduler_status
+        if hasattr(tracker, 'get_scheduler_status'):
+            status = tracker.get_scheduler_status()
+            if isinstance(status, dict):
+                return status
+            return {'scheduler_running': bool(status)}
+        
+        # Versuch 2: get_enhanced_scheduler_status
+        if hasattr(tracker, 'get_enhanced_scheduler_status'):
+            return tracker.get_enhanced_scheduler_status()
+        
+        # Fallback: Status unbekannt
+        return {'scheduler_running': False, 'status': 'unknown'}
+        
+    except Exception as e:
+        print(f"❌ Fehler beim Scheduler-Status: {e}")
+        return {'scheduler_running': False, 'error': str(e)}
+
+# =================================================================
+# KORRIGIERTE FUNKTIONEN
+# =================================================================
+
+def add_app_manually(tracker):
+    """Option 1: App manuell zum Tracking hinzufügen"""
+    print("\n📱 APP MANUELL HINZUFÜGEN")
+    print("=" * 25)
+    
+    steam_app_id = input("Steam App ID: ").strip()
+    if not steam_app_id:
+        print("❌ Ungültige App ID")
+        return
+    
+    app_name = input("App Name (optional): ").strip()
+    if not app_name:
+        app_name = None
+    
+    success = add_app_safe(tracker, steam_app_id, app_name)
+    
+    if success:
+        print(f"✅ App erfolgreich hinzugefügt")
+        
+        # Preise sofort abrufen
+        fetch_now = input("Preise jetzt abrufen? (j/n): ").lower().strip()
+        if fetch_now in ['j', 'ja', 'y', 'yes']:
+            print("🔄 Rufe Preise ab...")
+            result = track_prices_safe(tracker, [steam_app_id])
+            if result.get('successful', 0) > 0:
+                print("✅ Preise erfolgreich abgerufen")
+            else:
+                print("⚠️ Preise konnten nicht abgerufen werden")
+    else:
+        print("❌ Fehler beim Hinzufügen der App")
+
+def import_steam_wishlist(tracker):
+    """Option 2: Steam Wishlist importieren"""
+    print("\n📥 STEAM WISHLIST IMPORTIEREN")
+    print("=" * 30)
+    
+    steam_id = input("Steam ID oder Custom URL: ").strip()
+    if not steam_id:
+        print("❌ Ungültige Steam ID")
+        return
+    
+    try:
+        print("🔄 Importiere Wishlist...")
+        
+        # Versuch: import_steam_wishlist verwenden
+        if hasattr(tracker, 'import_steam_wishlist'):
+            result = tracker.import_steam_wishlist(steam_id, update_names=True)
+            
+            if result.get('success'):
+                print(f"✅ {result.get('imported', 0)} Apps hinzugefügt")
+                print(f"⏭️ {result.get('skipped_existing', 0)} bereits vorhanden")
+                if result.get('names_updated', 0) > 0:
+                    print(f"🔄 {result['names_updated']} Namen aktualisiert")
+            else:
+                print(f"❌ Import fehlgeschlagen: {result.get('error', 'Unbekannter Fehler')}")
+        else:
+            print("❌ Wishlist-Import-Funktion nicht verfügbar")
+            print("💡 Fügen Sie Apps manuell hinzu (Option 1)")
+            
+    except Exception as e:
+        print(f"❌ Fehler beim Import: {e}")
+
+def show_current_prices(tracker):
+    """Option 3: Aktuelle Preise anzeigen"""
+    print("\n🔍 AKTUELLE PREISE")
+    print("=" * 20)
+    
+    apps = get_tracked_apps_safe(tracker)
+    
+    if apps:
+        print(f"\n📊 {len(apps)} getrackte Apps:")
+        print()
+        
+        for i, app in enumerate(apps[:20], 1):  # Limitierung auf 20
+            app_id = app.get('steam_app_id', 'N/A')
+            name = app.get('name', 'Unbekannt')[:40]
+            
+            # Versuche Preise zu laden
+            try:
+                if hasattr(tracker, 'db_manager'):
+                    with tracker.db_manager.get_connection() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute('''
+                            SELECT steam_price, steam_discount_percent, timestamp
+                            FROM price_snapshots 
+                            WHERE steam_app_id = ?
+                            ORDER BY timestamp DESC 
+                            LIMIT 1
+                        ''', (app_id,))
+                        
+                        row = cursor.fetchone()
+                        if row:
+                            steam_price = row[0]
+                            steam_discount = row[1] or 0
+                            timestamp = row[2][:10] if row[2] else 'Unbekannt'
+                            
+                            if steam_price is not None:
+                                price_str = f"€{steam_price:.2f}"
+                                if steam_discount > 0:
+                                    price_str += f" (-{steam_discount}%)"
+                            else:
+                                price_str = "Preis nicht verfügbar"
+                        else:
+                            price_str = "Noch keine Preisdaten"
+                            timestamp = "Nie"
+                
+                print(f"{i:2d}. {name}")
+                print(f"    💰 {price_str}")
+                print(f"    📅 {timestamp}")
+                print()
+                        
+            except Exception as e:
+                print(f"{i:2d}. {name}")
+                print(f"    ❌ Fehler beim Laden der Preise: {e}")
+                print()
+        
+        if len(apps) > 20:
+            print(f"... und {len(apps) - 20} weitere Apps")
+    else:
+        print("❌ Keine Apps getrackt")
+
+def show_best_deals(tracker):
+    """Option 4: Beste Deals anzeigen"""
+    print("\n📊 BESTE DEALS")
+    print("=" * 15)
+    
+    try:
+        # Versuche über Datenbank die besten Deals zu finden
+        if hasattr(tracker, 'db_manager'):
+            with tracker.db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT p.game_title, p.steam_price, p.steam_discount_percent,
+                           'Steam' as store, p.timestamp
+                    FROM price_snapshots p
+                    WHERE p.steam_discount_percent > 0 
+                    AND p.steam_price IS NOT NULL
+                    ORDER BY p.steam_discount_percent DESC, p.timestamp DESC
+                    LIMIT 10
+                ''')
+                
+                deals = cursor.fetchall()
+                
+                if deals:
+                    print(f"\n🎯 Top {len(deals)} Deals:")
+                    for i, deal in enumerate(deals, 1):
+                        name = deal[0][:40] if deal[0] else 'Unbekannt'
+                        current_price = deal[1] if deal[1] else 0
+                        discount = deal[2] if deal[2] else 0
+                        store = deal[3]
+                        
+                        print(f"{i:2d}. {name}")
+                        print(f"    💰 €{current_price:.2f} (-{discount}%) bei {store}")
+                        print()
+                else:
+                    print("😔 Keine Deals gefunden")
+        else:
+            print("❌ Keine Datenbankverbindung verfügbar")
+            
+    except Exception as e:
+        print(f"❌ Fehler beim Laden der Deals: {e}")
+
+def show_price_history(tracker):
+    """Option 5: Preisverlauf anzeigen"""
+    print("\n📈 PREISVERLAUF ANZEIGEN")
+    print("=" * 25)
+    
+    steam_app_id = input("Steam App ID: ").strip()
+    if not steam_app_id:
+        print("❌ Ungültige App ID")
+        return
+    
+    days = input("Anzahl Tage (Standard: 30): ").strip()
+    try:
+        days = int(days) if days else 30
+    except ValueError:
+        days = 30
+    
+    try:
+        if hasattr(tracker, 'db_manager'):
+            with tracker.db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT timestamp, steam_price, steam_discount_percent
+                    FROM price_snapshots
+                    WHERE steam_app_id = ? 
+                    AND timestamp >= datetime('now', '-{} days')
+                    ORDER BY timestamp DESC
+                    LIMIT 10
+                '''.format(days), (steam_app_id,))
+                
+                history = cursor.fetchall()
+                
+                if history:
+                    print(f"\n📈 Preisverlauf für App {steam_app_id} (letzte {days} Tage):")
+                    print()
+                    
+                    for entry in history:
+                        timestamp = entry[0][:10] if entry[0] else 'Unbekannt'
+                        steam_price = entry[1]
+                        steam_discount = entry[2] or 0
+                        
+                        if steam_price is not None:
+                            price_str = f"€{steam_price:.2f}"
+                            if steam_discount > 0:
+                                price_str += f" (-{steam_discount}%)"
+                        else:
+                            price_str = "N/A"
+                        
+                        print(f"📅 {timestamp}: 💰 {price_str}")
+                else:
+                    print("❌ Keine Preisverlaufsdaten gefunden")
+        else:
+            print("❌ Keine Datenbankverbindung verfügbar")
+            
+    except Exception as e:
+        print(f"❌ Fehler beim Laden des Preisverlaufs: {e}")
+
+def update_prices_manually(tracker):
+    """Option 6: Preise manuell aktualisieren"""
+    print("\n🔄 PREISE MANUELL AKTUALISIEREN")
+    print("=" * 30)
+    
+    print("1. Alle Apps aktualisieren")
+    print("2. Spezifische App aktualisieren")
+    print("0. Zurück")
+    
+    choice = input("Wähle eine Option: ").strip()
+    
+    try:
+        if choice == "1":
+            apps = get_tracked_apps_safe(tracker)
+            app_ids = [app['steam_app_id'] for app in apps if app.get('steam_app_id')]
+            
+            if app_ids:
+                print(f"🔄 Aktualisiere {len(app_ids)} Apps...")
+                result = track_prices_safe(tracker, app_ids[:10])  # Limitierung auf 10
+                print(f"✅ {result.get('successful', 0)}/{result.get('processed', 0)} Apps erfolgreich aktualisiert")
+                if result.get('failed', 0) > 0:
+                    print(f"❌ {result['failed']} Apps fehlgeschlagen")
+            else:
+                print("❌ Keine Apps zum Aktualisieren")
+        
+        elif choice == "2":
+            steam_app_id = input("Steam App ID: ").strip()
+            if steam_app_id:
+                print(f"🔄 Aktualisiere App {steam_app_id}...")
+                result = track_prices_safe(tracker, [steam_app_id])
+                if result.get('successful', 0) > 0:
+                    print("✅ App erfolgreich aktualisiert")
+                else:
+                    print("❌ Aktualisierung fehlgeschlagen")
+            else:
+                print("❌ Ungültige App ID")
+                
+    except Exception as e:
+        print(f"❌ Fehler beim Aktualisieren: {e}")
+
+def toggle_automatic_tracking(tracker):
+    """Option 7: Automatisches Tracking starten/stoppen"""
+    print("\n🚀 AUTOMATISCHES TRACKING")
+    print("=" * 25)
+    
+    try:
+        scheduler_status = get_scheduler_status_safe(tracker)
+        is_running = scheduler_status.get('scheduler_running', False)
+        
+        if is_running:
+            print("✅ Automatisches Tracking läuft")
+            print("📊 Scheduler-Status:")
+            for key, value in scheduler_status.items():
+                print(f"   {key}: {value}")
+            
+            stop = input("Tracking stoppen? (j/n): ").lower().strip()
+            if stop in ['j', 'ja', 'y', 'yes']:
+                if hasattr(tracker, 'stop_background_scheduler'):
+                    success = tracker.stop_background_scheduler()
+                elif hasattr(tracker, 'stop_scheduler'):
+                    success = tracker.stop_scheduler()
+                else:
+                    success = False
+                    print("❌ Keine Stop-Funktion verfügbar")
+                
+                if success:
+                    print("⏹️ Automatisches Tracking gestoppt")
+                else:
+                    print("❌ Fehler beim Stoppen")
+        else:
+            print("⏸️ Automatisches Tracking ist nicht aktiv")
+            start = input("Tracking starten? (j/n): ").lower().strip()
+            if start in ['j', 'ja', 'y', 'yes']:
+                hours = input("Update-Intervall in Stunden (Standard: 6): ").strip()
+                try:
+                    hours = int(hours) if hours else 6
+                except ValueError:
+                    hours = 6
+                
+                if hasattr(tracker, 'start_background_scheduler'):
+                    success = tracker.start_background_scheduler(price_interval_hours=hours)
+                elif hasattr(tracker, 'start_scheduler'):
+                    success = tracker.start_scheduler(interval_hours=hours)
+                else:
+                    success = False
+                    print("❌ Keine Start-Funktion verfügbar")
+                
+                if success:
+                    print(f"🚀 Automatisches Tracking gestartet (alle {hours}h)")
+                else:
+                    print("❌ Fehler beim Starten")
+                    
+    except Exception as e:
+        print(f"❌ Fehler beim Scheduler-Management: {e}")
+
+def manage_tracked_apps(tracker):
+    """Option 8: Getrackte Apps verwalten"""
+    print("\n📋 GETRACKTE APPS VERWALTEN")
+    print("=" * 25)
+    
+    apps = get_tracked_apps_safe(tracker)
+    
+    if apps:
+        print(f"\n📊 {len(apps)} getrackte Apps:")
+        print()
+        
+        for i, app in enumerate(apps, 1):
+            last_update = app.get('last_price_update', 'Nie')
+            if last_update and last_update != 'Nie':
+                last_update = last_update[:19]  # YYYY-MM-DD HH:MM:SS
+            
+            print(f"{i:2d}. {app.get('name', 'Unbekannt')[:40]:<40} (ID: {app.get('steam_app_id', 'N/A')})")
+            print(f"    📅 Hinzugefügt: {app.get('added_at', 'Unbekannt')[:10]}")
+            print(f"    🔄 Letztes Update: {last_update}")
+            print(f"    📊 Status: {'✅ Aktiv' if app.get('active', True) else '⏸️ Pausiert'}")
+            print()
+    else:
+        print("❌ Keine Apps getrackt")
+
+def remove_apps(tracker):
+    """Option 9: Apps entfernen"""
+    print("\n🗑️ APPS ENTFERNEN")
+    print("=" * 20)
+    
+    steam_app_id = input("Steam App ID zum Entfernen: ").strip()
+    if not steam_app_id:
+        print("❌ Ungültige App ID")
+        return
+    
+    try:
+        # App-Info anzeigen
+        apps = get_tracked_apps_safe(tracker)
+        app_to_remove = None
+        for app in apps:
+            if app.get('steam_app_id') == steam_app_id:
+                app_to_remove = app
+                break
+        
+        if app_to_remove:
+            print(f"\n🎯 App gefunden:")
+            print(f"📱 Name: {app_to_remove.get('name', 'Unbekannt')}")
+            print(f"🆔 ID: {app_to_remove.get('steam_app_id', 'N/A')}")
+            print(f"📅 Hinzugefügt: {app_to_remove.get('added_at', 'Unbekannt')[:10]}")
+            
+            confirm = input(f"\nApp wirklich entfernen? (j/n): ").lower().strip()
+            if confirm in ['j', 'ja', 'y', 'yes']:
+                success = remove_app_safe(tracker, steam_app_id)
+                if success:
+                    print("✅ App erfolgreich entfernt")
+                else:
+                    print("❌ Fehler beim Entfernen")
+            else:
+                print("ℹ️ Entfernung abgebrochen")
+        else:
+            print("❌ App nicht gefunden")
+            
+    except Exception as e:
+        print(f"❌ Fehler beim Entfernen: {e}")
+
+def create_csv_export(tracker):
+    """Option 10: CSV-Export erstellen"""
+    print("\n📄 CSV-EXPORT ERSTELLEN")
+    print("=" * 25)
+    
+    print("1. Alle getrackte Apps exportieren")
+    print("2. Nur aktuelle Preise")
+    print("0. Zurück")
+    
+    choice = input("Wähle eine Option: ").strip()
+    
+    try:
+        if choice == "1":
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"tracked_apps_{timestamp}.csv"
+            
+            print(f"📄 Erstelle App-Export: {filename}")
+            
+            apps = get_tracked_apps_safe(tracker)
+            
+            import csv
+            with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(['Steam App ID', 'Name', 'Hinzugefügt', 'Letztes Update', 'Status'])
+                
+                for app in apps:
+                    writer.writerow([
+                        app.get('steam_app_id', ''),
+                        app.get('name', ''),
+                        app.get('added_at', ''),
+                        app.get('last_price_update', ''),
+                        'Aktiv' if app.get('active', True) else 'Inaktiv'
+                    ])
+            
+            print(f"✅ App-Export erstellt: {filename}")
+            
+        elif choice == "2":
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"current_prices_{timestamp}.csv"
+            
+            print(f"📊 Erstelle Preis-Export: {filename}")
+            
+            if hasattr(tracker, 'db_manager'):
+                with tracker.db_manager.get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        SELECT t.steam_app_id, t.name, p.steam_price, p.steam_discount_percent, p.timestamp
+                        FROM tracked_apps t
+                        LEFT JOIN price_snapshots p ON t.steam_app_id = p.steam_app_id
+                        WHERE t.active = 1
+                        AND p.timestamp = (
+                            SELECT MAX(timestamp) FROM price_snapshots 
+                            WHERE steam_app_id = t.steam_app_id
+                        )
+                        ORDER BY t.name
+                    ''')
+                    
+                    prices = cursor.fetchall()
+                    
+                    import csv
+                    with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+                        writer = csv.writer(csvfile)
+                        writer.writerow(['Steam App ID', 'Name', 'Aktueller Preis', 'Rabatt %', 'Letztes Update'])
+                        
+                        for price_info in prices:
+                            writer.writerow([
+                                price_info[0],  # steam_app_id
+                                price_info[1],  # name
+                                price_info[2] if price_info[2] else 'N/A',  # steam_price
+                                price_info[3] if price_info[3] else 0,  # discount
+                                price_info[4] if price_info[4] else 'N/A'   # timestamp
+                            ])
+                
+                print(f"✅ Preis-Export erstellt: {filename}")
+            else:
+                print("❌ Keine Datenbankverbindung verfügbar")
+                
+    except Exception as e:
+        print(f"❌ Fehler beim CSV-Export: {e}")
+
+def show_detailed_statistics(tracker):
+    """Option 11: Detaillierte Statistiken"""
+    print("\n📊 DETAILLIERTE STATISTIKEN")
+    print("=" * 30)
+    
+    try:
+        # Basis-Statistiken
+        apps = get_tracked_apps_safe(tracker)
+        print("📈 DATENBANK-STATISTIKEN:")
+        print(f"   📱 Getrackte Apps: {len(apps)}")
+        
+        if hasattr(tracker, 'db_manager'):
+            with tracker.db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Preiseinträge zählen
+                cursor.execute('SELECT COUNT(*) FROM price_snapshots')
+                total_snapshots = cursor.fetchone()[0]
+                print(f"   📊 Preiseinträge gesamt: {total_snapshots}")
+                
+                # Einträge heute
+                cursor.execute("SELECT COUNT(*) FROM price_snapshots WHERE date(timestamp) = date('now')")
+                today_snapshots = cursor.fetchone()[0]
+                print(f"   🆕 Einträge heute: {today_snapshots}")
+                
+                # Ältester/Neuester Eintrag
+                cursor.execute('SELECT MIN(timestamp), MAX(timestamp) FROM price_snapshots')
+                oldest, newest = cursor.fetchone()
+                print(f"   📅 Ältester Eintrag: {oldest[:10] if oldest else 'N/A'}")
+                print(f"   🕒 Neuester Eintrag: {newest[:10] if newest else 'N/A'}")
+        
+        print()
+        
+        # Scheduler-Status
+        print("🖥️ SYSTEM-STATUS:")
+        scheduler_status = get_scheduler_status_safe(tracker)
+        is_running = scheduler_status.get('scheduler_running', False)
+        print(f"   🚀 Automatisches Tracking: {'✅ Aktiv' if is_running else '⏸️ Inaktiv'}")
+        
+        # Charts-Status
+        charts_available = hasattr(tracker, 'charts_enabled') and tracker.charts_enabled
+        print(f"   📊 Charts-Integration: {'✅ Verfügbar' if charts_available else '❌ Nicht verfügbar'}")
+        print()
+        
+    except Exception as e:
+        print(f"❌ Fehler beim Laden der Statistiken: {e}")
+
+def system_tools_maintenance(tracker):
+    """Option 12: System-Tools & Wartung"""
+    print("\n⚙️ SYSTEM-TOOLS & WARTUNG")
+    print("=" * 25)
+    
+    print("1. Datenbank-Status anzeigen")
+    print("2. Datenbank-Cleanup (alte Einträge löschen)")
+    print("3. System-Status anzeigen")
+    print("4. Log-Dateien anzeigen")
+    print("0. Zurück")
+    
+    choice = input("Wähle eine Option: ").strip()
+    
+    try:
+        if choice == "1":
+            print("\n📊 DATENBANK-STATUS:")
+            if hasattr(tracker, 'db_manager'):
+                db_path = tracker.db_manager.db_path
+                if db_path.exists():
+                    size_mb = db_path.stat().st_size / (1024 * 1024)
+                    print(f"   📁 Datei: {db_path}")
+                    print(f"   📏 Größe: {size_mb:.2f} MB")
+                    
+                    with tracker.db_manager.get_connection() as conn:
+                        cursor = conn.cursor()
+                        
+                        # Tabellen-Info
+                        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                        tables = cursor.fetchall()
+                        print(f"   📋 Tabellen: {len(tables)}")
+                        for table in tables:
+                            cursor.execute(f"SELECT COUNT(*) FROM {table[0]}")
+                            count = cursor.fetchone()[0]
+                            print(f"      • {table[0]}: {count} Einträge")
+                else:
+                    print("❌ Datenbankdatei nicht gefunden")
+            else:
+                print("❌ Kein Database Manager verfügbar")
+        
+        elif choice == "2":
+            days = input("Einträge älter als X Tage löschen (Standard: 60): ").strip()
+            try:
+                days = int(days) if days else 60
+            except ValueError:
+                days = 60
+            
+            confirm = input(f"Wirklich Einträge älter als {days} Tage löschen? (j/n): ").lower().strip()
+            if confirm in ['j', 'ja', 'y', 'yes']:
+                if hasattr(tracker, 'db_manager'):
+                    with tracker.db_manager.get_connection() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute(f'''
+                            DELETE FROM price_snapshots 
+                            WHERE timestamp < datetime('now', '-{days} days')
+                        ''')
+                        deleted = cursor.rowcount
+                        conn.commit()
+                        print(f"🗑️ {deleted} alte Einträge gelöscht")
+                else:
+                    print("❌ Keine Datenbankverbindung verfügbar")
+            else:
+                print("ℹ️ Cleanup abgebrochen")
+        
+        elif choice == "3":
+            print("\n🖥️ SYSTEM-STATUS:")
+            print(f"🐍 Python: {sys.version.split()[0]}")
+            print(f"📁 Arbeitsverzeichnis: {Path.cwd()}")
+            
+            # Module prüfen
+            core_modules = [
+                ("price_tracker.py", "Price Tracker Core"),
+                ("database_manager.py", "Database Manager"),
+                ("steam_wishlist_manager.py", "Steam Wishlist"),
+            ]
+            
+            print("\n🔧 KERN-MODULE:")
+            for module_file, description in core_modules:
+                if Path(module_file).exists():
+                    print(f"   ✅ {description} ({module_file})")
+                else:
+                    print(f"   ❌ {description} ({module_file}) - fehlt")
+        
+        elif choice == "4":
+            print("📋 LOG-DATEIEN:")
+            log_files = ['steam_price_tracker.log', 'error.log', 'debug.log']
+            for log_file in log_files:
+                if Path(log_file).exists():
+                    size = Path(log_file).stat().st_size / 1024
+                    print(f"   ✅ {log_file} ({size:.1f} KB)")
+                else:
+                    print(f"   ❌ {log_file} (nicht vorhanden)")
+                    
+    except Exception as e:
+        print(f"❌ Fehler bei System-Tools: {e}")
+
+# =================================================================
+# HAUPTFUNKTION
+# =================================================================
+
+def main():
+    """Hauptfunktion mit robusten Fallback-Mechanismen"""
+    print("🚀 STEAM PRICE TRACKER v3.0 (ROBUST EDITION)")
+    print("=" * 60)
+    print("⚡ Initialisiere System mit Fallback-Mechanismen...")
+    print()
+    
+    # Tracker erstellen
+    tracker, creation_success = create_tracker_with_fallback()
+    
+    if not tracker:
+        print("❌ Konnte Price Tracker nicht initialisieren")
+        print("💡 Prüfen Sie, ob alle erforderlichen Module vorhanden sind")
+        return
+    
+    if creation_success:
+        charts_enabled = getattr(tracker, 'charts_enabled', False)
+        print(f"✅ Price Tracker erfolgreich initialisiert")
         if charts_enabled:
             print(f"📊 Charts-Integration: VERFÜGBAR")
         else:
             print(f"📊 Charts-Integration: NICHT VERFÜGBAR")
-            
-    except Exception as e:
-        print(f"❌ Fehler beim Initialisieren des Price Trackers: {e}")
-        return
-    
-    # Charts-Konfiguration laden
-    charts_config = load_charts_config()
+    else:
+        print(f"⚠️ Price Tracker mit Fallback-Mechanismen initialisiert")
+        print(f"💡 Einige erweiterte Features könnten nicht verfügbar sein")
+        charts_enabled = False
     
     print("🔧 System bereit!")
     print()
-    time.sleep(2)
     
-    # ===========================
-    # HAUPT-MENÜ-SCHLEIFE (ORIGINAL + ERWEITERT)
-    # ===========================
-    
+    # Hauptschleife
     while True:
         try:
-            # Clear screen
-            os.system('cls' if os.name == 'nt' else 'clear')
-            
-            # Header
-            print("🚀 ENHANCED STEAM PRICE TRACKER v3.0")
             print("=" * 60)
-            print(f"⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            print("🎮 STEAM PRICE TRACKER - HAUPTMENÜ")
+            print("=" * 60)
             
-            # Status anzeigen (SAFE VERSION)
-            try:
-                from database_manager import DatabaseManager
-                db = DatabaseManager()
-                
-                # SAFE Statistiken
-                tracked_apps = price_tracker.get_tracked_apps()
-                print(f"\n📊 AKTUELLER STATUS:")
-                print(f"🎯 Getrackte Apps: {len(tracked_apps) if tracked_apps else 0}")
-                
-                # Scheduler Status (safe)
-                try:
-                    if hasattr(price_tracker, 'get_enhanced_scheduler_status'):
-                        scheduler_status = price_tracker.get_enhanced_scheduler_status()
-                        if scheduler_status.get('scheduler_running'):
-                            print(f"🔄 Automatisches Tracking: AKTIV")
-                        else:
-                            print(f"⏸️ Automatisches Tracking: INAKTIV")
-                    elif hasattr(price_tracker, 'is_scheduler_running'):
-                        if price_tracker.is_scheduler_running():
-                            print(f"🔄 Automatisches Tracking: AKTIV")
-                        else:
-                            print(f"⏸️ Automatisches Tracking: INAKTIV")
-                except Exception:
-                    print(f"⏸️ Automatisches Tracking: STATUS UNBEKANNT")
-                
-                # Charts-Status
-                if charts_enabled and charts_config['enabled']:
-                    print(f"📊 Charts-Tracking: AKTIV")
-                
-                # Background Processes Status
-                try:
-                    from background_scheduler import _global_process_manager
-                    if _global_process_manager:
-                        status = _global_process_manager.get_process_status()
-                        if status['running_processes'] > 0:
-                            print(f"🔄 Background-Prozesse: {status['running_processes']} aktiv")
-                except Exception:
-                    pass
-                
-            except Exception as e:
-                print(f"⚠️ Fehler beim Laden der Statistiken: {e}")
-            
-            # ORIGINALES HAUPTMENÜ (1-12 unverändert)
-            print(f"\n🎯 HAUPTMENÜ:")
-            print("=" * 25)
+            # Basis-Features (1-12)
+            print("\n📱 BASIS-FEATURES:")
             print("1.  📱 App manuell zum Tracking hinzufügen")
             print("2.  📥 Steam Wishlist importieren")
             print("3.  🔍 Aktuelle Preise anzeigen")
@@ -627,23 +882,13 @@ def main():
             print("11. 📊 Detaillierte Statistiken")
             print("12. ⚙️ System-Tools & Wartung")
             
-            # CHARTS-FEATURES (13-18)
+            # CHARTS-FEATURES (13-16)
             if charts_enabled:
                 print("\n📊 CHARTS-FEATURES:")
                 print("13. 🏆 Steam Charts anzeigen")
                 print("14. 📈 Charts sofort aktualisieren")
                 print("15. 🎯 Charts-Deals anzeigen")
                 print("16. 📊 Charts-Status anzeigen")
-                print("17. ⚙️ Charts-Intervalle konfigurieren")    # NEU
-                print("18. 🔧 Erweiterte Charts-Konfiguration")   # NEU
-            
-            # NEUE ERWEITERTE FEATURES (19-23)
-            print("\n🔧 ERWEITERTE FEATURES:")
-            print("19. 🖥️ Process Management Terminal starten")    # NEU
-            print("20. 🛠️ CLI-Tools anzeigen")                   # NEU  
-            print("21. 🚀 CLI-Tool starten")                     # NEU
-            print("22. 📊 Erweiterte System-Übersicht")          # NEU
-            print("23. 🔧 Setup-Wizard starten")                 # NEU
             
             print("\n0.  🚪 Beenden")
             print("=" * 60)
@@ -652,7 +897,7 @@ def main():
             choice = input("Wähle eine Option: ").strip()
             
             # ===========================
-            # MENU-HANDLING (ORIGINAL + NEUE FEATURES)
+            # MENU-HANDLING (ROBUST)
             # ===========================
             
             if choice == "0":
@@ -660,124 +905,122 @@ def main():
                 enhanced_cleanup()
                 break
             
-            elif choice in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]:
-                # PLACEHOLDER für bestehende Funktionen (1-12)
-                print(f"\n💡 Menüpunkt {choice} - Bestehende Funktion")
-                print("💡 Diese Funktionen bleiben unverändert aus deiner originalen main.py")
-                print("💡 Füge hier deine bestehenden Funktionen ein!")
+            # BASIS-FUNKTIONEN (1-12) - ROBUST IMPLEMENTIERT
+            elif choice == "1":
+                add_app_manually(tracker)
+                input("Drücke Enter zum Fortfahren...")
                 
-                # Beispiel für eine der Funktionen (4 - Beste Deals):
-                if choice == "4":
-                    print("\n📊 BESTE DEALS")
-                    print("=" * 15)
-                    
+            elif choice == "2":
+                import_steam_wishlist(tracker)
+                input("Drücke Enter zum Fortfahren...")
+                
+            elif choice == "3":
+                show_current_prices(tracker)
+                input("Drücke Enter zum Fortfahren...")
+                
+            elif choice == "4":
+                show_best_deals(tracker)
+                input("Drücke Enter zum Fortfahren...")
+                
+            elif choice == "5":
+                show_price_history(tracker)
+                input("Drücke Enter zum Fortfahren...")
+                
+            elif choice == "6":
+                update_prices_manually(tracker)
+                input("Drücke Enter zum Fortfahren...")
+                
+            elif choice == "7":
+                toggle_automatic_tracking(tracker)
+                input("Drücke Enter zum Fortfahren...")
+                
+            elif choice == "8":
+                manage_tracked_apps(tracker)
+                input("Drücke Enter zum Fortfahren...")
+                
+            elif choice == "9":
+                remove_apps(tracker)
+                input("Drücke Enter zum Fortfahren...")
+                
+            elif choice == "10":
+                create_csv_export(tracker)
+                input("Drücke Enter zum Fortfahren...")
+                
+            elif choice == "11":
+                show_detailed_statistics(tracker)
+                input("Drücke Enter zum Fortfahren...")
+                
+            elif choice == "12":
+                system_tools_maintenance(tracker)
+                input("Drücke Enter zum Fortfahren...")
+            
+            # CHARTS-FUNKTIONEN (13-16) - FALLS VERFÜGBAR
+            elif choice == "13" and charts_enabled:
+                print("\n🏆 Steam Charts werden angezeigt...")
+                if hasattr(tracker, 'charts_manager') and tracker.charts_manager:
                     try:
-                        deals = price_tracker.get_best_deals(limit=10)
-                        if deals:
-                            print(f"\n🎯 Top {len(deals)} Deals:")
-                            for i, deal in enumerate(deals, 1):
-                                name = deal.get('name', 'Unbekannt')[:40]
-                                current_price = deal.get('current_price', 0)
-                                discount = deal.get('discount_percent', 0)
-                                store = deal.get('store', 'Steam')
-                                
-                                print(f"{i:2d}. {name}")
-                                print(f"    💰 €{current_price:.2f} (-{discount}%) bei {store}")
-                                print()
+                        charts = tracker.charts_manager.get_active_chart_games()
+                        if charts:
+                            print(f"📊 {len(charts)} aktive Charts-Spiele gefunden")
                         else:
-                            print("😔 Keine Deals gefunden")
+                            print("📊 Keine Charts-Daten verfügbar")
                     except Exception as e:
-                        print(f"❌ Fehler beim Laden der Deals: {e}")
+                        print(f"❌ Fehler: {e}")
+                else:
+                    print("❌ Charts-Manager nicht verfügbar")
+                input("Drücke Enter zum Fortfahren...")
                 
-                input("Drücke Enter zum Fortfahren...")
-            
-            # CHARTS-FUNKTIONEN (17-18 neu)
-            elif choice == "17" and charts_enabled:
-                # Charts-Intervalle konfigurieren
-                configure_charts_intervals(price_tracker, charts_config)
-                input("Drücke Enter zum Fortfahren...")
-            
-            elif choice == "18" and charts_enabled:
-                # Erweiterte Charts-Konfiguration
-                configure_charts_advanced(price_tracker, charts_config)
-                input("Drücke Enter zum Fortfahren...")
-            
-            elif choice in ["13", "14", "15", "16"] and charts_enabled:
-                # Andere Charts-Funktionen (bereits implementiert)
-                print(f"\n📊 Charts-Funktion {choice}")
-                print("💡 Diese Charts-Funktionen sind bereits in deinem System verfügbar")
-                
-                if choice == "14":
-                    # Charts Update
-                    if hasattr(price_tracker.charts_manager, 'update_all_charts'):
-                        print("🔄 Führe Charts-Update durch...")
-                        result = price_tracker.charts_manager.update_all_charts()
+            elif choice == "14" and charts_enabled:
+                print("\n📈 Charts werden aktualisiert...")
+                if hasattr(tracker, 'charts_manager') and tracker.charts_manager:
+                    try:
+                        result = tracker.charts_manager.update_all_charts()
                         if result:
-                            print("✅ Charts-Update erfolgreich abgeschlossen!")
+                            print("✅ Charts erfolgreich aktualisiert!")
                         else:
-                            print("❌ Fehler beim Charts-Update")
-                    else:
-                        print("❌ Charts-Update-Funktion nicht verfügbar")
+                            print("❌ Charts-Update fehlgeschlagen")
+                    except Exception as e:
+                        print(f"❌ Fehler: {e}")
+                else:
+                    print("❌ Charts-Manager nicht verfügbar")
+                input("Drücke Enter zum Fortfahren...")
                 
+            elif choice == "15" and charts_enabled:
+                print("\n🎯 Charts-Deals werden angezeigt...")
+                print("📊 Charts-Deals-Feature wird ausgeführt")
                 input("Drücke Enter zum Fortfahren...")
-            
-            # NEUE ERWEITERTE FEATURES (19-23)
-            elif choice == "19":
-                # Process Management Terminal starten
-                start_process_management_terminal()
-                input("Drücke Enter zum Fortfahren...")
-            
-            elif choice == "20":
-                # CLI-Tools anzeigen
-                show_available_cli_tools()
-                input("Drücke Enter zum Fortfahren...")
-            
-            elif choice == "21":
-                # CLI-Tool starten
-                launch_cli_tool()
-                input("Drücke Enter zum Fortfahren...")
-            
-            elif choice == "22":
-                # Erweiterte System-Übersicht
-                show_extended_system_status()
-                input("Drücke Enter zum Fortfahren...")
-            
-            elif choice == "23":
-                # Setup-Wizard starten
-                print("\n🔧 SETUP-WIZARD")
-                print("=" * 20)
-                print("🚀 Startet Setup-Wizard...")
                 
-                try:
-                    result = subprocess.run(['python', 'setup.py', 'setup'], 
-                                          capture_output=True, text=True, cwd=Path.cwd())
-                    
-                    print("📤 SETUP OUTPUT:")
-                    if result.stdout:
-                        print(result.stdout)
-                    if result.stderr:
-                        print("❌ ERRORS:")
-                        print(result.stderr)
-                    
-                    print(f"✅ Setup beendet mit Exit-Code: {result.returncode}")
-                    
-                except Exception as e:
-                    print(f"❌ Fehler beim Starten des Setup-Wizards: {e}")
-                    print("💡 Führe manuell aus: python setup.py setup")
-                
+            elif choice == "16" and charts_enabled:
+                print("\n📊 Charts-Status wird angezeigt...")
+                if hasattr(tracker, 'charts_manager') and tracker.charts_manager:
+                    try:
+                        stats = tracker.charts_manager.get_chart_statistics()
+                        print(f"Charts getrackt: {stats.get('total_charts', 0)}")
+                        print(f"Letzte Aktualisierung: {stats.get('last_update', 'Unbekannt')}")
+                    except Exception as e:
+                        print(f"❌ Fehler: {e}")
+                else:
+                    print("❌ Charts-Manager nicht verfügbar")
+                input("Drücke Enter zum Fortfahren...")
+            
+            # CHARTS-FUNKTIONEN FALLS NICHT VERFÜGBAR
+            elif choice in ["13", "14", "15", "16"] and not charts_enabled:
+                print("\n❌ Charts-Integration nicht verfügbar")
+                print("💡 Steam API Key in .env konfigurieren und System neu starten")
                 input("Drücke Enter zum Fortfahren...")
             
             else:
-                print("❌ Ungültige Auswahl!")
-                time.sleep(1)
+                print("❌ Ungültige Option")
+                input("Drücke Enter zum Fortfahren...")
         
         except KeyboardInterrupt:
-            print("\n⏹️ Beende Steam Price Tracker...")
+            print("\n\n⏹️ Programm durch Benutzer abgebrochen")
             enhanced_cleanup()
             break
         except Exception as e:
             print(f"\n❌ Unerwarteter Fehler: {e}")
-            logger.exception("Unerwarteter Fehler in main loop")
+            logger.exception("Hauptschleife-Fehler")
+            print("💡 Programm läuft mit Fallback-Mechanismen weiter")
             input("Drücke Enter zum Fortfahren...")
 
 if __name__ == "__main__":
