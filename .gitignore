@@ -89,3 +89,4 @@ auto_integration_script.py
 /backup_before_master_setup
 /elasticsearch/data/_state
 /elasticsearch/data/_state
+/elasticsearch/data/indices
