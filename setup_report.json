@@ -1,79 +1,96 @@
 {
-  "setup_completed_at": "2025-06-21T00:46:44.864323",
+  "setup_completed_at": "2025-06-27T10:00:32.962970",
   "features_available": {
-    "core": true,
     "charts": true,
+    "cli_tools": true,
+    "elasticsearch": false,
+    "core": true,
+    "database": false,
+    "main_app": true,
     "batch_processor": true,
     "charts_cli": true,
-    "elasticsearch": true,
-    "kibana_setup": false,
-    "main_app": true,
-    "docker_compose": true
+    "docker_compose": false
   },
   "setup_log": [
     {
-      "timestamp": "00:46:34",
+      "timestamp": "10:00:28",
       "step": "Master Backup",
       "success": true,
-      "details": "8 Dateien gesichert"
+      "details": "6 Dateien gesichert"
     },
     {
-      "timestamp": "00:46:34",
+      "timestamp": "10:00:28",
       "step": "Directory Structure",
       "success": true,
-      "details": "2 Verzeichnisse erstellt"
+      "details": "0 Verzeichnisse erstellt"
     },
     {
-      "timestamp": "00:46:41",
+      "timestamp": "10:00:28",
+      "step": "Corrected Requirements",
+      "success": true,
+      "details": "requirements.txt korrigiert ohne eingebaute Module"
+    },
+    {
+      "timestamp": "10:00:31",
       "step": "Python Dependencies",
-      "success": false,
-      "details": "Requirements Installation fehlgeschlagen: ERROR: Could not find a version that satisfies the requirement tkinter>=8.6 (from versions: none)\nERROR: No matching distribution found for tkinter>=8.6\n"
+      "success": true,
+      "details": "Alle Dependencies erfolgreich installiert"
     },
     {
-      "timestamp": "00:46:41",
+      "timestamp": "10:00:31",
       "step": "Configuration Files",
       "success": true,
       "details": "Konfigurationsdateien erstellt"
     },
     {
-      "timestamp": "00:46:41",
-      "step": "Database Initialization",
-      "success": true,
-      "details": "Datenbank initialisiert"
-    },
-    {
-      "timestamp": "00:46:43",
-      "step": "Core Functionality Test",
+      "timestamp": "10:00:31",
+      "step": "Database Schema Test",
       "success": false,
-      "details": "'SteamPriceTracker' object has no attribute 'get_tracked_apps'"
+      "details": "[WinError 32] Der Prozess kann nicht auf die Datei zugreifen, da sie von einem anderen Prozess verwendet wird: 'test_schema.db'"
     },
     {
-      "timestamp": "00:46:43",
+      "timestamp": "10:00:32",
+      "step": "Core Functionality Test",
+      "success": true,
+      "details": "Alle Kern-APIs funktionieren"
+    },
+    {
+      "timestamp": "10:00:32",
+      "step": "Main.py Compatibility Test",
+      "success": true,
+      "details": "Alle 27 Men\u00fcoptionen verf\u00fcgbar"
+    },
+    {
+      "timestamp": "10:00:32",
       "step": "Charts Integration",
       "success": true,
-      "details": "Charts-Integration verfügbar"
+      "details": "3 Chart-Typen verf\u00fcgbar"
     },
     {
-      "timestamp": "00:46:43",
+      "timestamp": "10:00:32",
       "step": "CLI Tools Setup",
       "success": true,
-      "details": "2 CLI-Tools verfügbar"
+      "details": "2 CLI-Tools verf\u00fcgbar"
     },
     {
-      "timestamp": "00:46:44",
+      "timestamp": "10:00:32",
       "step": "Elasticsearch Stack",
-      "success": true,
-      "details": "ELK Stack Setup abgeschlossen"
+      "success": false,
+      "details": "Elasticsearch-Manager nicht verf\u00fcgbar (optional)"
     },
     {
-      "timestamp": "00:46:44",
+      "timestamp": "10:00:32",
       "step": "Startup Scripts",
       "success": true,
       "details": "start.bat und start.sh erstellt"
     }
   ],
-  "total_steps": 10,
-  "successful_steps": 8,
+  "total_steps": 12,
+  "successful_steps": 10,
   "failed_steps": 2,
-  "success_rate": 80.0
+  "success_rate": 83.3,
+  "errors": [
+    "Database Schema Test: [WinError 32] Der Prozess kann nicht auf die Datei zugreifen, da sie von einem anderen Prozess verwendet wird: 'test_schema.db'",
+    "Elasticsearch Stack: Elasticsearch-Manager nicht verf\u00fcgbar (optional)"
+  ]
 }

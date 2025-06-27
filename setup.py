@@ -1,105 +1,105 @@
 #!/usr/bin/env python3
 """
-Steam Price Tracker - Master Setup Script
-Orchestriert alle Setup-Komponenten und CLI-Tools
-Vollständige Installation aller Features mit einem Kommando
+Steam Price Tracker Setup - KORRIGIERT
+Behebt alle identifizierten Setup-Probleme:
+- Korrigierte requirements.txt ohne eingebaute Module
+- Database Schema-Kompatibilität
+- Robuste API-Tests
+- Vollständige Feature-Validierung
 """
 
-import sys
 import os
+import sys
 import json
 import subprocess
 import shutil
-import time
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 import logging
 
 # Logging Setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class MasterSetup:
-    """Master Setup-Klasse für alle Steam Price Tracker Features"""
+class SteamPriceTrackerSetup:
+    """
+    Korrigierte Setup-Klasse für Steam Price Tracker
+    Behebt alle identifizierten Probleme aus dem Setup-Report
+    """
     
     def __init__(self):
-        self.project_root = Path.cwd()
-        self.backup_dir = self.project_root / "backup_before_master_setup"
-        self.setup_log = []
+        self.setup_steps = []
+        self.features_status = {}
+        self.errors = []
         
-        # Feature-Verfügbarkeit prüfen
-        self.features = self.check_feature_availability()
+        # Korrigierte Requirements (ohne eingebaute Module)
+        self.corrected_requirements = [
+            "requests>=2.31.0",
+            "schedule>=1.2.0", 
+            "python-dotenv>=1.0.0",
+            "colorlog>=6.7.0",
+            "tqdm>=4.66.0",
+            "python-dateutil>=2.8.0",
+            "pandas>=2.1.0",
+            "matplotlib>=3.7.0",
+            "seaborn>=0.12.0",
+            "plotly>=5.17.0",
+            "psutil>=5.9.0",
+            "memory-profiler>=0.61.0",
+            "jsonschema>=4.19.0",
+            "pathspec>=0.11.0",
+            "rich>=13.6.0",
+            "structlog>=23.2.0",
+            "dask>=2023.9.0",
+            "httpx>=0.25.0",
+            "aiohttp>=3.8.0",
+            "pytest>=7.4.0",
+            "pytest-cov>=4.1.0",
+            "black>=23.0.0",
+            "flake8>=6.1.0",
+            "mypy>=1.6.0"
+        ]
+        
+        print("🚀 Steam Price Tracker Setup (KORRIGIERT)")
+        print("=" * 50)
     
-    def check_feature_availability(self):
-        """Prüft welche Features verfügbar sind"""
-        features = {
-            'core': self.project_root / "price_tracker.py",
-            'charts': self.project_root / "steam_charts_manager.py",
-            'batch_processor': self.project_root / "batch_processor.py",
-            'charts_cli': self.project_root / "charts_cli_manager.py",
-            'elasticsearch': self.project_root / "elasticsearch_setup.py",
-            'kibana_setup': self.project_root / "setup_kibana_dashboards.py",
-            'main_app': self.project_root / "main.py",
-            'docker_compose': self.project_root / "docker-compose-elk.yml"
-        }
-        
-        available = {}
-        for feature, file_path in features.items():
-            available[feature] = file_path.exists()
-        
-        return available
-    
-    def log_step(self, step_name, success, details=""):
-        """Loggt Setup-Schritte"""
-        status = "✅ SUCCESS" if success else "❌ FAILED"
+    def log_step(self, step_name: str, success: bool, details: str = ""):
+        """Protokolliert einen Setup-Schritt"""
         timestamp = datetime.now().strftime("%H:%M:%S")
         
-        log_entry = {
-            'timestamp': timestamp,
-            'step': step_name,
-            'success': success,
-            'details': details
+        step_info = {
+            "timestamp": timestamp,
+            "step": step_name,
+            "success": success,
+            "details": details
         }
         
-        self.setup_log.append(log_entry)
-        logger.info(f"{status} - {step_name} ({timestamp})")
-        if details:
-            logger.info(f"         Details: {details}")
-    
-    def create_master_backup(self):
-        """Erstellt Master-Backup vor Setup"""
-        logger.info("💾 Erstelle Master-Backup...")
+        self.setup_steps.append(step_info)
         
+        status = "✅" if success else "❌"
+        print(f"{status} {step_name}")
+        if details:
+            print(f"   {details}")
+        
+        if not success:
+            self.errors.append(f"{step_name}: {details}")
+    
+    def create_master_backup(self) -> bool:
+        """Erstellt Backup der aktuellen Installation"""
         try:
-            if self.backup_dir.exists():
-                shutil.rmtree(self.backup_dir)
+            backup_dir = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            os.makedirs(backup_dir, exist_ok=True)
             
-            self.backup_dir.mkdir(parents=True)
-            
-            # Wichtige Dateien sichern
-            backup_files = [
-                "main.py", "price_tracker.py", "database_manager.py",
-                "steam_wishlist_manager.py", "config.json", ".env",
-                "steam_price_tracker.db", "requirements.txt"
+            files_to_backup = [
+                "main.py", "price_tracker.py", "database_manager.py", 
+                "requirements.txt", ".env", "setup_report.json"
             ]
             
             backed_up = 0
-            for file_name in backup_files:
-                file_path = self.project_root / file_name
-                if file_path.exists():
-                    shutil.copy2(file_path, self.backup_dir / file_name)
+            for file in files_to_backup:
+                if os.path.exists(file):
+                    shutil.copy2(file, backup_dir)
                     backed_up += 1
-            
-            # Backup-Info erstellen
-            backup_info = {
-                'created_at': datetime.now().isoformat(),
-                'backed_up_files': backed_up,
-                'project_root': str(self.project_root),
-                'features_available': self.features
-            }
-            
-            with open(self.backup_dir / "backup_info.json", 'w') as f:
-                json.dump(backup_info, f, indent=2)
             
             self.log_step("Master Backup", True, f"{backed_up} Dateien gesichert")
             return True
@@ -108,24 +108,110 @@ class MasterSetup:
             self.log_step("Master Backup", False, str(e))
             return False
     
-    def setup_directory_structure(self):
-        """Erstellt vollständige Verzeichnisstruktur"""
-        logger.info("📁 Erstelle Verzeichnisstruktur...")
-        
-        directories = [
-            "logs", "exports", "backups", "temp_schedulers", "temp_scripts",
-            "elasticsearch", "elasticsearch/config", "elasticsearch/data", "elasticsearch/logs",
-            "kibana", "kibana/config", "kibana/data", "kibana/dashboards",
-            "logstash", "logstash/config", "logstash/pipeline", "logstash/data",
-            "metricbeat", "apm-server"
-        ]
-        
+    def create_corrected_requirements(self) -> bool:
+        """Erstellt korrigierte requirements.txt ohne eingebaute Module"""
         try:
+            # Backup der alten requirements.txt
+            if os.path.exists("requirements.txt"):
+                shutil.copy2("requirements.txt", "requirements_old.txt")
+            
+            # Neue, korrigierte requirements.txt erstellen
+            with open("requirements.txt", "w", encoding="utf-8") as f:
+                f.write("# requirements.txt - Steam Price Tracker (KORRIGIERT)\n")
+                f.write("# Nur externe Dependencies - eingebaute Module entfernt\n\n")
+                f.write("# ========================================\n")
+                f.write("# KERN-REQUIREMENTS (ZWINGEND ERFORDERLICH)\n")
+                f.write("# ========================================\n\n")
+                
+                core_requirements = [
+                    "requests>=2.31.0",
+                    "schedule>=1.2.0", 
+                    "python-dotenv>=1.0.0",
+                    "colorlog>=6.7.0",
+                    "tqdm>=4.66.0",
+                    "python-dateutil>=2.8.0"
+                ]
+                
+                for req in core_requirements:
+                    f.write(f"{req}\n")
+                
+                f.write("\n# ========================================\n")
+                f.write("# OPTIONAL: DATENANALYSE & VISUALISIERUNG\n")
+                f.write("# ========================================\n\n")
+                
+                optional_requirements = [
+                    "pandas>=2.1.0",
+                    "matplotlib>=3.7.0",
+                    "seaborn>=0.12.0",
+                    "plotly>=5.17.0",
+                    "numpy>=1.24.0",
+                    "scipy>=1.11.0"
+                ]
+                
+                for req in optional_requirements:
+                    f.write(f"{req}\n")
+                
+                f.write("\n# ========================================\n")
+                f.write("# ENTFERNTE EINGEBAUTE MODULE\n")
+                f.write("# ========================================\n")
+                f.write("# \n")
+                f.write("# Diese Module sind in Python eingebaut und dürfen NICHT in requirements.txt:\n")
+                f.write("# - tkinter (GUI - eingebaut in Python)\n")
+                f.write("# - argparse (CLI parsing - eingebaut)\n")
+                f.write("# - zipfile (ZIP-Verarbeitung - eingebaut)\n")
+                f.write("# - csv (CSV-Verarbeitung - eingebaut)\n")
+                f.write("# - json (JSON-Verarbeitung - eingebaut)\n")
+                f.write("# - sqlite3 (Datenbank - eingebaut)\n")
+                f.write("# - threading (Threading - eingebaut)\n")
+                f.write("# - datetime (Datum/Zeit - eingebaut)\n")
+                f.write("# - os, sys, pathlib (System - eingebaut)\n")
+                f.write("# - logging (Logging - eingebaut)\n")
+                f.write("# - subprocess (Prozesse - eingebaut)\n")
+                f.write("# - urllib (URL-Verarbeitung - eingebaut)\n")
+                f.write("#\n")
+                f.write("# ========================================\n")
+            
+            self.log_step("Corrected Requirements", True, "requirements.txt korrigiert ohne eingebaute Module")
+            return True
+            
+        except Exception as e:
+            self.log_step("Corrected Requirements", False, str(e))
+            return False
+    
+    def install_dependencies(self) -> bool:
+        """Installiert Dependencies mit korrigierter requirements.txt"""
+        try:
+            print("📦 Installiere korrigierte Dependencies...")
+            
+            # Verwende korrigierte requirements.txt
+            result = subprocess.run([
+                sys.executable, "-m", "pip", "install", "-r", "requirements.txt"
+            ], capture_output=True, text=True, timeout=300)
+            
+            if result.returncode == 0:
+                self.log_step("Python Dependencies", True, "Alle Dependencies erfolgreich installiert")
+                return True
+            else:
+                error_msg = result.stderr.strip()
+                self.log_step("Python Dependencies", False, f"Installation fehlgeschlagen: {error_msg}")
+                return False
+                
+        except subprocess.TimeoutExpired:
+            self.log_step("Python Dependencies", False, "Installation timeout nach 300s")
+            return False
+        except Exception as e:
+            self.log_step("Python Dependencies", False, str(e))
+            return False
+    
+    def create_directories(self) -> bool:
+        """Erstellt erforderliche Verzeichnisse"""
+        try:
+            directories = ["data", "backups", "logs", "exports"]
             created = 0
+            
             for directory in directories:
-                dir_path = self.project_root / directory
-                if not dir_path.exists():
-                    dir_path.mkdir(parents=True, exist_ok=True)
+                if not os.path.exists(directory):
+                    os.makedirs(directory)
                     created += 1
             
             self.log_step("Directory Structure", True, f"{created} Verzeichnisse erstellt")
@@ -135,277 +221,230 @@ class MasterSetup:
             self.log_step("Directory Structure", False, str(e))
             return False
     
-    def install_python_dependencies(self):
-        """Installiert alle Python-Dependencies"""
-        logger.info("📦 Installiere Python-Dependencies...")
-        
+    def test_database_schema(self) -> bool:
+        """Testet das korrigierte Database Schema"""
         try:
-            # Basis-Requirements
-            if (self.project_root / "requirements.txt").exists():
-                result = subprocess.run([
-                    sys.executable, "-m", "pip", "install", "-r", "requirements.txt"
-                ], capture_output=True, text=True)
-                
-                if result.returncode != 0:
-                    raise Exception(f"Requirements Installation fehlgeschlagen: {result.stderr}")
-            
-            # Elasticsearch-Requirements (optional)
-            if (self.project_root / "requirements-elasticsearch.txt").exists():
-                result = subprocess.run([
-                    sys.executable, "-m", "pip", "install", "-r", "requirements-elasticsearch.txt"
-                ], capture_output=True, text=True)
-                
-                # Elasticsearch ist optional, daher kein Fehler bei Fehlschlag
-                if result.returncode == 0:
-                    self.log_step("Elasticsearch Dependencies", True, "Elasticsearch Support aktiviert")
-                else:
-                    self.log_step("Elasticsearch Dependencies", False, "Optional - nicht kritisch")
-            
-            self.log_step("Python Dependencies", True, "Alle Dependencies installiert")
-            return True
-            
-        except Exception as e:
-            self.log_step("Python Dependencies", False, str(e))
-            return False
-    
-    def setup_configuration_files(self):
-        """Erstellt Konfigurationsdateien"""
-        logger.info("⚙️ Setup Konfigurationsdateien...")
-        
-        try:
-            # .env-Datei erstellen falls nicht vorhanden
-            env_file = self.project_root / ".env"
-            if not env_file.exists():
-                env_example = self.project_root / ".env.example"
-                if env_example.exists():
-                    shutil.copy2(env_example, env_file)
-                else:
-                    # Minimal .env erstellen
-                    with open(env_file, 'w') as f:
-                        f.write("# Steam Price Tracker Configuration\n")
-                        f.write("STEAM_API_KEY=your_steam_api_key_here\n")
-                        f.write("CHEAPSHARK_RATE_LIMIT=1.5\n")
-                        f.write("TRACKING_INTERVAL_HOURS=6\n")
-            
-            # config.json erstellen falls nicht vorhanden
-            config_file = self.project_root / "config.json"
-            if not config_file.exists():
-                basic_config = {
-                    "database": {"path": "steam_price_tracker.db"},
-                    "tracking": {"default_interval_hours": 6},
-                    "charts": {"enabled": False},
-                    "elasticsearch": {"enabled": False},
-                    "logging": {"level": "INFO"}
-                }
-                
-                with open(config_file, 'w') as f:
-                    json.dump(basic_config, f, indent=2)
-            
-            self.log_step("Configuration Files", True, "Konfigurationsdateien erstellt")
-            return True
-            
-        except Exception as e:
-            self.log_step("Configuration Files", False, str(e))
-            return False
-    
-    def initialize_database(self):
-        """Initialisiert Datenbank"""
-        logger.info("🗄️ Initialisiere Datenbank...")
-        
-        try:
-            # Database Manager importieren und initialisieren
-            sys.path.insert(0, str(self.project_root))
+            # Importiere korrigierte DatabaseManager
             from database_manager import DatabaseManager
             
-            db = DatabaseManager()
+            # Test-Datenbank erstellen
+            test_db = DatabaseManager("test_schema.db")
             
-            # Charts-Tabellen hinzufügen falls verfügbar
-            if hasattr(db, 'init_charts_tables'):
-                db.init_charts_tables()
+            # Test: add_tracked_app mit source Parameter
+            success = test_db.add_tracked_app("123456", "Test Game", "manual")
+            if not success:
+                raise Exception("add_tracked_app fehlgeschlagen")
             
-            self.log_step("Database Initialization", True, "Datenbank initialisiert")
+            # Test: get_tracked_apps
+            apps = test_db.get_tracked_apps()
+            if not isinstance(apps, list):
+                raise Exception("get_tracked_apps gibt keine Liste zurück")
+            
+            # Test: get_database_stats (korrigierte API)
+            stats = test_db.get_database_stats()
+            if not isinstance(stats, dict):
+                raise Exception("get_database_stats gibt kein Dict zurück")
+            
+            # Schema-Validierung: prüfe ob 'source' Spalte existiert
+            with test_db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("PRAGMA table_info(tracked_apps)")
+                columns = [column[1] for column in cursor.fetchall()]
+                
+                if 'source' not in columns:
+                    raise Exception("'source' Spalte fehlt in tracked_apps Tabelle")
+            
+            # Test-Datenbank bereinigen
+            os.remove("test_schema.db")
+            
+            self.log_step("Database Schema Test", True, "Schema-Kompatibilität bestätigt")
             return True
             
         except Exception as e:
-            self.log_step("Database Initialization", False, str(e))
+            self.log_step("Database Schema Test", False, str(e))
             return False
     
-    def test_core_functionality(self):
-        """Testet Kern-Funktionalität"""
-        logger.info("🧪 Teste Kern-Funktionalität...")
-        
+    def test_core_functionality(self) -> bool:
+        """Testet Kern-Funktionalität mit korrigierten APIs"""
         try:
-            sys.path.insert(0, str(self.project_root))
-            
-            # Price Tracker testen
+            # Teste Price Tracker Erstellung
             from price_tracker import create_price_tracker
-            tracker = create_price_tracker(enable_charts=False)
             
-            # Basis-Test: Apps abrufen
-            apps = tracker.get_tracked_apps()
+            tracker = create_price_tracker(enable_charts=True)
+            if not tracker:
+                raise Exception("Price Tracker konnte nicht erstellt werden")
             
-            self.log_step("Core Functionality Test", True, f"Price Tracker funktional")
+            # Teste korrigierte APIs
+            if not hasattr(tracker, 'db_manager'):
+                raise Exception("tracker.db_manager nicht verfügbar")
+            
+            if not hasattr(tracker.db_manager, 'get_tracked_apps'):
+                raise Exception("get_tracked_apps Methode fehlt")
+            
+            if not hasattr(tracker.db_manager, 'add_tracked_app'):
+                raise Exception("add_tracked_app Methode fehlt")
+            
+            if not hasattr(tracker.db_manager, 'get_database_stats'):
+                raise Exception("get_database_stats Methode fehlt")
+            
+            # Teste add_tracked_app mit korrekten Parametern
+            success = tracker.db_manager.add_tracked_app("654321", "Test Game 2", "test")
+            if not success:
+                raise Exception("add_tracked_app Test fehlgeschlagen")
+            
+            # Teste get_tracked_apps
+            apps = tracker.db_manager.get_tracked_apps()
+            if not isinstance(apps, list):
+                raise Exception("get_tracked_apps Test fehlgeschlagen")
+            
+            self.log_step("Core Functionality Test", True, "Alle Kern-APIs funktionieren")
             return True
             
         except Exception as e:
             self.log_step("Core Functionality Test", False, str(e))
             return False
     
-    def setup_charts_integration(self):
-        """Setup Charts-Integration"""
-        if not self.features['charts']:
-            self.log_step("Charts Integration", False, "Charts-Dateien nicht verfügbar")
-            return False
-        
-        logger.info("📊 Setup Charts-Integration...")
-        
+    def test_main_py_compatibility(self) -> bool:
+        """Testet Kompatibilität mit der korrigierten main.py"""
         try:
-            # Charts-Funktionalität testen
-            sys.path.insert(0, str(self.project_root))
-            from steam_charts_manager import SteamChartsManager
+            # Prüfe ob main.py existiert und importiert werden kann
+            if not os.path.exists("main.py"):
+                raise Exception("main.py nicht gefunden")
             
-            # API Key aus .env laden
-            from steam_wishlist_manager import load_api_key_from_env
-            api_key = load_api_key_from_env()
+            # Teste kritische Funktionen aus main.py
+            # (Ohne main.py auszuführen, um Endlosschleife zu vermeiden)
             
-            if not api_key or api_key == "your_steam_api_key_here":
-                self.log_step("Charts Integration", False, "Steam API Key erforderlich")
-                return False
+            # Lese main.py und prüfe auf kritische Funktionen
+            with open("main.py", "r", encoding="utf-8") as f:
+                main_content = f.read()
             
-            # Charts Manager testen
-            from database_manager import DatabaseManager
-            db = DatabaseManager()
-            charts_manager = SteamChartsManager(api_key, db)
+            required_functions = [
+                "get_tracked_apps_safe",
+                "add_app_safe", 
+                "get_statistics_safe",
+                "enhanced_cleanup",
+                "create_tracker_with_fallback"
+            ]
             
-            self.log_step("Charts Integration", True, "Charts-Integration verfügbar")
+            missing_functions = []
+            for func in required_functions:
+                if f"def {func}" not in main_content:
+                    missing_functions.append(func)
+            
+            if missing_functions:
+                raise Exception(f"Fehlende Funktionen in main.py: {missing_functions}")
+            
+            # Prüfe auf 27 Menüoptionen
+            menu_options = []
+            for i in range(28):  # 0-27
+                if f'choice == "{i}"' in main_content:
+                    menu_options.append(i)
+            
+            if len(menu_options) < 28:  # 0-27 = 28 Optionen
+                raise Exception(f"Nur {len(menu_options)} von 28 Menüoptionen gefunden")
+            
+            self.log_step("Main.py Compatibility Test", True, "Alle 27 Menüoptionen verfügbar")
             return True
             
         except Exception as e:
+            self.log_step("Main.py Compatibility Test", False, str(e))
+            return False
+    
+    def test_charts_integration(self) -> bool:
+        """Testet Charts-Integration"""
+        try:
+            try:
+                from steam_charts_manager import SteamChartsManager
+                charts_manager = SteamChartsManager("test_key", None, None)
+                
+                # Teste grundlegende Charts-Funktionalität
+                if hasattr(charts_manager, 'CHART_TYPES'):
+                    chart_types = charts_manager.CHART_TYPES
+                    if len(chart_types) > 0:
+                        self.features_status['charts'] = True
+                        self.log_step("Charts Integration", True, f"{len(chart_types)} Chart-Typen verfügbar")
+                        return True
+                
+            except ImportError:
+                self.features_status['charts'] = False
+                self.log_step("Charts Integration", False, "SteamChartsManager nicht verfügbar")
+                return False
+            
+        except Exception as e:
+            self.features_status['charts'] = False
             self.log_step("Charts Integration", False, str(e))
             return False
     
-    def setup_cli_tools(self):
-        """Setup CLI-Tools"""
-        logger.info("🛠️ Setup CLI-Tools...")
-        
-        cli_tools = {
-            'batch_processor': self.features['batch_processor'],
-            'charts_cli': self.features['charts_cli']
-        }
-        
-        available_tools = 0
-        for tool_name, available in cli_tools.items():
-            if available:
-                available_tools += 1
-        
-        if available_tools > 0:
-            self.log_step("CLI Tools Setup", True, f"{available_tools} CLI-Tools verfügbar")
-            return True
-        else:
-            self.log_step("CLI Tools Setup", False, "Keine CLI-Tools verfügbar")
-            return False
-    
-    def setup_elasticsearch_stack(self):
-        """Setup Elasticsearch Stack (optional)"""
-        if not self.features['elasticsearch']:
-            self.log_step("Elasticsearch Stack", False, "Elasticsearch Setup nicht verfügbar")
-            return False
-        
-        logger.info("🔍 Setup Elasticsearch Stack...")
-        
+    def test_cli_tools(self) -> bool:
+        """Testet CLI-Tools Verfügbarkeit"""
         try:
-            # Docker-Verfügbarkeit prüfen
-            result = subprocess.run(['docker', '--version'], capture_output=True, text=True)
-            if result.returncode != 0:
-                self.log_step("Elasticsearch Stack", False, "Docker nicht verfügbar")
+            cli_tools = [
+                "batch_processor.py",
+                "charts_cli_manager.py"
+            ]
+            
+            available_tools = 0
+            for tool in cli_tools:
+                if os.path.exists(tool):
+                    available_tools += 1
+            
+            if available_tools > 0:
+                self.features_status['cli_tools'] = True
+                self.log_step("CLI Tools Setup", True, f"{available_tools} CLI-Tools verfügbar")
+                return True
+            else:
+                self.features_status['cli_tools'] = False
+                self.log_step("CLI Tools Setup", False, "Keine CLI-Tools gefunden")
                 return False
             
-            # Elasticsearch Setup ausführen
-            elasticsearch_setup = self.project_root / "elasticsearch_setup.py"
-            if elasticsearch_setup.exists():
-                result = subprocess.run([
-                    sys.executable, str(elasticsearch_setup), 'setup'
-                ], capture_output=True, text=True)
-                
-                if result.returncode == 0:
-                    self.log_step("Elasticsearch Stack", True, "ELK Stack Setup abgeschlossen")
-                    return True
-                else:
-                    self.log_step("Elasticsearch Stack", False, "ELK Setup fehlgeschlagen")
-                    return False
-            
         except Exception as e:
-            self.log_step("Elasticsearch Stack", False, str(e))
+            self.features_status['cli_tools'] = False
+            self.log_step("CLI Tools Setup", False, str(e))
             return False
     
-    def create_startup_scripts(self):
-        """Erstellt Startup-Scripts"""
-        logger.info("🚀 Erstelle Startup-Scripts...")
-        
+    def test_elasticsearch_stack(self) -> bool:
+        """Testet Elasticsearch-Stack (optional)"""
         try:
-            # Windows Batch-Script
-            batch_script = """@echo off
-title Steam Price Tracker v3.0
-echo 🚀 Steam Price Tracker v3.0 wird gestartet...
-echo ===============================================
-echo.
-
-cd /d "%~dp0"
-
-echo 📊 Prüfe Python Installation...
-python --version >nul 2>&1
-if errorlevel 1 (
-    echo ❌ Python nicht gefunden!
-    echo Installiere Python von https://python.org
-    pause
-    exit /b 1
-)
-
-echo ✅ Python gefunden
-echo.
-
-echo 🔄 Starte Steam Price Tracker...
-python main.py
-
-echo.
-echo 👋 Steam Price Tracker beendet
-pause
-"""
+            try:
+                from elasticsearch_manager import ElasticsearchManager
+                es_manager = ElasticsearchManager()
+                
+                self.features_status['elasticsearch'] = True
+                self.log_step("Elasticsearch Stack", True, "Elasticsearch-Integration verfügbar")
+                return True
+                
+            except ImportError:
+                self.features_status['elasticsearch'] = False
+                self.log_step("Elasticsearch Stack", False, "Elasticsearch-Manager nicht verfügbar (optional)")
+                return True  # Nicht kritisch
             
-            with open(self.project_root / "start.bat", 'w', encoding='utf-8') as f:
-                f.write(batch_script)
+        except Exception as e:
+            self.features_status['elasticsearch'] = False
+            self.log_step("Elasticsearch Stack", False, f"ES-Test fehlgeschlagen: {e}")
+            return True  # Nicht kritisch
+    
+    def create_startup_scripts(self) -> bool:
+        """Erstellt Start-Skripte"""
+        try:
+            # Windows Batch-Datei
+            with open("start.bat", "w", encoding="utf-8") as f:
+                f.write("@echo off\n")
+                f.write("echo Steam Price Tracker wird gestartet...\n")
+                f.write("python main.py\n")
+                f.write("pause\n")
             
-            # Linux/macOS Shell-Script
-            shell_script = """#!/bin/bash
-echo "🚀 Steam Price Tracker v3.0 wird gestartet..."
-echo "==============================================="
-echo
-
-cd "$(dirname "$0")"
-
-echo "📊 Prüfe Python Installation..."
-if ! command -v python3 &> /dev/null; then
-    echo "❌ Python3 nicht gefunden!"
-    echo "Installiere Python3 über deinen Package Manager"
-    exit 1
-fi
-
-echo "✅ Python gefunden"
-echo
-
-echo "🔄 Starte Steam Price Tracker..."
-python3 main.py
-
-echo
-echo "👋 Steam Price Tracker beendet"
-"""
+            # Linux/Mac Shell-Skript
+            with open("start.sh", "w", encoding="utf-8") as f:
+                f.write("#!/bin/bash\n")
+                f.write("echo \"Steam Price Tracker wird gestartet...\"\n")
+                f.write("python3 main.py\n")
+                f.write("read -p \"Drücke Enter zum Beenden...\"\n")
             
-            shell_path = self.project_root / "start.sh"
-            with open(shell_path, 'w', encoding='utf-8') as f:
-                f.write(shell_script)
-            
-            # Ausführbar machen
-            os.chmod(shell_path, 0o755)
+            # Shell-Skript ausführbar machen (Linux/Mac)
+            try:
+                os.chmod("start.sh", 0o755)
+            except:
+                pass  # Windows oder Berechtigung fehlgeschlagen
             
             self.log_step("Startup Scripts", True, "start.bat und start.sh erstellt")
             return True
@@ -414,170 +453,200 @@ echo "👋 Steam Price Tracker beendet"
             self.log_step("Startup Scripts", False, str(e))
             return False
     
-    def create_completion_report(self):
-        """Erstellt Abschluss-Bericht"""
-        logger.info("📋 Erstelle Abschluss-Bericht...")
-        
+    def create_configuration_files(self) -> bool:
+        """Erstellt Konfigurationsdateien"""
         try:
-            report = {
-                'setup_completed_at': datetime.now().isoformat(),
-                'features_available': self.features,
-                'setup_log': self.setup_log,
-                'total_steps': len(self.setup_log),
-                'successful_steps': sum(1 for step in self.setup_log if step['success']),
-                'failed_steps': sum(1 for step in self.setup_log if not step['success']),
-                'success_rate': round(sum(1 for step in self.setup_log if step['success']) / len(self.setup_log) * 100, 1) if self.setup_log else 0
+            # .env Template (falls nicht vorhanden)
+            if not os.path.exists(".env"):
+                with open("env_template.txt", "w", encoding="utf-8") as f:
+                    f.write("# Steam Price Tracker Konfiguration\n")
+                    f.write("# Kopiere diese Datei zu '.env' und fülle die Werte aus\n\n")
+                    f.write("# Steam Web API Key (erforderlich)\n")
+                    f.write("STEAM_API_KEY=your_steam_api_key_here\n\n")
+                    f.write("# Optional: Steam User ID für Wishlist-Import\n")
+                    f.write("STEAM_USER_ID=\n\n")
+                    f.write("# Optional: Datenbank-Pfad\n")
+                    f.write("DATABASE_PATH=steam_price_tracker.db\n\n")
+                    f.write("# Optional: Logging-Level (DEBUG, INFO, WARNING, ERROR)\n")
+                    f.write("LOG_LEVEL=INFO\n")
+            
+            # config.json (Anwendungskonfiguration)
+            config = {
+                "version": "1.0.0",
+                "database": {
+                    "path": "steam_price_tracker.db",
+                    "backup_interval_hours": 24,
+                    "cleanup_days": 90
+                },
+                "scheduler": {
+                    "price_update_interval_hours": 6,
+                    "charts_update_interval_hours": 2,
+                    "max_concurrent_requests": 5,
+                    "request_delay_seconds": 1
+                },
+                "features": {
+                    "charts_enabled": True,
+                    "elasticsearch_enabled": False,
+                    "auto_backup": True,
+                    "performance_monitoring": True
+                },
+                "api": {
+                    "steam_timeout_seconds": 30,
+                    "cheapshark_timeout_seconds": 15,
+                    "max_retries": 3
+                }
             }
             
-            report_file = self.project_root / "setup_report.json"
-            with open(report_file, 'w', encoding='utf-8') as f:
-                json.dump(report, f, indent=2, ensure_ascii=False)
+            with open("config.json", "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2)
             
-            self.log_step("Completion Report", True, f"Bericht erstellt: {report_file}")
-            return report
+            self.log_step("Configuration Files", True, "Konfigurationsdateien erstellt")
+            return True
             
         except Exception as e:
-            self.log_step("Completion Report", False, str(e))
-            return None
+            self.log_step("Configuration Files", False, str(e))
+            return False
     
-    def show_final_summary(self, report):
-        """Zeigt finalen Setup-Zusammenfassung"""
-        print("\n🎉 STEAM PRICE TRACKER - MASTER SETUP ABGESCHLOSSEN")
-        print("=" * 60)
-        
-        if report:
-            print(f"📊 Setup-Erfolg: {report['success_rate']}%")
-            print(f"✅ Erfolgreich: {report['successful_steps']}/{report['total_steps']} Schritte")
+    def generate_setup_report(self) -> bool:
+        """Generiert finalen Setup-Report"""
+        try:
+            # Feature-Status finalisieren
+            self.features_status.update({
+                'core': any(step['step'] == 'Core Functionality Test' and step['success'] for step in self.setup_steps),
+                'database': any(step['step'] == 'Database Schema Test' and step['success'] for step in self.setup_steps),
+                'main_app': any(step['step'] == 'Main.py Compatibility Test' and step['success'] for step in self.setup_steps),
+                'batch_processor': os.path.exists('batch_processor.py'),
+                'charts_cli': os.path.exists('charts_cli_manager.py'),
+                'docker_compose': os.path.exists('docker-compose.yml')
+            })
             
-            if report['failed_steps'] > 0:
-                print(f"❌ Fehlgeschlagen: {report['failed_steps']} Schritte")
-        
-        print(f"\n📁 VERFÜGBARE FEATURES:")
-        for feature, available in self.features.items():
-            status = "✅" if available else "❌"
-            print(f"   {status} {feature.replace('_', ' ').title()}")
-        
-        print(f"\n🚀 NÄCHSTE SCHRITTE:")
-        print(f"1. Konfiguriere deinen Steam API Key in .env:")
-        print(f"   STEAM_API_KEY=dein_echter_api_key")
-        print(f"")
-        print(f"2. Starte die Anwendung:")
-        print(f"   Windows: Doppelklick auf start.bat")
-        print(f"   Linux/macOS: ./start.sh")
-        print(f"   Oder: python main.py")
-        print(f"")
-        print(f"3. CLI-Tools verwenden:")
-        if self.features['batch_processor']:
-            print(f"   python batch_processor.py status")
-        if self.features['charts_cli']:
-            print(f"   python charts_cli_manager.py status")
-        if self.features['elasticsearch']:
-            print(f"   python elasticsearch_setup.py status")
-        
-        print(f"\n💾 BACKUP:")
-        print(f"   Deine originalen Dateien sind gesichert in:")
-        print(f"   {self.backup_dir}/")
-        
-        print(f"\n📋 DETAILLIERTER BERICHT:")
-        print(f"   {self.project_root}/setup_report.json")
-        
-        print(f"\n💡 HILFE:")
-        print(f"   Bei Problemen schaue in die Logs oder starte das Setup erneut")
-        print(f"   Backup kann wiederhergestellt werden falls nötig")
+            # Erfolgsstatistiken
+            total_steps = len(self.setup_steps)
+            successful_steps = sum(1 for step in self.setup_steps if step['success'])
+            success_rate = (successful_steps / total_steps * 100) if total_steps > 0 else 0
+            
+            report = {
+                "setup_completed_at": datetime.now().isoformat(),
+                "features_available": self.features_status,
+                "setup_log": self.setup_steps,
+                "total_steps": total_steps,
+                "successful_steps": successful_steps,
+                "failed_steps": total_steps - successful_steps,
+                "success_rate": round(success_rate, 1),
+                "errors": self.errors
+            }
+            
+            with open("setup_report.json", "w", encoding="utf-8") as f:
+                json.dump(report, f, indent=2)
+            
+            # Konsolne-Zusammenfassung
+            print("\n" + "=" * 60)
+            print("📊 SETUP-ZUSAMMENFASSUNG")
+            print("=" * 60)
+            print(f"✅ Erfolgreich: {successful_steps}/{total_steps} ({success_rate:.1f}%)")
+            
+            if self.errors:
+                print(f"❌ Fehler: {len(self.errors)}")
+                for error in self.errors:
+                    print(f"   • {error}")
+            
+            print("\n🎯 VERFÜGBARE FEATURES:")
+            for feature, available in self.features_status.items():
+                status = "✅" if available else "❌"
+                print(f"   {status} {feature}")
+            
+            print(f"\n📄 Detaillierter Report: setup_report.json")
+            print("=" * 60)
+            
+            return True
+            
+        except Exception as e:
+            print(f"❌ Fehler beim Generieren des Setup-Reports: {e}")
+            return False
     
-    def run_master_setup(self):
-        """Führt komplettes Master-Setup durch"""
-        logger.info("🚀 STEAM PRICE TRACKER - MASTER SETUP")
-        logger.info("=" * 50)
-        logger.info("Startet vollständiges Setup aller Features...")
+    def run_full_setup(self) -> bool:
+        """Führt vollständiges Setup durch"""
+        print("🚀 Starte vollständiges Setup...")
         
+        # Setup-Schritte in korrekter Reihenfolge
         setup_steps = [
-            ("Master Backup erstellen", self.create_master_backup),
-            ("Verzeichnisstruktur", self.setup_directory_structure),
-            ("Python Dependencies", self.install_python_dependencies),
-            ("Konfigurationsdateien", self.setup_configuration_files),
-            ("Datenbank initialisieren", self.initialize_database),
-            ("Kern-Funktionalität testen", self.test_core_functionality),
-            ("Charts-Integration", self.setup_charts_integration),
-            ("CLI-Tools", self.setup_cli_tools),
-            ("Elasticsearch Stack", self.setup_elasticsearch_stack),
-            ("Startup-Scripts", self.create_startup_scripts)
+            ("Master Backup", self.create_master_backup),
+            ("Directory Structure", self.create_directories),
+            ("Corrected Requirements", self.create_corrected_requirements),
+            ("Python Dependencies", self.install_dependencies),
+            ("Configuration Files", self.create_configuration_files),
+            ("Database Schema Test", self.test_database_schema),
+            ("Core Functionality Test", self.test_core_functionality),
+            ("Main.py Compatibility Test", self.test_main_py_compatibility),
+            ("Charts Integration", self.test_charts_integration),
+            ("CLI Tools Setup", self.test_cli_tools),
+            ("Elasticsearch Stack", self.test_elasticsearch_stack),
+            ("Startup Scripts", self.create_startup_scripts)
         ]
         
-        logger.info(f"📋 {len(setup_steps)} Setup-Schritte geplant")
-        logger.info("")
-        
-        # Setup-Schritte ausführen
         for step_name, step_function in setup_steps:
-            logger.info(f"🔧 {step_name}...")
             try:
-                success = step_function()
+                step_function()
             except Exception as e:
-                logger.error(f"❌ Kritischer Fehler in {step_name}: {e}")
-                success = False
-            
-            if not success:
-                logger.warning(f"⚠️ {step_name} nicht erfolgreich - Setup wird fortgesetzt")
+                self.log_step(step_name, False, f"Unerwarteter Fehler: {e}")
         
-        # Abschluss-Bericht
-        report = self.create_completion_report()
+        # Setup-Report generieren
+        self.generate_setup_report()
         
-        # Zusammenfassung anzeigen
-        self.show_final_summary(report)
+        # Erfolgsstatus
+        successful_steps = sum(1 for step in self.setup_steps if step['success'])
+        total_steps = len(self.setup_steps)
+        success_rate = (successful_steps / total_steps * 100) if total_steps > 0 else 0
         
-        return report
+        if success_rate >= 80:
+            print("\n🎉 Setup erfolgreich abgeschlossen!")
+            print("💡 Du kannst jetzt 'python main.py' ausführen")
+            return True
+        else:
+            print(f"\n⚠️ Setup nur teilweise erfolgreich ({success_rate:.1f}%)")
+            print("💡 Prüfe den Setup-Report für Details")
+            return False
 
 def main():
-    """Hauptfunktion"""
-    import argparse
-    
-    parser = argparse.ArgumentParser(
-        description="Steam Price Tracker - Master Setup Script",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Beispiele:
-  %(prog)s                    - Vollständiges Master Setup
-  %(prog)s --quick           - Schnelles Setup (nur Kern-Features)
-  %(prog)s --elasticsearch   - Mit Elasticsearch Setup
-  %(prog)s --backup-only     - Nur Backup erstellen
-        """
-    )
-    
-    parser.add_argument('--quick', action='store_true',
-                       help='Schnelles Setup ohne optionale Features')
-    parser.add_argument('--elasticsearch', action='store_true',
-                       help='Elasticsearch Setup erzwingen')
-    parser.add_argument('--backup-only', action='store_true',
-                       help='Nur Backup erstellen')
-    parser.add_argument('--no-backup', action='store_true',
-                       help='Kein Backup erstellen')
-    
-    args = parser.parse_args()
-    
-    setup = MasterSetup()
-    
-    try:
-        if args.backup_only:
-            logger.info("💾 Erstelle nur Backup...")
-            setup.create_master_backup()
-            logger.info("✅ Backup abgeschlossen")
+    """Setup-Hauptfunktion"""
+    if len(sys.argv) > 1:
+        command = sys.argv[1].lower()
+        
+        setup = SteamPriceTrackerSetup()
+        
+        if command == "full":
+            setup.run_full_setup()
+        elif command == "requirements":
+            setup.create_corrected_requirements()
+        elif command == "database":
+            setup.test_database_schema()
+        elif command == "test":
+            setup.test_core_functionality()
         else:
-            logger.info("🚀 Starte Master Setup...")
-            report = setup.run_master_setup()
-            
-            if report and report['success_rate'] >= 80:
-                logger.info("✅ Master Setup erfolgreich abgeschlossen!")
-                sys.exit(0)
-            else:
-                logger.warning("⚠️ Master Setup mit Problemen abgeschlossen")
-                sys.exit(1)
-    
-    except KeyboardInterrupt:
-        logger.info("\n⏹️ Master Setup abgebrochen durch Benutzer")
-        sys.exit(1)
-    except Exception as e:
-        logger.error(f"❌ Kritischer Fehler im Master Setup: {e}")
-        sys.exit(1)
+            print("❌ Unbekannter Befehl")
+            print("💡 Verfügbare Befehle: full, requirements, database, test")
+    else:
+        # Interaktive Auswahl
+        print("🔧 Steam Price Tracker Setup")
+        print("1. Vollständiges Setup durchführen")
+        print("2. Nur requirements.txt korrigieren") 
+        print("3. Nur Database Schema testen")
+        print("4. Nur Kern-Funktionalität testen")
+        
+        choice = input("Auswahl (1-4): ").strip()
+        
+        setup = SteamPriceTrackerSetup()
+        
+        if choice == "1":
+            setup.run_full_setup()
+        elif choice == "2":
+            setup.create_corrected_requirements()
+        elif choice == "3":
+            setup.test_database_schema()
+        elif choice == "4":
+            setup.test_core_functionality()
+        else:
+            print("❌ Ungültige Auswahl")
 
 if __name__ == "__main__":
     main()
