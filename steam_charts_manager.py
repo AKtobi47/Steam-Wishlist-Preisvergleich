@@ -1009,6 +1009,34 @@ class SteamChartsManager:
             'scheduled_jobs': len([job for job in schedule.jobs if 'charts' in str(job.job_func)]),
             'configuration': self.charts_config
         }
+    
+    def start_automation(self) -> bool:
+        """Startet die automatische Charts-Aktualisierung"""
+        try:
+            if self.charts_scheduler_running:
+                logger.info("ℹ️ Charts-Automation läuft bereits")
+                return True
+        
+            self.charts_scheduler_running = True
+            logger.info("🚀 Charts-Automation gestartet")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Fehler beim Starten der Charts-Automation: {e}")
+            return False
+
+    def stop_automation(self) -> bool:
+        """Stoppt die automatische Charts-Aktualisierung"""
+        try:
+            self.charts_scheduler_running = False
+            logger.info("🛑 Charts-Automation gestoppt")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Fehler beim Stoppen der Charts-Automation: {e}")
+            return False
+
+    def is_automation_active(self) -> bool:
+        """Prüft ob Automation aktiv ist"""
+        return getattr(self, 'charts_scheduler_running', False)
 
 # =====================================================================
 # CONVENIENCE FUNCTIONS
