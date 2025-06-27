@@ -1004,41 +1004,156 @@ def menu_charts_statistics(charts_manager, tracker):
         print(f"❌ Fehler beim Laden der Charts-Statistiken: {e}")
 
 def menu_charts_automation(charts_manager, tracker):
-    """Option 17: Charts automatisch tracken"""
-    print("\n🔄 CHARTS AUTOMATISCHES TRACKING")
-    print("=" * 37)
+    """Option 17: Charts automatisch tracken - ERWEITERTE KONFIGURATION"""
+    print("\n🔄 CHARTS AUTOMATISCHES TRACKING - ERWEITERTE KONFIGURATION")
+    print("=" * 60)
     
     if not charts_manager:
         print("❌ Charts Manager nicht verfügbar")
         return
     
-    try:
-        # Status prüfen
-        automation_active = False
-        if hasattr(charts_manager, 'is_automation_active'):
-            automation_active = charts_manager.is_automation_active()
+    # Standard-Konfiguration laden/setzen
+    config = {
+        'charts_check_interval': getattr(charts_manager, 'charts_check_interval', 2),
+        'price_update_interval': getattr(charts_manager, 'price_update_interval', 6), 
+        'track_after_removal_days': getattr(charts_manager, 'track_after_removal_days', 7),
+        'cleanup_interval_hours': getattr(charts_manager, 'cleanup_interval_hours', 24)
+    }
+    
+    while True:
+        automation_active = getattr(charts_manager, 'charts_scheduler_running', False)
         
-        print(f"🔍 Automatisches Charts-Tracking: {'🟢 AKTIV' if automation_active else '🔴 INAKTIV'}")
+        print(f"\n🔍 Status: {'🟢 AKTIV' if automation_active else '🔴 INAKTIV'}")
+        print("\n⚙️ AKTUELLE KONFIGURATION:")
+        print(f"📊 Charts-Prüfung: alle {config['charts_check_interval']} Stunden")
+        print(f"💰 Preis-Updates: alle {config['price_update_interval']} Stunden") 
+        print(f"⏳ Nachverfolgung: {config['track_after_removal_days']} Tage nach Chart-Entfernung")
+        print(f"🧹 Bereinigung: alle {config['cleanup_interval_hours']} Stunden")
         
-        if automation_active:
-            choice = safe_input("Automatisches Charts-Tracking stoppen? (j/n): ")
-            if choice.lower() in ['j', 'ja', 'y', 'yes']:
+        print("\n📋 KONFIGURATION:")
+        print("1. 🚀 Automation starten" if not automation_active else "1. 🛑 Automation stoppen")
+        print("2. 📊 Charts-Prüfung Intervall ändern")
+        print("3. 💰 Preis-Update Intervall ändern")
+        print("4. ⏳ Nachverfolgungszeit ändern")
+        print("5. 🧹 Bereinigung-Intervall ändern")
+        print("6. 📈 Erweiterte Statistiken")
+        print("7. 🔄 Konfiguration zurücksetzen")
+        print("0. ↩️ Zurück")
+        
+        choice = safe_input("\nOption wählen: ")
+        
+        if choice == "0":
+            break
+        elif choice == "1":
+            if automation_active:
                 if hasattr(charts_manager, 'stop_automation'):
                     charts_manager.stop_automation()
-                    print("🛑 Automatisches Charts-Tracking gestoppt")
-                else:
-                    print("❌ Stop-Funktion nicht verfügbar")
-        else:
-            choice = safe_input("Automatisches Charts-Tracking starten? (j/n): ")
-            if choice.lower() in ['j', 'ja', 'y', 'yes']:
+                    print("🛑 Charts-Automation gestoppt")
+            else:
+                # Konfiguration anwenden
+                charts_manager.charts_check_interval = config['charts_check_interval']
+                charts_manager.price_update_interval = config['price_update_interval']
+                charts_manager.track_after_removal_days = config['track_after_removal_days']
+                charts_manager.cleanup_interval_hours = config['cleanup_interval_hours']
+                
                 if hasattr(charts_manager, 'start_automation'):
                     charts_manager.start_automation()
-                    print("🚀 Automatisches Charts-Tracking gestartet")
+                    print("🚀 Charts-Automation mit neuer Konfiguration gestartet")
+        
+        elif choice == "2":
+            print(f"\n📊 CHARTS-PRÜFUNG INTERVALL")
+            print(f"Aktuell: alle {config['charts_check_interval']} Stunden")
+            new_val = safe_input("Neuer Intervall (1-24 Stunden): ")
+            try:
+                new_val = int(new_val)
+                if 1 <= new_val <= 24:
+                    config['charts_check_interval'] = new_val
+                    print(f"✅ Charts-Prüfung auf {new_val} Stunden gesetzt")
                 else:
-                    print("❌ Start-Funktion nicht verfügbar")
-    
-    except Exception as e:
-        print(f"❌ Fehler beim Charts-Automation-Management: {e}")
+                    print("❌ Ungültiger Wert (1-24)")
+            except ValueError:
+                print("❌ Ungültige Eingabe")
+        
+        elif choice == "3":
+            print(f"\n💰 PREIS-UPDATE INTERVALL")
+            print(f"Aktuell: alle {config['price_update_interval']} Stunden")
+            new_val = safe_input("Neuer Intervall (1-48 Stunden): ")
+            try:
+                new_val = int(new_val)
+                if 1 <= new_val <= 48:
+                    config['price_update_interval'] = new_val
+                    print(f"✅ Preis-Updates auf {new_val} Stunden gesetzt")
+                else:
+                    print("❌ Ungültiger Wert (1-48)")
+            except ValueError:
+                print("❌ Ungültige Eingabe")
+        
+        elif choice == "4":
+            print(f"\n⏳ NACHVERFOLGUNGSZEIT")
+            print(f"Aktuell: {config['track_after_removal_days']} Tage")
+            print("Wie lange sollen Spiele weiter getrackt werden, nachdem sie aus den Charts verschwunden sind?")
+            new_val = safe_input("Neue Anzahl Tage (1-30): ")
+            try:
+                new_val = int(new_val)
+                if 1 <= new_val <= 30:
+                    config['track_after_removal_days'] = new_val
+                    print(f"✅ Nachverfolgung auf {new_val} Tage gesetzt")
+                else:
+                    print("❌ Ungültiger Wert (1-30)")
+            except ValueError:
+                print("❌ Ungültige Eingabe")
+        
+        elif choice == "5":
+            print(f"\n🧹 BEREINIGUNG-INTERVALL")
+            print(f"Aktuell: alle {config['cleanup_interval_hours']} Stunden")
+            print("Wie oft sollen abgelaufene Chart-Titel entfernt werden?")
+            new_val = safe_input("Neuer Intervall (6-168 Stunden): ")
+            try:
+                new_val = int(new_val)
+                if 6 <= new_val <= 168:  # 6h bis 1 Woche
+                    config['cleanup_interval_hours'] = new_val
+                    print(f"✅ Bereinigung auf {new_val} Stunden gesetzt")
+                else:
+                    print("❌ Ungültiger Wert (6-168)")
+            except ValueError:
+                print("❌ Ungültige Eingabe")
+        
+        elif choice == "6":
+            print("\n📈 ERWEITERTE STATISTIKEN:")
+            if hasattr(charts_manager, 'last_charts_check'):
+                print(f"🕒 Letzte Charts-Prüfung: {charts_manager.last_charts_check}")
+            if hasattr(charts_manager, 'charts_update_count'):
+                print(f"📊 Charts-Updates: {charts_manager.charts_update_count}")
+            if hasattr(charts_manager, 'price_update_count'):
+                print(f"💰 Preis-Updates: {charts_manager.price_update_count}")
+            if hasattr(charts_manager, 'cleanup_count'):
+                print(f"🧹 Bereinigungen: {charts_manager.cleanup_count}")
+            
+            # Aktuelle Chart-Titel zählen
+            try:
+                with tracker.db_manager.get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT COUNT(*) FROM chart_games WHERE active = 1")
+                    active_charts = cursor.fetchone()[0]
+                    cursor.execute("SELECT COUNT(*) FROM chart_games WHERE active = 0")
+                    inactive_charts = cursor.fetchone()[0]
+                    print(f"📊 Aktive Chart-Titel: {active_charts}")
+                    print(f"⏸️ Inaktive Chart-Titel: {inactive_charts}")
+            except:
+                print("❌ Statistiken nicht verfügbar")
+        
+        elif choice == "7":
+            confirm = safe_input("Konfiguration auf Standard zurücksetzen? (j/n): ")
+            if confirm.lower() in ['j', 'ja', 'y', 'yes']:
+                config = {
+                    'charts_check_interval': 2,
+                    'price_update_interval': 6,
+                    'track_after_removal_days': 7,
+                    'cleanup_interval_hours': 24
+                }
+                print("✅ Konfiguration zurückgesetzt")
+        
+        input("\nDrücke Enter zum Fortfahren...")
 
 # Elasticsearch-Funktionen (18-22)
 def menu_elasticsearch_export(es_manager, tracker):
@@ -1233,7 +1348,7 @@ def menu_process_management():
                         name = proc['name']
                         cpu = proc['cpu_percent']
                         memory = proc['memory_info'].rss / (1024*1024) if proc['memory_info'] else 0
-                        print(f"PID {pid}: {name} (CPU: {cpu}%, RAM: {memory:.1f} MB)")
+                        print(f"PID {pid}: {name} (CPU: {cpu}%, RAM: {memory:.1f} MB)"); print(f"   📋 Steam Price Tracker Prozess") if pid == __import__("os").getpid() else None
                 else:
                     print("❌ Keine Python-Prozesse gefunden")
             except ImportError:

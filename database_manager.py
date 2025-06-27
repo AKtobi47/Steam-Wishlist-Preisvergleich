@@ -152,6 +152,22 @@ class DatabaseManager:
                         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')
+
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS chart_games (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        steam_app_id TEXT NOT NULL,
+                        chart_type TEXT NOT NULL,
+                        rank_position INTEGER,
+                        current_players INTEGER,
+                        peak_players INTEGER,
+                        game_name TEXT,
+                        added_to_charts TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        active BOOLEAN DEFAULT 1,
+                        days_in_charts INTEGER DEFAULT 1
+                    )
+                ''')
                 
                 # ===================================================
                 # SCHEDULER & AUTOMATION TABELLEN
@@ -637,25 +653,43 @@ class DatabaseManager:
             with self.lock:
                 with self.get_connection() as conn:
                     cursor = conn.cursor()
-                    
-                    # Charts-Tabellen sind bereits in _init_database() erstellt
-                    # Hier können zusätzliche Charts-spezifische Indizes erstellt werden
+                
+                    # ERWEITERT: Erstelle chart_games Tabelle falls nicht vorhanden
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS chart_games (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            steam_app_id TEXT NOT NULL,
+                            chart_type TEXT NOT NULL,
+                            rank_position INTEGER,
+                            current_players INTEGER,
+                            peak_players INTEGER,
+                            game_name TEXT,
+                            added_to_charts TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            active BOOLEAN DEFAULT 1,
+                            days_in_charts INTEGER DEFAULT 1
+                        )
+                    ''')
+                
+                    # Zusätzliche Charts-spezifische Indizes
                     charts_indices = [
                         "CREATE INDEX IF NOT EXISTS idx_chart_games_app_type ON chart_games(steam_app_id, chart_type)",
+                        "CREATE INDEX IF NOT EXISTS idx_chart_games_active ON chart_games(active)",
+                        "CREATE INDEX IF NOT EXISTS idx_chart_games_type ON chart_games(chart_type)",
                         "CREATE INDEX IF NOT EXISTS idx_chart_price_snapshots_app ON chart_price_snapshots(steam_app_id)",
                         "CREATE INDEX IF NOT EXISTS idx_chart_price_snapshots_timestamp ON chart_price_snapshots(timestamp)"
                     ]
-                    
+                
                     for index_sql in charts_indices:
                         try:
                             cursor.execute(index_sql)
                         except sqlite3.Error:
                             pass  # Index bereits vorhanden
-                    
+                
                     conn.commit()
-                    logger.info("✅ Charts-Tabellen initialisiert")
+                    logger.info("✅ Charts-Tabellen und Indizes initialisiert")
                     return True
-                    
+                
         except Exception as e:
             logger.error(f"❌ Fehler bei Charts-Tabellen-Initialisierung: {e}")
             return False

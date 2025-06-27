@@ -1,5 +1,5 @@
 {
-  "setup_completed_at": "2025-06-27T10:00:32.962970",
+  "setup_completed_at": "2025-06-27T15:44:57.861919",
   "features_available": {
     "charts": true,
     "cli_tools": true,
@@ -13,73 +13,73 @@
   },
   "setup_log": [
     {
-      "timestamp": "10:00:28",
+      "timestamp": "15:44:52",
       "step": "Master Backup",
       "success": true,
       "details": "6 Dateien gesichert"
     },
     {
-      "timestamp": "10:00:28",
+      "timestamp": "15:44:52",
       "step": "Directory Structure",
       "success": true,
       "details": "0 Verzeichnisse erstellt"
     },
     {
-      "timestamp": "10:00:28",
+      "timestamp": "15:44:52",
       "step": "Corrected Requirements",
       "success": true,
       "details": "requirements.txt korrigiert ohne eingebaute Module"
     },
     {
-      "timestamp": "10:00:31",
+      "timestamp": "15:44:55",
       "step": "Python Dependencies",
       "success": true,
       "details": "Alle Dependencies erfolgreich installiert"
     },
     {
-      "timestamp": "10:00:31",
+      "timestamp": "15:44:55",
       "step": "Configuration Files",
       "success": true,
       "details": "Konfigurationsdateien erstellt"
     },
     {
-      "timestamp": "10:00:31",
+      "timestamp": "15:44:55",
       "step": "Database Schema Test",
       "success": false,
       "details": "[WinError 32] Der Prozess kann nicht auf die Datei zugreifen, da sie von einem anderen Prozess verwendet wird: 'test_schema.db'"
     },
     {
-      "timestamp": "10:00:32",
+      "timestamp": "15:44:57",
       "step": "Core Functionality Test",
       "success": true,
       "details": "Alle Kern-APIs funktionieren"
     },
     {
-      "timestamp": "10:00:32",
+      "timestamp": "15:44:57",
       "step": "Main.py Compatibility Test",
       "success": true,
       "details": "Alle 27 Men\u00fcoptionen verf\u00fcgbar"
     },
     {
-      "timestamp": "10:00:32",
+      "timestamp": "15:44:57",
       "step": "Charts Integration",
       "success": true,
       "details": "3 Chart-Typen verf\u00fcgbar"
     },
     {
-      "timestamp": "10:00:32",
+      "timestamp": "15:44:57",
       "step": "CLI Tools Setup",
       "success": true,
       "details": "2 CLI-Tools verf\u00fcgbar"
     },
     {
-      "timestamp": "10:00:32",
+      "timestamp": "15:44:57",
       "step": "Elasticsearch Stack",
       "success": false,
       "details": "Elasticsearch-Manager nicht verf\u00fcgbar (optional)"
     },
     {
-      "timestamp": "10:00:32",
+      "timestamp": "15:44:57",
       "step": "Startup Scripts",
       "success": true,
       "details": "start.bat und start.sh erstellt"

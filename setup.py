@@ -355,7 +355,13 @@ class SteamPriceTrackerSetup:
         try:
             try:
                 from steam_charts_manager import SteamChartsManager
-                charts_manager = SteamChartsManager("test_key", None, None)
+                try:
+                    from database_manager import DatabaseManager
+                    test_db = DatabaseManager("test_charts.db")
+                    charts_manager = SteamChartsManager("test_key", test_db, None)
+                except Exception as e:
+                    charts_manager = None
+                    logger.error(f"Charts-Test fehlgeschlagen: {e}")
                 
                 # Teste grundlegende Charts-Funktionalität
                 if hasattr(charts_manager, 'CHART_TYPES'):
