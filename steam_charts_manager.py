@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from database_manager import create_batch_writer
 """
 Steam Charts Manager mit Enhanced Universal Background Scheduler Integration
 Automatisches Tracking von Steam Charts (Most Played, Best Sellers, Top Releases)

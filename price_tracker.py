@@ -361,7 +361,7 @@ class SteamPriceTracker:
         DISPLAY-API: Zeigt Preis-Zusammenfassung an
         """
         try:
-            print("\n📊 PREIS-ZUSAMMENFASSUNG")
+            print("\nfrom database_manager import create_batch_writer\n📊 PREIS-ZUSAMMENFASSUNG")
             print("=" * 25)
             
             # Getrackte Apps
