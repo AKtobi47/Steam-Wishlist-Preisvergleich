@@ -1385,9 +1385,9 @@ def menu_charts_statistics(charts_manager, tracker):
             # Fallback: Manuelle Statistiken
             stats = {
                 'total_chart_games': 0,
-                'last_update': 'N/A',
-                'chart_types': ['most_played', 'best_sellers', 'top_releases']
-            }
+                'last_update': 'N/A', 
+                'chart_types': VALID_CHART_TYPES
+        }
         
         print(f"🎮 Chart-Spiele gesamt: {stats.get('total_chart_games', 0)}")
         print(f"🕒 Letztes Update: {stats.get('last_update', 'N/A')}")
@@ -2375,7 +2375,7 @@ def menu_batch_charts_update(charts_manager):
         batch_writer = create_batch_writer(charts_manager.db_manager)
         
         # Chart-Typen auswählen
-        chart_types = ['most_played', 'best_sellers', 'top_releases']
+        chart_types = VALID_CHART_TYPES
         print("\n📊 Verfügbare Chart-Typen:")
         for i, chart_type in enumerate(chart_types, 1):
             print(f"{i}. {chart_type.replace('_', ' ').title()}")

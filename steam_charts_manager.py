@@ -22,19 +22,19 @@ from database_manager import create_batch_writer
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Chart-Typen Konfiguration
+global CHART_TYPES
+CHART_TYPES = {
+    'most_played': 'Steam Most Played Games',
+    'top_releases': 'Steam Top New Releases', 
+    'best_of_year': 'Steam Best of Year'
+}
+
 class SteamChartsManager:
     """
     Steam Charts Manager mit Enhanced Universal Background Scheduler Integration
     Verwaltet automatisches Tracking von Steam Charts und deren Preise
     """
-    
-    # Chart-Typen Konfiguration
-    global CHART_TYPES
-    CHART_TYPES = {
-        'most_played': 'Steam Most Played Games',
-        'top_releases': 'Steam Top New Releases', 
-        'best_of_year': 'Steam Best of Year'
-    }
     
     # Steam Store API Endpoints
     STEAM_API_ENDPOINTS = {
