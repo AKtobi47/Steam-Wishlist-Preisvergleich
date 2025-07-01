@@ -14,7 +14,7 @@ try:
     from logging_config import get_steam_wishlist_logger
     logger = get_steam_wishlist_logger()
 except ImportError:
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
 
 def load_api_key_from_env(env_file: str = ".env") -> Optional[str]:

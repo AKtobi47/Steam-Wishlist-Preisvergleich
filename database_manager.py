@@ -19,7 +19,7 @@ try:
     from logging_config import get_database_logger
     logger = get_database_logger()
 except ImportError:
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
 
 class DatabaseManager:

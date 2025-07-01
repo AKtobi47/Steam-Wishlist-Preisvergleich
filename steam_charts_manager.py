@@ -18,13 +18,12 @@ import logging
 from pathlib import Path
 from database_manager import create_batch_writer
 
-# Logging-Konfiguration importieren
+# Logging-Konfiguration
 try:
     from logging_config import get_steam_charts_logger
     logger = get_steam_charts_logger()
 except ImportError:
-    # Fallback
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
 
 # Chart-Typen Konfiguration

@@ -36,10 +36,10 @@ except ImportError:
 
 # Logging Setup
 try:
-    from logging_config import get_scheduler_logger
-    logger = get_scheduler_logger()
+    from logging_config import get_background_scheduler_logger
+    logger = get_background_scheduler_logger()
 except ImportError:
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
 
 # =====================================================================

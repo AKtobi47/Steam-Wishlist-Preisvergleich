@@ -21,10 +21,10 @@ except ImportError:
 
 # Logging Setup
 try:
-    from logging_config import get_batch_logger
-    logger = get_batch_logger()
+    from logging_config import get_batch_processor_logger
+    logger = get_batch_processor_logger()
 except ImportError:
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
 
 def cmd_run_batch(args):

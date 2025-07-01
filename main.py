@@ -32,7 +32,7 @@ try:
     from logging_config import get_main_logger
     logger = get_main_logger()
 except ImportError:
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
 
 # =================================================================
