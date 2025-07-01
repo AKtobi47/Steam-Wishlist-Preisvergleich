@@ -9,6 +9,15 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 import logging
+import time
+
+try:
+    from steam_charts_manager import CHART_TYPES
+    VALID_CHART_TYPES = list(CHART_TYPES.keys())
+except ImportError:
+    # Fallback falls steam_charts_manager nicht verfügbar
+    VALID_CHART_TYPES = ['most_played', 'top_releases', 'best_of_year']
+    print("⚠️ steam_charts_manager nicht verfügbar - verwende Fallback Chart-Typen")
 
 # Logging Setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -777,7 +786,7 @@ def cmd_batch_charts_update(args):
         if hasattr(args, 'chart_types') and args.chart_types:
             chart_types = args.chart_types.split(',')
         else:
-            chart_types = ['most_played', 'best_sellers', 'top_releases']
+            chart_types = VALID_CHART_TYPES
         
         print(f"📊 Chart-Typen: {', '.join(chart_types)}")
         

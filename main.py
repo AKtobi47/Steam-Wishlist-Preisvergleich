@@ -15,6 +15,18 @@ from datetime import datetime, timedelta
 import logging
 import time
 
+import steam_charts_manager
+from steam_wishlist_manager import SteamWishlistManager
+
+# HINZUFÜGEN nach bestehenden Imports:
+try:
+    from steam_charts_manager import CHART_TYPES
+    VALID_CHART_TYPES = list(CHART_TYPES.keys())
+except ImportError:
+    # Fallback falls steam_charts_manager nicht verfügbar
+    VALID_CHART_TYPES = ['most_played', 'top_releases', 'best_of_year']
+    print("⚠️ steam_charts_manager nicht verfügbar - verwende Fallback Chart-Typen")
+
 # Logging Setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -95,8 +107,7 @@ def create_tracker_with_fallback():
             charts_manager = tracker.charts_manager
             print("✅ Charts Manager verfügbar")
         else:
-            from steam_charts_manager import SteamChartsManager
-            charts_manager = SteamChartsManager()
+            charts_manager = steam_charts_manager.SteamChartsManager()
             print("✅ Charts Manager manuell erstellt")
     except Exception as e:
         logger.warning(f"Charts Manager nicht verfügbar: {e}")
@@ -300,7 +311,6 @@ def menu_import_wishlist(tracker):
     print("=" * 35)
     
     try:
-        from steam_wishlist_manager import SteamWishlistManager
         wishlist_manager = SteamWishlistManager()
         
         steam_id = safe_input("Steam ID oder Benutzername: ")
@@ -1062,17 +1072,16 @@ def menu_show_charts(charts_manager, tracker):
     
     try:
         # Zeige verfügbare Chart-Typen
-        chart_types = ['most_played', 'best_sellers', 'top_releases']
         
         print("📊 Verfügbare Charts:")
-        for i, chart_type in enumerate(chart_types, 1):
+        for i, chart_type in enumerate(VALID_CHART_TYPES, 1):
             print(f"{i}. {chart_type.replace('_', ' ').title()}")
         
         choice = safe_input("Chart auswählen (1-3): ")
         try:
             chart_index = int(choice) - 1
-            if 0 <= chart_index < len(chart_types):
-                selected_chart = chart_types[chart_index]
+            if 0 <= chart_index < len(VALID_CHART_TYPES):
+                selected_chart = VALID_CHART_TYPES[chart_index]
                 
                 if hasattr(charts_manager, 'get_current_charts'):
                     charts = charts_manager.get_current_charts(selected_chart)
@@ -1125,22 +1134,22 @@ def menu_update_charts(charts_manager):
         elif choice == "2":
             # Einzelne Chart-Typen
             print("\n📊 Chart-Typen auswählen:")
+
+            print("📊 Verfügbare Charts:")
+            for i, chart_type in enumerate(VALID_CHART_TYPES, 1):
+                print(f"{i}. {chart_type.replace('_', ' ').title()}")
             
-            available_types = {
-                '1': 'most_played',
-                '2': 'best_sellers', 
-                '3': 'top_releases'
-            }
-            
-            for key, chart_type in available_types.items():
-                print(f"{key}. {chart_type.replace('_', ' ').title()}")
             print("4. 🎯 Benutzerdefinierte Auswahl")
             print("5. 🚀 Alle mit BATCH")
+            print("0. ↩️ Zurück")
             
             chart_choice = safe_input("Chart-Typ auswählen (1-5): ")
+
+            if choice == "0":
+                break
             
-            if chart_choice in available_types:
-                selected_charts = [available_types[chart_choice]]
+            if chart_choice in VALID_CHART_TYPES:
+                selected_charts = [VALID_CHART_TYPES[chart_choice]]
             elif chart_choice == "4":
                 # Benutzerdefinierte Auswahl
                 custom_input = safe_input("Chart-Typen (komma-getrennt): ")
@@ -1150,7 +1159,7 @@ def menu_update_charts(charts_manager):
                     print("❌ Keine Chart-Typen eingegeben")
                     continue
             elif chart_choice == "5":
-                selected_charts = list(available_types.values())
+                selected_charts = list(VALID_CHART_TYPES.values())
             else:
                 print("❌ Ungültige Auswahl")
                 continue

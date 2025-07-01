@@ -28,6 +28,12 @@ from dataclasses import dataclass, field
 from queue import Queue, Empty
 import psutil
 
+try:
+    from steam_charts_manager import CHART_TYPES
+    SCHEDULER_CHART_TYPES = list(CHART_TYPES.keys())
+except ImportError:
+    SCHEDULER_CHART_TYPES = ['most_played', 'top_releases', 'best_of_year']
+
 # Logging Setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)

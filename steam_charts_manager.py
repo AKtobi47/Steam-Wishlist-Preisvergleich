@@ -29,6 +29,7 @@ class SteamChartsManager:
     """
     
     # Chart-Typen Konfiguration
+    global CHART_TYPES
     CHART_TYPES = {
         'most_played': 'Steam Most Played Games',
         'top_releases': 'Steam Top New Releases', 
