@@ -13,9 +13,15 @@ from pathlib import Path
 import json
 import os
 import shutil
-# Logging Setup
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+
+# Logging konfigurieren
+try:
+    from logging_config import get_database_logger
+    logger = get_database_logger()
+except ImportError:
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logger = logging.getLogger(__name__)
+
 class DatabaseManager:
     """
     Vollständige Database Manager Klasse - PRODUKTIONSVERSION

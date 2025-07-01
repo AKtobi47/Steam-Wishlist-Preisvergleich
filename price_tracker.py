@@ -22,8 +22,12 @@ import os
 from database_manager import DatabaseManager, create_database_manager
 
 # Logging Setup
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+try:
+    from logging_config import get_price_tracker_logger
+    logger = get_price_tracker_logger()
+except ImportError:
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logger = logging.getLogger(__name__)
 
 class SteamPriceTracker:
     """

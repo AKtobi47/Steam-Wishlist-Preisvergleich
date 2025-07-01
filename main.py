@@ -27,9 +27,13 @@ except ImportError:
     VALID_CHART_TYPES = ['most_played', 'top_releases', 'best_of_year']
     print("⚠️ steam_charts_manager nicht verfügbar - verwende Fallback Chart-Typen")
 
-# Logging Setup
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Logging Konfiguration
+try:
+    from logging_config import get_main_logger
+    logger = get_main_logger()
+except ImportError:
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logger = logging.getLogger(__name__)
 
 # =================================================================
 # ENHANCED CLEANUP & UTILITY FUNCTIONS

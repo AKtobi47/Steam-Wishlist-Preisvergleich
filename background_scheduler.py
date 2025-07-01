@@ -35,8 +35,12 @@ except ImportError:
     SCHEDULER_CHART_TYPES = ['most_played', 'top_releases', 'best_of_year']
 
 # Logging Setup
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+try:
+    from logging_config import get_scheduler_logger
+    logger = get_scheduler_logger()
+except ImportError:
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logger = logging.getLogger(__name__)
 
 # =====================================================================
 # DATA CLASSES

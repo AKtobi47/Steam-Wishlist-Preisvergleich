@@ -20,8 +20,12 @@ except ImportError:
     print("⚠️ steam_charts_manager nicht verfügbar - verwende Fallback Chart-Typen")
 
 # Logging Setup
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+try:
+    from logging_config import get_batch_logger
+    logger = get_batch_logger()
+except ImportError:
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logger = logging.getLogger(__name__)
 
 def cmd_run_batch(args):
     """Führt optimiertes Batch-Update aus"""

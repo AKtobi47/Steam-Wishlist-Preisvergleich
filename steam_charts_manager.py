@@ -18,9 +18,14 @@ import logging
 from pathlib import Path
 from database_manager import create_batch_writer
 
-# Logging Setup
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Logging-Konfiguration importieren
+try:
+    from logging_config import get_steam_charts_logger
+    logger = get_steam_charts_logger()
+except ImportError:
+    # Fallback
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logger = logging.getLogger(__name__)
 
 # Chart-Typen Konfiguration
 global CHART_TYPES
@@ -1139,7 +1144,7 @@ class SteamChartsManager:
             logger.info(f"📦 BATCH-VERARBEITUNG: {len(all_charts_data)} Charts-Einträge...")
         
             # 🚀 BATCH-WRITE
-            batch_results = batch_writer.batch_update_charts(all_charts_data)
+            batch_results = batch_writer.batch_write_charts(all_charts_data)
         
             duration = time.time() - start_time
         
