@@ -529,7 +529,7 @@ class SteamChartsManager:
             Update-Ergebnis Dictionary
         """
         try:
-            logger.info(f"🔄 Aktualisiere {self.CHART_TYPES.get(chart_type, chart_type)}...")
+            logger.info(f"🔄 Aktualisiere {CHART_TYPES.get(chart_type, chart_type)}...")
             
             count = self.charts_config.get('chart_counts', {}).get(chart_type, 100)
             
@@ -720,7 +720,7 @@ class SteamChartsManager:
                 cursor = conn.cursor()
                 
                 # Statistiken pro Chart-Typ
-                for chart_type in self.CHART_TYPES.keys():
+                for chart_type in CHART_TYPES.keys():
                     cursor.execute("""
                         SELECT 
                             COUNT(*) as total_games,
@@ -735,7 +735,7 @@ class SteamChartsManager:
                     result = cursor.fetchone()
                     if result:
                         stats[chart_type] = {
-                            'chart_name': self.CHART_TYPES[chart_type],
+                            'chart_name': CHART_TYPES[chart_type],
                             'total_games': result['total_games'],
                             'top_10_games': result['top_10_games'],
                             'avg_rank': round(result['avg_rank'] or 0, 1),
@@ -1058,7 +1058,7 @@ class SteamChartsManager:
             chart_types = ['most_played', 'top_releases', 'best_of_year']  # Nur funktionierende APIs
     
         # Entferne top_sellers falls versehentlich übergeben
-        chart_types = [ct for ct in chart_types if ct in self.CHART_TYPES.keys()]
+        chart_types = [ct for ct in chart_types if ct in CHART_TYPES.keys()]
     
         logger.info(f"🚀 SAUBERES BATCH Charts-Update für {chart_types} gestartet...")
     
@@ -1133,7 +1133,7 @@ class SteamChartsManager:
                     'error': 'Keine Chart-Daten zum Verarbeiten gefunden',
                     'duration': time.time() - start_time,
                     'chart_types': chart_types,
-                    'available_charts': list(self.CHART_TYPES.keys())
+                    'available_charts': list(CHART_TYPES.keys())
                 }
         
             logger.info(f"📦 BATCH-VERARBEITUNG: {len(all_charts_data)} Charts-Einträge...")
@@ -1153,7 +1153,7 @@ class SteamChartsManager:
                 'api_sources': list(set([stats.get('api_source', 'unknown') 
                                        for stats in chart_stats.values()])),
                 'chart_types': chart_types,
-                'available_charts': list(self.CHART_TYPES.keys()),
+                'available_charts': list(CHART_TYPES.keys()),
                 'excluded_charts': ['top_sellers (no reliable API available)']
             }
         
@@ -1164,7 +1164,7 @@ class SteamChartsManager:
                 'error': str(e),
                 'duration': time.time() - start_time,
                 'chart_types': chart_types,
-                'available_charts': list(self.CHART_TYPES.keys())
+                'available_charts': list(CHART_TYPES.keys())
             }
     
     def save_chart_game_safe(self, game_data: Dict) -> bool:
@@ -1425,12 +1425,12 @@ class SteamChartsManager:
             print(f"📊 Max Apps pro Chart: {max_apps_per_chart}")
         
             # Validiere Chart-Typen
-            valid_chart_types = [ct for ct in chart_types if ct in self.CHART_TYPES]
+            valid_chart_types = [ct for ct in chart_types if ct in CHART_TYPES]
             if not valid_chart_types:
                 return {
                     'success': False,
                     'error': 'Keine gültigen Chart-Typen angegeben',
-                    'valid_types': list(self.CHART_TYPES.keys())
+                    'valid_types': list(CHART_TYPES.keys())
                 }
         
             # Rufe Standard-BATCH-Update auf mit Limitierung
