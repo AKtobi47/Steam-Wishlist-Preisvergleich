@@ -1,5 +1,0 @@
-{
-  "title": "steam-charts-tracking*",
-  "timeFieldName": "first_seen",
-  "fields": "[{\"name\":\"steam_app_id\",\"type\":\"string\",\"searchable\":true,\"aggregatable\":true},{\"name\":\"name\",\"type\":\"string\",\"searchable\":true,\"aggregatable\":false},{\"name\":\"name.keyword\",\"type\":\"string\",\"searchable\":true,\"aggregatable\":true},{\"name\":\"chart_type\",\"type\":\"string\",\"searchable\":true,\"aggregatable\":true},{\"name\":\"current_rank\",\"type\":\"number\",\"searchable\":true,\"aggregatable\":true},{\"name\":\"best_rank\",\"type\":\"number\",\"searchable\":true,\"aggregatable\":true},{\"name\":\"first_seen\",\"type\":\"date\",\"searchable\":true,\"aggregatable\":true},{\"name\":\"last_seen\",\"type\":\"date\",\"searchable\":true,\"aggregatable\":true},{\"name\":\"days_in_charts\",\"type\":\"number\",\"searchable\":true,\"aggregatable\":true},{\"name\":\"rank_trend\",\"type\":\"string\",\"searchable\":true,\"aggregatable\":true},{\"name\":\"popularity_score\",\"type\":\"number\",\"searchable\":true,\"aggregatable\":true}]"
-}
