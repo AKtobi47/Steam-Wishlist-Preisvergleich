@@ -781,6 +781,201 @@ class SteamChartsManager:
     
         # 🚀 AUTOMATISCHE UMLEITUNG ZUR BATCH-VERSION!
         return self.update_all_charts_batch(chart_types)
+
+    def update_charts_complete(self) -> Dict:
+        """
+        Vollständiges Charts-Update mit ALLEN bestehenden BATCH-Systemen
+        Nutzt: update_all_charts_batch() + bulk_get_app_names() + update_charts_prices()
+    
+        Returns:
+            Dict mit Ergebnissen aller Operationen
+        """
+        print("\n🚀 VOLLSTÄNDIGES CHARTS-UPDATE")
+        print("=" * 40)
+    
+        start_time = time.time()
+        results = {
+            'charts_update': {'success': False, 'details': ''},
+            'name_updates': {'success': False, 'details': '', 'updated_count': 0},
+            'price_updates': {'success': False, 'details': '', 'updated_count': 0},
+            'total_duration': 0,
+            'overall_success': False
+        }
+    
+        try:
+            # Phase 1: Charts-Daten aktualisieren (bestehende BATCH-Funktion)
+            print("📊 Phase 1: Charts-Daten sammeln...")
+            if hasattr(self, 'update_all_charts_batch'):
+                charts_result = self.update_all_charts_batch()
+                if charts_result and charts_result.get('success'):
+                    results['charts_update'] = {
+                        'success': True,
+                        'details': f"BATCH: {charts_result.get('charts_written', 0)} Charts geschrieben",
+                        'total_apps': charts_result.get('total_apps_processed', 0),
+                        'method': 'batch'
+                    }
+                    print(f"✅ Charts-Update erfolgreich: {results['charts_update']['details']}")
+                else:
+                    results['charts_update'] = {
+                        'success': False,
+                        'details': f"BATCH-Update fehlgeschlagen: {charts_result.get('error', 'Unbekannt')}",
+                        'method': 'batch'
+                    }
+                    print(f"❌ Charts-Update fehlgeschlagen: {results['charts_update']['details']}")
+                    return results
+            else:
+                print("⚠️ BATCH-Charts-Update nicht verfügbar, verwende Standard-Update...")
+                if hasattr(self, 'update_all_charts'):
+                    success = self.update_all_charts()
+                    results['charts_update'] = {
+                        'success': success,
+                        'details': 'Standard-Update verwendet',
+                        'method': 'standard'
+                    }
+                else:
+                    results['charts_update'] = {
+                        'success': False,
+                        'details': 'Keine Charts-Update-Methode verfügbar',
+                        'method': 'none'
+                    }
+                    return results
+        
+            # Phase 2: Namen aktualisieren (bestehende Wishlist-Manager Funktion)
+            print("\n📝 Phase 2: Namen aktualisieren...")
+            try:
+                # Charts-Apps abrufen
+                charts_apps = []
+                if hasattr(self, 'get_all_charts_app_ids'):
+                    charts_apps = self.get_all_charts_app_ids()
+                elif hasattr(self, 'db_manager'):
+                    # Fallback: Apps aus Charts-Tabelle
+                    try:
+                        with self.db_manager.get_connection() as conn:
+                            cursor = conn.cursor()
+                            cursor.execute("SELECT DISTINCT steam_app_id FROM charts_games WHERE active = 1")
+                            charts_apps = [row[0] for row in cursor.fetchall()]
+                    except Exception as e:
+                        logger.warning(f"Charts-Apps aus DB abrufen fehlgeschlagen: {e}")
+            
+                if charts_apps:
+                    # Nutze bestehende bulk_get_app_names Funktion aus wishlist_manager
+                    from steam_wishlist_manager import bulk_get_app_names
+                    names_result = bulk_get_app_names(charts_apps[:100], self.api_key)  # Limitiert für Performance
+                
+                    # Namen in DB aktualisieren
+                    updated_count = 0
+                    if hasattr(self, 'db_manager'):
+                        for app_id, name in names_result.items():
+                            try:
+                                # Update über database_manager
+                                if hasattr(self.db_manager, 'update_app_name'):
+                                    if self.db_manager.update_app_name(app_id, name):
+                                        updated_count += 1
+                                else:
+                                    # Fallback: Direkte DB-Operation
+                                    with self.db_manager.get_connection() as conn:
+                                        cursor = conn.cursor()
+                                        cursor.execute(
+                                            "UPDATE tracked_apps SET name = ? WHERE steam_app_id = ?",
+                                            (name, app_id)
+                                        )
+                                        if cursor.rowcount > 0:
+                                            updated_count += 1
+                            except Exception as e:
+                                logger.warning(f"Namen-Update für App {app_id} fehlgeschlagen: {e}")
+                
+                    results['name_updates'] = {
+                        'success': True,
+                        'details': f'{updated_count} von {len(charts_apps)} Namen aktualisiert',
+                        'updated_count': updated_count
+                    }
+                    print(f"✅ Namen-Update: {updated_count} Apps aktualisiert")
+                else:
+                    results['name_updates'] = {
+                        'success': True,
+                        'details': 'Keine Charts-Apps für Namen-Update gefunden',
+                        'updated_count': 0
+                    }
+                    print("⚠️ Keine Charts-Apps für Namen-Update gefunden")
+                
+            except Exception as e:
+                logger.warning(f"Namen-Update Fehler: {e}")
+                results['name_updates'] = {
+                    'success': False,
+                    'details': str(e),
+                    'updated_count': 0
+                }
+                print(f"⚠️ Namen-Update Fehler: {e}")
+        
+            # Phase 3: Preise aktualisieren (bestehende Charts-Preis-Funktion)
+            print("\n💰 Phase 3: Preise aktualisieren...")
+            try:
+                if hasattr(self, 'update_charts_prices'):
+                    price_result = self.update_charts_prices()
+                
+                    if price_result.get('success'):
+                        results['price_updates'] = {
+                            'success': True,
+                            'details': f"Charts-Preise erfolgreich aktualisiert",
+                            'updated_count': price_result.get('successful_updates', 0)
+                        }
+                        print(f"✅ Preis-Update: {price_result.get('successful_updates', 0)} Apps aktualisiert")
+                    else:
+                        results['price_updates'] = {
+                            'success': False,
+                            'details': f"Charts-Preis-Update fehlgeschlagen: {price_result.get('error', 'Unbekannt')}",
+                            'updated_count': 0
+                        }
+                        print(f"❌ Preis-Update fehlgeschlagen: {price_result.get('error', 'Unbekannt')}")
+                else:
+                    results['price_updates'] = {
+                        'success': False,
+                        'details': 'update_charts_prices Methode nicht verfügbar',
+                        'updated_count': 0
+                    }
+                    print("❌ update_charts_prices Methode nicht verfügbar")
+                
+            except Exception as e:
+                logger.error(f"Preis-Update Fehler: {e}")
+                results['price_updates'] = {
+                    'success': False,
+                    'details': str(e),
+                    'updated_count': 0
+                }
+                print(f"❌ Preis-Update Fehler: {e}")
+        
+            # Erfolgsbewertung
+            results['overall_success'] = (
+                results['charts_update']['success'] and 
+                (results['name_updates']['success'] or results['name_updates']['updated_count'] == 0) and
+                (results['price_updates']['success'] or results['price_updates']['updated_count'] == 0)
+            )
+        
+            results['total_duration'] = time.time() - start_time
+        
+            # Zusammenfassung
+            print(f"\n📊 ZUSAMMENFASSUNG")
+            print(f"⏱️  Gesamtdauer: {results['total_duration']:.1f}s")
+            print(f"📈 Charts: {'✅' if results['charts_update']['success'] else '❌'}")
+            print(f"📝 Namen: {'✅' if results['name_updates']['success'] else '⚠️'} ({results['name_updates']['updated_count']})")
+            print(f"💰 Preise: {'✅' if results['price_updates']['success'] else '⚠️'} ({results['price_updates']['updated_count']})")
+        
+            if results['overall_success']:
+                print("🎉 Vollständiges Charts-Update erfolgreich!")
+                print("💡 Charts-Deals sind jetzt verfügbar")
+            else:
+                print("⚠️ Update mit Einschränkungen abgeschlossen")
+        
+            return results
+        
+        except Exception as e:
+            error_msg = f"Kritischer Fehler: {str(e)}"
+            logger.error(error_msg)
+            results['charts_update']['details'] = error_msg
+            results['total_duration'] = time.time() - start_time
+            print(f"❌ {error_msg}")
+            return results
+
     
     def _save_update_statistics(self, chart_type: str, total_games: int, new_games: int, updated_games: int, duration: float = 0.0, api_calls: int = 1):
         """
@@ -1746,6 +1941,59 @@ class SteamChartsManager:
                 'overall_status': 'KRITISCHER FEHLER',
                 'error': str(e)
             }
+    
+    def get_charts_validation_status(self) -> Dict[str, bool]:
+        """
+        Validiert den Status des Charts-Systems
+    
+        Returns:
+            Dict mit Validierungsstatus
+        """
+        validation = {
+            'charts_manager_available': True,  # Wir sind ja in der Klasse
+            'charts_data_available': False,
+            'batch_update_available': False,
+            'price_update_available': False,
+            'name_update_available': False,
+            'database_healthy': False
+        }
+    
+        try:
+            # Charts-Daten prüfen
+            if hasattr(self, 'get_charts_count'):
+                try:
+                    count = self.get_charts_count()
+                    validation['charts_data_available'] = count > 0
+                except:
+                    pass
+        
+            # BATCH-Update verfügbar?
+            validation['batch_update_available'] = hasattr(self, 'update_all_charts_batch')
+        
+            # Preis-Update verfügbar?
+            validation['price_update_available'] = hasattr(self, 'update_charts_prices')
+        
+            # Namen-Update verfügbar?
+            try:
+                from steam_wishlist_manager import bulk_get_app_names
+                validation['name_update_available'] = True
+            except ImportError:
+                validation['name_update_available'] = False
+        
+            # Database gesund?
+            if hasattr(self, 'db_manager'):
+                try:
+                    with self.db_manager.get_connection() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT COUNT(*) FROM tracked_apps")
+                        validation['database_healthy'] = True
+                except:
+                    validation['database_healthy'] = False
+    
+        except Exception as e:
+            logger.warning(f"Charts-Validierung fehlgeschlagen: {e}")
+    
+        return validation
 
 # =====================================================================
 # CONVENIENCE FUNCTIONS
