@@ -85,8 +85,6 @@
 /temp_schedulers
 CHARTS_INTEGRATION_SUMMARY.md
 auto_integration_script.py
-/elasticsearch/data/_state
-/elasticsearch/data/_state
-/elasticsearch/data/indices
 setup_report.json
 /backup*
+/elasticsearch

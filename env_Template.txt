@@ -488,13 +488,12 @@ CHARTS_PRICE_INTERVAL_HOURS=4
 CHARTS_CLEANUP_INTERVAL_HOURS=24
 
 # Aktive Chart Typen (komma-getrennt)
-CHARTS_TYPES=most_played,top_releases,best_sellers,weekly_top_sellers
+CHARTS_TYPES=most_played,top_releases,most_concurrent_players
 
 # Chart Anzahl pro Typ
 CHARTS_COUNT_MOST_PLAYED=100
-CHARTS_COUNT_TOP_RELEASES=50
-CHARTS_COUNT_BEST_SELLERS=100
-CHARTS_COUNT_WEEKLY_TOP_SELLERS=75
+CHARTS_COUNT_TOP_RELEASES=50  
+CHARTS_COUNT_MOST_CONCURRENT_PLAYERS=50
 
 # ===================================================================
 # EXPORT CONFIGURATION
