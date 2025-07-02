@@ -17,6 +17,7 @@ from typing import List, Dict, Optional, Tuple, Any
 import logging
 from pathlib import Path
 from database_manager import create_batch_writer
+import json
 
 # Logging-Konfiguration
 try:
@@ -31,7 +32,7 @@ global CHART_TYPES
 CHART_TYPES = {
     'most_played': 'Steam Most Played Games',
     'top_releases': 'Steam Top New Releases', 
-    'best_of_year': 'Steam Best of Year'
+    'most_concurrent_players': 'Steam Most Concurrent Players'  
 }
 
 class SteamChartsManager:
@@ -50,14 +51,15 @@ class SteamChartsManager:
         'top_releases': {
             'endpoint': 'https://api.steampowered.com/ISteamChartsService/GetTopReleasesPages/v1/',
             'params': {'format': 'json'},
-            'status': 'tested_working'
+            'status': 'fixed_parsing'
         },
-        'best_of_year': {
-            'endpoint': 'https://api.steampowered.com/ISteamChartsService/GetBestOfYearPages/v1/',
+        'most_concurrent_players': {
+            'endpoint': 'https://api.steampowered.com/ISteamChartsService/GetGamesByConcurrentPlayers/v1/',
             'params': {'format': 'json'},
-            'status': 'tested_working'
+            'status': 'new_api'
         }
-    }
+}
+
     
     def __init__(self, api_key: str, db_manager, price_tracker=None):
         """
@@ -252,109 +254,206 @@ class SteamChartsManager:
         
     def get_top_releases(self, count: int = 50) -> List[Dict]:
         """
-        🔥 OFFIZIELLE STEAM API: ISteamChartsService/GetTopReleasesPages
+        ISteamChartsService/GetTopReleasesPages
+        Monatlich Gruppierte Top Releases von Steam
+
+        Funktion:
+        Extrahiert appids und holt Namen via existierende Wishlist Manager Funktionen
     
         Args:
             count: Anzahl Spiele
-        
+    
         Returns:
             Liste mit Spiel-Informationen
         """
         try:
             self._wait_for_steam_rate_limit()
-        
+    
             api_config = self.STEAM_API_ENDPOINTS['top_releases']
             params = api_config['params'].copy()
-        
+    
             if self.api_key:
                 params['key'] = self.api_key
-        
+    
             response = self.session.get(api_config['endpoint'], params=params, timeout=15)
             response.raise_for_status()
-        
+    
             data = response.json()
             games = []
-        
+            collected_appids = []
+    
+            # KORRIGIERT: Extrahiere appids aus item_ids Arrays
             if 'response' in data and 'pages' in data['response']:
-                # Top Releases aus den Seiten extrahieren
                 for page in data['response']['pages']:
-                    if 'items' in page:
-                        for i, item in enumerate(page['items'][:count], 1):
+                    if 'item_ids' in page:  # NICHT 'items' - es sind 'item_ids'!
+                        for item in page['item_ids']:
                             app_id = str(item.get('appid', ''))
-                            name = item.get('name', f'Unknown Game {app_id}')
-                        
-                            if app_id and len(games) < count:
-                                rank = len(games) + 1
-                                games.append({
-                                    'steam_app_id': app_id,
-                                    'name': name,
-                                    'rank': rank,
-                                    'release_date': item.get('release_date', ''),
-                                    'chart_type': 'top_releases',
-                                    'api_source': 'official_steam_api'
-                                })
-        
+                            if app_id and len(collected_appids) < count:
+                                collected_appids.append(app_id)
+    
+            # Namen für AppIDs via EXISTIERENDE Wishlist Manager Funktionen holen
+            if collected_appids:
+                try:
+                    # Import der existierenden Funktion
+                    from steam_wishlist_manager import bulk_get_app_names
+                
+                    names_data = bulk_get_app_names(collected_appids[:count], self.api_key)
+                
+                    for i, app_id in enumerate(collected_appids[:count], 1):
+                        name = names_data.get(app_id, f'Steam Game {app_id}')
+                    
+                        games.append({
+                            'steam_app_id': app_id,
+                            'name': name,
+                            'rank': i,
+                            'chart_type': 'top_releases',
+                            'api_source': 'official_steam_api'
+                        })
+                    
+                except ImportError:
+                    logger.warning("⚠️ steam_wishlist_manager nicht verfügbar - verwende Fallback")
+                    # Fallback ohne Namen
+                    for i, app_id in enumerate(collected_appids[:count], 1):
+                        games.append({
+                            'steam_app_id': app_id,
+                            'name': f'Steam Game {app_id}',
+                            'rank': i,
+                            'chart_type': 'top_releases',
+                            'api_source': 'official_steam_api'
+                        })
+    
             logger.info(f"🆕 {len(games)} Top Releases von offizieller Steam API abgerufen")
             return games
-        
+    
         except Exception as e:
             logger.error(f"❌ Fehler bei offizieller Top Releases API: {e}")
             return []
         
-    def get_best_of_year(self, count: int = 50, year: int = None) -> List[Dict]:
+    def get_most_concurrent_players(self, count: int = 50) -> List[Dict]:
         """
-        🔥 OFFIZIELLE STEAM API: ISteamChartsService/GetBestOfYearPages
+        Most Concurrent Players via GetGamesByConcurrentPlayers
+        Spiele mit den meisten gleichzeitig spielenden Spielern
     
         Args:
             count: Anzahl Spiele
-            year: Jahr (Standard: aktuelles Jahr)
-        
+    
         Returns:
-            Liste mit Spiel-Informationen
+            Liste mit aktuell meistgespielten Games (nach gleichzeitigen Spielern)
         """
         try:
             self._wait_for_steam_rate_limit()
         
-            api_config = self.STEAM_API_ENDPOINTS['best_of_year']
-            params = api_config['params'].copy()
+            # GetGamesByConcurrentPlayers API
+            endpoint = 'https://api.steampowered.com/ISteamChartsService/GetGamesByConcurrentPlayers/v1/'
+        
+            # Context für deutsche/englische Namen und Deutschland als Zielland
+            context = {
+                "language": "german,english",
+                "country_code": "de"
+            }
+        
+            params = {
+                'input_json': json.dumps({"context": context})
+                # Hinweis: requests.get() macht automatisch URL-Encoding des JSON-Parameters
+            }
         
             if self.api_key:
                 params['key'] = self.api_key
-        
-            if year:
-                params['year'] = year
-        
-            response = self.session.get(api_config['endpoint'], params=params, timeout=15)
+    
+            response = self.session.get(endpoint, params=params, timeout=15)
             response.raise_for_status()
-        
+    
             data = response.json()
             games = []
+            collected_appids = []
         
-            if 'response' in data and 'pages' in data['response']:
-                # Best of Year aus den Seiten extrahieren
-                for page in data['response']['pages']:
-                    if 'items' in page:
-                        for i, item in enumerate(page['items'][:count], 1):
-                            app_id = str(item.get('appid', ''))
-                            name = item.get('name', f'Unknown Game {app_id}')
-                        
-                            if app_id and len(games) < count:
-                                rank = len(games) + 1
-                                games.append({
-                                    'steam_app_id': app_id,
-                                    'name': name,
-                                    'rank': rank,
-                                    'year': year or datetime.now().year,
-                                    'chart_type': 'best_of_year',
-                                    'api_source': 'official_steam_api'
-                                })
+            # Response-Struktur analysieren und App-IDs extrahieren
+            if 'response' in data:
+                games_data = []
+            
+                # Verschiedene mögliche Response-Strukturen prüfen
+                if 'games' in data['response']:
+                    games_data = data['response']['games'][:count]
+                elif 'ranks' in data['response']:
+                    games_data = data['response']['ranks'][:count]
+                elif 'items' in data['response']:
+                    games_data = data['response']['items'][:count]
+                else:
+                    # Fallback: Erste verfügbare Liste
+                    for key, value in data['response'].items():
+                        if isinstance(value, list) and len(value) > 0:
+                            games_data = value[:count]
+                            logger.info(f"📊 Verwende Response-Feld '{key}' für Most Concurrent Players")
+                            break
+            
+                # App-IDs sammeln (vermutlich ohne Namen)
+                for game in games_data:
+                    app_id = str(game.get('appid', ''))
+                    if app_id and len(collected_appids) < count:
+                        collected_appids.append(app_id)
         
-            logger.info(f"🏆 {len(games)} Best of Year von offizieller Steam API abgerufen")
+            # Namen für AppIDs via EXISTIERENDE Wishlist Manager Funktionen holen
+            if collected_appids:
+                try:
+                    # Import der existierenden Funktion
+                    from steam_wishlist_manager import bulk_get_app_names
+                
+                    names_data = bulk_get_app_names(collected_appids[:count], self.api_key)
+                
+                    for i, app_id in enumerate(collected_appids[:count], 1):
+                        name = names_data.get(app_id, f'Trending Game {app_id}')
+                    
+                        # Zusätzliche Daten aus ursprünglicher Response falls verfügbar
+                        game_data = None
+                        if 'response' in data:
+                            for key, value in data['response'].items():
+                                if isinstance(value, list):
+                                    for item in value:
+                                        if str(item.get('appid', '')) == app_id:
+                                            game_data = item
+                                            break
+                                    if game_data:
+                                        break
+                    
+                        game_entry = {
+                            'steam_app_id': app_id,
+                            'name': name,
+                            'rank': i,
+                            'chart_type': 'most_concurrent_players',
+                            'api_source': 'concurrent_players_api'
+                        }
+                    
+                        # Zusätzliche Daten falls verfügbar
+                        if game_data:
+                            game_entry.update({
+                                'concurrent_players': game_data.get('concurrent_in_game', 0),
+                                'peak_players': game_data.get('peak_in_game', 0)
+                            })
+                    
+                        games.append(game_entry)
+                    
+                except ImportError:
+                    logger.warning("⚠️ steam_wishlist_manager nicht verfügbar - verwende Fallback")
+                    # Fallback ohne Namen, aber mit Standard-Spielerzahlen
+                    for i, app_id in enumerate(collected_appids[:count], 1):
+                        games.append({
+                            'steam_app_id': app_id,
+                            'name': f'Concurrent Game {app_id}',
+                            'rank': i,
+                            'chart_type': 'most_concurrent_players',
+                            'api_source': 'concurrent_players_api',
+                            'current_players': 0,  # Standard für Fallback
+                            'peak_players': 0      # Standard für Fallback
+                        })
+    
+            logger.info(f"📈 {len(games)} Most Concurrent Players abgerufen")
             return games
-        
+    
         except Exception as e:
-            logger.error(f"❌ Fehler bei offizieller Best of Year API: {e}")
-            return []    
+            logger.error(f"❌ Fehler bei Most Concurrent Players API: {e}")
+            return []
+
+        
 
     # =====================================================================
     # CHARTS DATABASE INTEGRATION
@@ -518,6 +617,79 @@ class SteamChartsManager:
         
         return best_deal
     
+    def save_concurrent_players_game_with_data(self, game_data: Dict) -> bool:
+        """
+        Speichert Most Concurrent Players Game mit peak_players und current_players in der DB
+        Erweitert die normale save_chart_game Funktion um Spielerzahlen
+    
+        Args:
+            game_data: Spiel-Informationen mit peak_players/current_players
+        
+        Returns:
+            True wenn erfolgreich gespeichert
+        """
+        try:
+            with self.db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+            
+                app_id = game_data['steam_app_id']
+                chart_type = game_data['chart_type']
+                current_rank = game_data.get('rank', 999)
+                name = game_data['name']
+            
+                # Zusätzliche Spieler-Daten extrahieren
+                current_players = game_data.get('current_players', 0)
+                peak_players = game_data.get('peak_players', 0)
+            
+                # Prüfen ob Spiel bereits existiert
+                cursor.execute("""
+                    SELECT current_rank, best_rank, days_in_charts, first_seen, peak_players, current_players
+                    FROM steam_charts_tracking
+                    WHERE steam_app_id = ? AND chart_type = ?
+                """, (app_id, chart_type))
+            
+                existing = cursor.fetchone()
+            
+                if existing:
+                    # UPDATE: Aktualisiere bestehenden Eintrag mit neuen Spielerzahlen
+                    old_rank, old_best_rank, days, first_seen, old_peak, old_current = existing
+                
+                    new_best_rank = min(old_best_rank or 999999, current_rank)
+                    new_days = (days or 0) + 1
+                
+                    # Behalte höchste Peak-Spielerzahl
+                    new_peak_players = max(old_peak or 0, peak_players)
+                
+                    cursor.execute("""
+                        UPDATE steam_charts_tracking
+                        SET current_rank = ?, best_rank = ?, last_seen = CURRENT_TIMESTAMP,
+                            days_in_charts = ?, total_appearances = ?,
+                            peak_players = ?, current_players = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE steam_app_id = ? AND chart_type = ?
+                    """, (current_rank, new_best_rank, new_days, new_days, 
+                          new_peak_players, current_players, app_id, chart_type))
+                
+                    logger.debug(f"✅ Concurrent Players Game aktualisiert: {name} (Rank: {current_rank}, Peak: {new_peak_players})")
+                
+                else:
+                    # INSERT: Neues Spiel hinzufügen
+                    cursor.execute("""
+                        INSERT INTO steam_charts_tracking
+                        (steam_app_id, name, chart_type, current_rank, best_rank,
+                         first_seen, last_seen, total_appearances, active, days_in_charts,
+                         peak_players, current_players, updated_at)
+                        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 1, 1, ?, ?, CURRENT_TIMESTAMP)
+                    """, (app_id, name, chart_type, current_rank, current_rank, peak_players, current_players))
+                
+                    logger.debug(f"✅ Neues Concurrent Players Game: {name} (Rank: {current_rank}, Peak: {peak_players})")
+            
+                conn.commit()
+                return True
+            
+        except Exception as e:
+            logger.error(f"❌ Fehler beim Speichern von Concurrent Players Game {app_id}: {e}")
+            return False
+
     # =====================================================================
     # CHARTS UPDATE FUNKTIONEN
     # =====================================================================
@@ -1049,128 +1221,174 @@ class SteamChartsManager:
 
     def update_all_charts_batch(self, chart_types: List[str] = None) -> Dict[str, Any]:
         """
-        🚀 SAUBERES BATCH-UPDATE mit 3 funktionierenden Steam Web APIs
+        🚀 BATCH-UPDATE von Charts
+    
         Args:
-            chart_types: Liste der zu aktualisierenden Chart-Typen
-        
+            chart_types: Liste der zu aktualisierenden Chart-Typen (None = alle verfügbaren)
+    
         Returns:
             Umfassende Statistiken über das Update
         """
         start_time = time.time()
-    
+
+        # ✅ NUTZE GLOBALE CHART_TYPES VARIABLE (statt hardcoded)
         if chart_types is None:
-            chart_types = ['most_played', 'top_releases', 'best_of_year']  # Nur funktionierende APIs
-    
-        # Entferne top_sellers falls versehentlich übergeben
-        chart_types = [ct for ct in chart_types if ct in CHART_TYPES.keys()]
-    
-        logger.info(f"🚀 SAUBERES BATCH Charts-Update für {chart_types} gestartet...")
-    
+            chart_types = list(CHART_TYPES.keys())  # Aus der globalen Variable!
+            logger.info(f"📊 Verwende alle verfügbaren Chart-Typen aus CHART_TYPES: {chart_types}")
+
+        # Entferne best_of_year falls noch vorhanden (da nicht funktional)
+        chart_types = [ct for ct in chart_types if ct != 'best_of_year']
+        logger.info(f"🎯 Aktive Chart-Typen: {chart_types}")
+
         try:
-            # Batch Writer erstellen (523.9x Performance-Boost!)
+            # Batch Writer erstellen
             batch_writer = create_batch_writer(self.db_manager)
         
             all_charts_data = []
             total_new_games = 0
             chart_stats = {}
-        
-            # Alle verfügbaren Chart-Typen mit offiziellen APIs sammeln
+
+            # Alle verfügbaren Chart-Typen sammeln
             for chart_type in chart_types:
                 logger.info(f"📊 Sammle {chart_type} von offizieller Steam API...")
             
+                chart_start_time = time.time()
+                games = []
+
                 try:
-                    # NUR FUNKTIONIERENDE APIS: 3 getestete Steam Web APIs
                     if chart_type == 'most_played':
                         games = self.get_most_played_games(count=100)
                     elif chart_type == 'top_releases':
-                        games = self.get_top_releases(count=50)
-                    elif chart_type == 'best_of_year':
-                        games = self.get_best_of_year(count=50)
+                        games = self.get_top_releases(count=50)  # ← GEFIXT
+                    elif chart_type == 'most_concurrent_players':
+                        games = self.get_most_concurrent_players(count=50)  # ← NEU
                     else:
-                        logger.warning(f"⚠️ Chart-Typ '{chart_type}' nicht verfügbar - überspringe")
+                        logger.warning(f"⚠️ Chart-Typ '{chart_type}' nicht implementiert - überspringe")
                         continue
-                    
+                
                 except Exception as e:
                     logger.error(f"❌ Fehler beim Abrufen von {chart_type}: {e}")
+                    chart_stats[chart_type] = {
+                        'games_found': 0,
+                        'games_added': 0,
+                        'api_source': 'error',
+                        'duration': time.time() - chart_start_time,
+                        'error': str(e)
+                    }
                     continue
-            
+
                 if not games:
                     logger.warning(f"⚠️ Keine Games für {chart_type} erhalten")
-                    continue
-            
-                # Charts-Daten für BATCH vorbereiten
-                for rank, game in enumerate(games, 1):
-                    chart_data = {
-                        'steam_app_id': str(game.get('steam_app_id', '')),
-                        'name': game.get('name', f'Unknown Game {game.get("steam_app_id", "")}'),
-                        'chart_type': chart_type,
-                        'current_rank': rank,
-                        'best_rank': rank,
-                        'total_appearances': 1,
-                        'days_in_charts': 1,
-                        'peak_players': game.get('peak_players', game.get('current_players', 0)),
-                        'current_players': game.get('current_players', 0),
-                        'metadata': json.dumps({
-                            'last_update': datetime.now().isoformat(),
-                            'source': f'official_steam_api_{chart_type}',
-                            'api_source': game.get('api_source', 'official_steam_api'),
-                            'batch_version': True,
-                            'rank': rank,
-                            'year': game.get('year', datetime.now().year),
-                            'original_data': game
-                        })
+                    chart_stats[chart_type] = {
+                        'games_found': 0,
+                        'games_added': 0,
+                        'api_source': 'empty_response',
+                        'duration': time.time() - chart_start_time
                     }
-                    all_charts_data.append(chart_data)
-                    total_new_games += 1
+                    continue
+
+                # SPEZIELLE BEHANDLUNG für most_concurrent_players mit Player-Daten
+                games_added = 0
+                if chart_type == 'most_concurrent_players':
+                    # Erweiterte Speicherung für Spielerzahlen-Daten
+                    for game in games:
+                        # Bereite Chart-Daten für BATCH vor (kompatibel mit batch_writer)
+                        chart_data = {
+                            'steam_app_id': str(game.get('steam_app_id', '')),
+                            'name': game.get('name', f'Unknown Game {game.get("steam_app_id", "")}'),
+                            'rank': game.get('rank', 999),
+                            'chart_type': chart_type,
+                            'api_source': game.get('api_source', 'official_steam_api'),
+                            # ZUSÄTZLICHE PLAYER-DATEN für most_concurrent_players
+                            'current_players': game.get('current_players', 0),
+                            'peak_players': game.get('peak_players', 0),
+                            'concurrent_players': game.get('concurrent_players', 0),
+                            'peak_in_game': game.get('peak_in_game', 0)
+                        }
+                    
+                        if chart_data['steam_app_id']:
+                            all_charts_data.append(chart_data)
+                            games_added += 1
+                        
+                            # Direkte Speicherung mit Player-Daten
+                            try:
+                                self.save_concurrent_players_game_with_data(game)
+                            except Exception as e:
+                                logger.debug(f"⚠️ Zusätzliche Player-Daten Speicherung fehlgeschlagen für {game.get('steam_app_id')}: {e}")
             
+                else:
+                    # Standard-Verarbeitung für other chart types (most_played, top_releases)
+                    for game in games:
+                        chart_data = {
+                            'steam_app_id': str(game.get('steam_app_id', '')),
+                            'name': game.get('name', f'Unknown Game {game.get("steam_app_id", "")}'),
+                            'rank': game.get('rank', 999),
+                            'chart_type': chart_type,
+                            'api_source': game.get('api_source', 'official_steam_api'),
+                            # Standard-Player-Daten falls verfügbar
+                            'current_players': game.get('current_players', 0),
+                            'peak_players': game.get('peak_players', 0)
+                        }
+                    
+                        if chart_data['steam_app_id']:
+                            all_charts_data.append(chart_data)
+                            games_added += 1
+
+                # Chart-Statistiken sammeln
+                chart_duration = time.time() - chart_start_time
                 chart_stats[chart_type] = {
                     'games_found': len(games),
-                    'processed': len(games),
-                    'api_source': games[0].get('api_source', 'official_steam_api') if games else 'none'
+                    'games_added': games_added,
+                    'api_source': games[0].get('api_source', 'official_steam_api') if games else 'unknown',
+                    'duration': chart_duration,
+                    'has_player_data': chart_type == 'most_concurrent_players'
                 }
             
-                logger.info(f"✅ {chart_type}: {len(games)} Games gesammelt")
-        
-            if not all_charts_data:
-                return {
-                    'success': False,
-                    'error': 'Keine Chart-Daten zum Verarbeiten gefunden',
-                    'duration': time.time() - start_time,
-                    'chart_types': chart_types,
-                    'available_charts': list(CHART_TYPES.keys())
-                }
-        
-            logger.info(f"📦 BATCH-VERARBEITUNG: {len(all_charts_data)} Charts-Einträge...")
-        
-            # 🚀 BATCH-WRITE
-            batch_results = batch_writer.batch_write_charts(all_charts_data)
-        
-            duration = time.time() - start_time
-        
+                total_new_games += games_added
+                logger.info(f"✅ {chart_type}: {games_added} Games gesammelt in {chart_duration:.2f}s")
+
+            # BATCH-VERARBEITUNG der gesammelten Charts-Daten
+            if all_charts_data:
+                logger.info(f"📦 BATCH-VERARBEITUNG: {len(all_charts_data)} Charts-Einträge...")
+            
+                # 🚀 BATCH-WRITE mit Player-Daten Unterstützung
+                batch_results = batch_writer.batch_write_charts(all_charts_data)
+            
+                logger.info(f"✅ BATCH-Write: {len(all_charts_data)} Items in {batch_results.get('duration', 0):.2f}s")
+            else:
+                logger.warning("⚠️ Keine Charts-Daten zum Speichern gefunden")
+                batch_results = {'items_written': 0, 'duration': 0}
+
+            total_duration = time.time() - start_time
+
+            # ERWEITERTE RÜCKGABE mit Player-Daten Informationen
             return {
                 'success': True,
                 'total_charts_updated': len(all_charts_data),
+                'total_games_added': total_new_games,
                 'chart_stats': chart_stats,
                 'batch_results': batch_results,
-                'duration': duration,
-                'performance_boost': '523.9x faster',
+                'duration': total_duration,
+                'performance_boost': '523.9x faster mit Player-Daten Support',
                 'api_sources': list(set([stats.get('api_source', 'unknown') 
                                        for stats in chart_stats.values()])),
-                'chart_types': chart_types,
+                'chart_types_processed': chart_types,
                 'available_charts': list(CHART_TYPES.keys()),
-                'excluded_charts': ['top_sellers (no reliable API available)']
+                'player_data_charts': [ct for ct, stats in chart_stats.items() 
+                                     if stats.get('has_player_data', False)],
+                'excluded_charts': ['best_of_year (liefert nur UI-Metadaten)']
             }
-        
+
         except Exception as e:
             logger.error(f"❌ Fehler im BATCH-Update: {e}")
             return {
                 'success': False,
                 'error': str(e),
                 'duration': time.time() - start_time,
-                'chart_types': chart_types,
+                'chart_types_requested': chart_types,
                 'available_charts': list(CHART_TYPES.keys())
             }
-    
+
     def save_chart_game_safe(self, game_data: Dict) -> bool:
         """
         Sichere Version von save_chart_game mit besserer Fehlerbehandlung
