@@ -1,59 +1,41 @@
-# Docker Compose für Steam Price Tracker Analytics
-# Elasticsearch + Kibana Stack für Datenanalyse
 version: '3.8'
 
 services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
-    container_name: steam-elasticsearch
+    container_name: steam-tracker-elasticsearch
     environment:
-      - node.name=steam-elasticsearch
-      - cluster.name=steam-analytics
       - discovery.type=single-node
-      - bootstrap.memory_lock=true
-      - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
       - xpack.security.enabled=false
-      - xpack.security.enrollment.enabled=false
-      - xpack.security.http.ssl.enabled=false
-      - xpack.security.transport.ssl.enabled=false
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-    mem_limit: 3g
-    volumes:
-      - elasticsearch_data:/usr/share/elasticsearch/data
-      - ./elasticsearch/config/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
-      - ./elasticsearch/logs:/usr/share/elasticsearch/logs
+      - xpack.monitoring.collection.enabled=true
     ports:
       - "9200:9200"
       - "9300:9300"
+    volumes:
+      - ./elasticsearch/data:/usr/share/elasticsearch/data
+      - ./elasticsearch/logs:/usr/share/elasticsearch/logs
+      - ./elasticsearch/config/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
     networks:
-      - steam-analytics
+      - elastic
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 10
-      start_period: 60s
+      retries: 5
 
   kibana:
     image: docker.elastic.co/kibana/kibana:8.11.0
-    container_name: steam-kibana
+    container_name: steam-tracker-kibana
     environment:
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-      - SERVER_NAME=steam-kibana
-      - SERVER_HOST=0.0.0.0
-      - xpack.security.enabled=false
-      - xpack.encryptedSavedObjects.encryptionKey=steam-analytics-encryption-key-32-chars
-    volumes:
-      - kibana_data:/usr/share/kibana/data
-      - ./kibana/config/kibana.yml:/usr/share/kibana/config/kibana.yml:ro
-      - ./kibana/dashboards:/usr/share/kibana/config/dashboards:ro
     ports:
       - "5601:5601"
+    volumes:
+      - ./kibana/config/kibana.yml:/usr/share/kibana/config/kibana.yml:ro
+      - ./kibana/dashboards:/usr/share/kibana/dashboards:ro
     networks:
-      - steam-analytics
+      - elastic
     depends_on:
       elasticsearch:
         condition: service_healthy
@@ -61,26 +43,12 @@ services:
       test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 10
-      start_period: 60s
+      retries: 5
 
-  # Optional: Elasticsearch Head Plugin für Browser-basierte Administration
-  elasticsearch-head:
-    image: mobz/elasticsearch-head:5
-    container_name: steam-elasticsearch-head
-    ports:
-      - "9100:9100"
-    networks:
-      - steam-analytics
-    depends_on:
-      - elasticsearch
+networks:
+  elastic:
+    driver: bridge
 
 volumes:
   elasticsearch_data:
-    driver: local
   kibana_data:
-    driver: local
-
-networks:
-  steam-analytics:
-    driver: bridge

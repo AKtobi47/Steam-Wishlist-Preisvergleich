@@ -1,102 +1,831 @@
-# Steam Price Tracker Configuration
+# Steam Price Tracker - Environment Configuration Template
 # Kopiere diese Datei zu .env und fülle die Werte aus
 
-# ====================================
-# ERFORDERLICH: Steam API Key
-# ====================================
-# Hole deinen Steam API Key von: https://steamcommunity.com/dev/apikey
+# ===================================================================
+# STEAM API CONFIGURATION (ERFORDERLICH)
+# ===================================================================
+
+# Steam Web API Key - Hol dir einen auf: https://steamcommunity.com/dev/apikey
 STEAM_API_KEY=your_steam_api_key_here
 
-# ====================================
-# OPTIONAL: Datenbank-Konfiguration
-# ====================================
-# Pfad zur SQLite-Datenbank
-TRACKER_DB_PATH=steam_price_tracker.db
-
-# Anzahl Tage nach denen alte Preis-Snapshots gelöscht werden
-DB_CLEANUP_DAYS=90
-
-# ====================================
-# Charts-Service-Konfiguration
-# ====================================
-# Suchintervall (Stunden) neue Charts-Titel
-CHARTS_UPDATE_INTERVAL_HOURS=6
-# Intervall (Stunden) Preisabfrage Chrart-Titel
-CHARTS_PRICE_INTERVAL_HOURS=4
-# Anzahl Tage nach denen Titel, welche nicht mehr in den Charts sind, aus dem Preistracker entfernt werden
-CHARTS_CLEANUP_DAYS=30
-
-# ====================================
-# OPTIONAL: API Rate Limits
-# ====================================
-# Sekunden zwischen Steam API Requests
+# Steam Rate Limiting (Optional)
 STEAM_RATE_LIMIT=1.0
 
-# Sekunden zwischen CheapShark API Requests
+# ===================================================================
+# CHEAPSHARK API CONFIGURATION
+# ===================================================================
+
+# CheapShark API Rate Limiting (Sekunden zwischen Requests)
 CHEAPSHARK_RATE_LIMIT=1.5
 
-# ====================================
-# OPTIONAL: Timeout-Einstellungen
-# ====================================
-# Request-Timeout für Steam API (Sekunden)
-STEAM_TIMEOUT=15
-
-# Request-Timeout für CheapShark API (Sekunden)
+# CheapShark Request Timeout (Sekunden)
 CHEAPSHARK_TIMEOUT=15
 
-# ====================================
-# OPTIONAL: Tracking-Konfiguration
-# ====================================
-# Standard-Intervall für automatisches Tracking (Stunden)
+# Store IDs für CheapShark (Standard: Steam, GMG, GOG, Humble, Fanatical, GamesPlanet)
+CHEAPSHARK_STORE_IDS=1,3,7,11,15,27
+
+# ===================================================================
+# DATABASE CONFIGURATION
+# ===================================================================
+
+# Hauptdatenbank Pfad
+TRACKER_DB_PATH=steam_price_tracker.db
+
+# Backup Verzeichnis
+BACKUP_DIR=backups
+
+# Datenbank Cleanup (Tage)
+DB_CLEANUP_DAYS=90
+
+# Auto Vacuum (true/false)
+DB_AUTO_VACUUM=true
+
+# ===================================================================
+# TRACKING CONFIGURATION
+# ===================================================================
+
+# Standard Tracking Intervall (Stunden)
 TRACKING_INTERVAL_HOURS=6
 
-# Maximale Anzahl Apps pro Update-Batch
+# Namen Update Intervall (Minuten)
+NAME_UPDATE_INTERVAL_MINUTES=30
+
+# Maximum Apps pro Update-Batch
 MAX_APPS_PER_UPDATE=100
 
-# Automatisches Tracking beim Start aktivieren (true/false)
-ENABLE_AUTOMATIC_TRACKING=false
+# Automatisches Tracking beim Start aktivieren
+AUTO_START_TRACKING=false
 
-# ====================================
-# OPTIONAL: Export-Konfiguration
-# ====================================
-# Standard-Format für Exports (csv/json)
+# ===================================================================
+# CHARTS CONFIGURATION
+# ===================================================================
+
+# Charts Feature aktivieren (true/false)
+CHARTS_ENABLED=true
+
+# Charts Update Intervall (Stunden)
+CHARTS_UPDATE_INTERVAL_HOURS=6
+
+# Charts Preis Update Intervall (Stunden)
+CHARTS_PRICE_INTERVAL_HOURS=4
+
+# Charts Cleanup Intervall (Stunden)  
+CHARTS_CLEANUP_INTERVAL_HOURS=24
+
+# Aktive Chart Typen (komma-getrennt)
+CHARTS_TYPES=most_played,top_releases,best_of_year
+
+# Chart Anzahl pro Typ
+CHARTS_COUNT_MOST_PLAYED=100
+CHARTS_COUNT_TOP_RELEASES=50  
+CHARTS_COUNT_BEST_OF_YEAR=50
+
+# ===================================================================
+# EXPORT CONFIGURATION
+# ===================================================================
+
+# Standard Export Format (csv/json/xlsx)
 EXPORT_FORMAT=csv
 
-# Verzeichnis für Export-Dateien
+# Export Verzeichnis
 EXPORT_DIRECTORY=exports
 
-# ====================================
-# OPTIONAL: Wishlist-Konfiguration
-# ====================================
-# Standard-Ländercode für Preise (DE, US, UK, etc.)
-DEFAULT_COUNTRY_CODE=DE
+# CSV Delimiter
+CSV_DELIMITER=,
 
-# Anzahl Wishlist-Items pro Import-Batch
-WISHLIST_BATCH_SIZE=50
+# Datum Format für Exports
+EXPORT_DATE_FORMAT=%Y-%m-%d %H:%M:%S
 
-# ====================================
-# ERWEITERTE EINSTELLUNGEN
-# ====================================
-# Logging Level (DEBUG, INFO, WARNING, ERROR)
-# LOG_LEVEL=INFO
+# ===================================================================
+# ELASTICSEARCH CONFIGURATION (OPTIONAL)
+# ===================================================================
 
-# Backup-Intervall für Datenbank (Stunden)
-# DB_BACKUP_INTERVAL=24
+# Elasticsearch aktivieren (true/false)
+ELASTICSEARCH_ENABLED=false
 
-# Maximale Anzahl Backup-Dateien
-# MAX_BACKUP_FILES=7
+# Elasticsearch Host
+ELASTICSEARCH_HOST=localhost
 
-# Preis-Alert Prüfintervall (Stunden)
-# PRICE_ALERT_INTERVAL=1
+# Elasticsearch Port
+ELASTICSEARCH_PORT=9200
 
-# ====================================
-# ENTWICKLUNG (nur für Entwickler)
-# ====================================
-# Debug-Modus aktivieren
-# DEBUG_MODE=false
+# Elasticsearch Username (falls Authentication aktiviert)
+ELASTICSEARCH_USERNAME=
 
-# Verbose API Logging
-# API_DEBUG=false
+# Elasticsearch Password (falls Authentication aktiviert)  
+ELASTICSEARCH_PASSWORD=
 
-# Test-Modus (verwendet Test-Datenbank)
-# TEST_MODE=false
+# Elasticsearch Index Prefix
+ELASTICSEARCH_INDEX_PREFIX=steam-tracker
+
+# Elasticsearch Timeout (Sekunden)
+ELASTICSEARCH_TIMEOUT=30
+
+# Bulk Insert Größe
+ELASTICSEARCH_BULK_SIZE=1000
+
+# ===================================================================
+# KIBANA CONFIGURATION (OPTIONAL)
+# ===================================================================
+
+# Kibana Host
+KIBANA_HOST=localhost
+
+# Kibana Port
+KIBANA_PORT=5601
+
+# Kibana Username (falls Authentication aktiviert)
+KIBANA_USERNAME=
+
+# Kibana Password (falls Authentication aktiviert)
+KIBANA_PASSWORD=
+
+# ===================================================================
+# LOGGING CONFIGURATION
+# ===================================================================
+
+# Log Level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+LOG_LEVEL=INFO
+
+# Log Datei
+LOG_FILE=logs/steam_tracker.log
+
+# Log Rotation (true/false)
+LOG_ROTATION=true
+
+# Log Datei Größe (MB)
+LOG_MAX_SIZE=10
+
+# Anzahl Backup Log Dateien
+LOG_BACKUP_COUNT=5
+
+# Console Logging (true/false)
+LOG_TO_CONSOLE=true
+
+# Structured Logging (true/false)
+LOG_STRUCTURED=false
+
+# ===================================================================
+# SCHEDULER CONFIGURATION
+# ===================================================================
+
+# Background Scheduler aktivieren
+SCHEDULER_ENABLED=true
+
+# Process Management Terminal aktivieren
+PROCESS_MANAGEMENT_TERMINAL=true
+
+# Enhanced Scheduler v2 Features
+ENHANCED_SCHEDULER=true
+
+# Parent Process Monitoring
+PARENT_PROCESS_MONITORING=true
+
+# Sign of Life Intervall (Sekunden)
+SIGN_OF_LIFE_INTERVAL=30
+
+# Scheduler Heartbeat Intervall (Sekunden)
+SCHEDULER_HEARTBEAT=60
+
+# ===================================================================
+# PERFORMANCE CONFIGURATION
+# ===================================================================
+
+# Request Pool Größe
+REQUEST_POOL_SIZE=10
+
+# Concurrent Downloads
+MAX_CONCURRENT_DOWNLOADS=5
+
+# Memory Limit für große Operationen (MB)
+MEMORY_LIMIT_MB=512
+
+# Cache Größe für API Responses
+API_CACHE_SIZE=1000
+
+# Cache TTL (Sekunden)
+API_CACHE_TTL=3600
+
+# ===================================================================
+# NOTIFICATION CONFIGURATION (OPTIONAL)
+# ===================================================================
+
+# Discord Webhook URL für Notifications
+DISCORD_WEBHOOK_URL=
+
+# Slack Webhook URL für Notifications
+SLACK_WEBHOOK_URL=
+
+# Email Notifications (true/false)
+EMAIL_NOTIFICATIONS=false
+
+# SMTP Server für Email
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=
+SMTP_PASSWORD=
+SMTP_FROM_EMAIL=
+
+# Notification Triggers
+NOTIFY_ON_NEW_DEALS=true
+NOTIFY_ON_PRICE_DROPS=true
+NOTIFY_ON_ERRORS=false
+
+# Deal Notification Threshold (Mindestrabatt %)
+DEAL_NOTIFICATION_THRESHOLD=50
+
+# ===================================================================
+# SECURITY CONFIGURATION
+# ===================================================================
+
+# API Key Verschlüsselung (true/false)
+ENCRYPT_API_KEYS=false
+
+# Encryption Key (32 Zeichen)
+ENCRYPTION_KEY=
+
+# Session Timeout (Minuten)
+SESSION_TIMEOUT=60
+
+# Rate Limiting für API Calls (Requests pro Minute)
+API_RATE_LIMIT=60
+
+# ===================================================================
+# DEVELOPMENT CONFIGURATION
+# ===================================================================
+
+# Debug Modus (true/false)
+DEBUG_MODE=false
+
+# Profiling aktivieren (true/false)
+PROFILING_ENABLED=false
+
+# Test Modus (true/false) 
+TEST_MODE=false
+
+# Mock API Responses (true/false)
+MOCK_API=false
+
+# Verbose Output (true/false)
+VERBOSE=false
+
+# ===================================================================
+# BACKUP CONFIGURATION
+# ===================================================================
+
+# Automatische Backups (true/false)
+AUTO_BACKUP=true
+
+# Backup Intervall (Stunden)
+BACKUP_INTERVAL_HOURS=24
+
+# Anzahl Backup Dateien aufbewahren
+BACKUP_RETENTION_COUNT=7
+
+# Backup Kompression (true/false)
+BACKUP_COMPRESSION=true
+
+# Remote Backup (S3, FTP, etc.)
+REMOTE_BACKUP_ENABLED=false
+REMOTE_BACKUP_URL=
+
+# ===================================================================
+# PROXY CONFIGURATION (OPTIONAL)
+# ===================================================================
+
+# HTTP Proxy
+HTTP_PROXY=
+
+# HTTPS Proxy  
+HTTPS_PROXY=
+
+# No Proxy Hosts (komma-getrennt)
+NO_PROXY=localhost,127.0.0.1
+
+# Proxy Authentication
+PROXY_USERNAME=
+PROXY_PASSWORD=
+
+# ===================================================================
+# ADVANCED CONFIGURATION
+# ===================================================================
+
+# Worker Threads für parallele Verarbeitung
+WORKER_THREADS=4
+
+# Batch Processing Chunk Size
+BATCH_CHUNK_SIZE=50
+
+# Retry Attempts für fehlgeschlagene Requests
+RETRY_ATTEMPTS=3
+
+# Retry Delay (Sekunden)
+RETRY_DELAY=5
+
+# Connection Pool Size
+CONNECTION_POOL_SIZE=20
+
+# User Agent für HTTP Requests
+USER_AGENT=SteamPriceTracker/3.0
+
+# ===================================================================
+# FEATURE FLAGS
+# ===================================================================
+
+# Experimentelle Features aktivieren
+EXPERIMENTAL_FEATURES=false
+
+# Beta Features aktivieren
+BETA_FEATURES=false
+
+# Legacy Kompatibilität (true/false)
+LEGACY_COMPATIBILITY=true
+
+# Advanced Analytics (true/false)
+ADVANCED_ANALYTICS=false
+
+# Machine Learning Features (true/false)
+ML_FEATURES=false
+
+# ===================================================================
+# MONITORING CONFIGURATION
+# ===================================================================
+
+# Health Check Endpoint aktivieren
+HEALTH_CHECK_ENABLED=true
+
+# Metrics Collection (true/false)
+METRICS_ENABLED=false
+
+# Prometheus Metrics (true/false)
+PROMETHEUS_METRICS=false
+
+# Metrics Port
+METRICS_PORT=8080
+
+# Status Page aktivieren
+STATUS_PAGE_ENABLED=false
+
+# ===================================================================
+# INTEGRATION CONFIGURATION
+# ===================================================================
+
+# Discord Bot Integration
+DISCORD_BOT_TOKEN=
+
+# Telegram Bot Integration
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+
+# IFTTT Integration
+IFTTT_WEBHOOK_KEY=
+
+# Zapier Webhook URL
+ZAPIER_WEBHOOK_URL=
+
+# ===================================================================
+# LOCALE & TIMEZONE
+# ===================================================================
+
+# Timezone
+TIMEZONE=Europe/Berlin
+
+# Locale
+LOCALE=de_DE.UTF-8
+
+# Währung
+CURRENCY=EUR
+
+# Datum Format
+DATE_FORMAT=%d.%m.%Y
+
+# Zeit Format
+TIME_FORMAT=%H:%M:%S
+
+# ===================================================================
+# BEISPIEL-KONFIGURATION FÜR PRODUKTION
+# ===================================================================
+
+# Für Produktionsumgebung empfohlene Werte:
+# STEAM_API_KEY=dein_echter_api_key
+# CHEAPSHARK_RATE_LIMIT=2.0
+# TRACKING_INTERVAL_HOURS=4
+# CHARTS_UPDATE_INTERVAL_HOURS=6
+# LOG_LEVEL=WARNING
+# AUTO_BACKUP=true
+# BACKUP_INTERVAL_HOURS=12# Steam Price Tracker - Environment Configuration Template
+# Kopiere diese Datei zu .env und fülle die Werte aus
+
+# ===================================================================
+# STEAM API CONFIGURATION (ERFORDERLICH)
+# ===================================================================
+
+# Steam Web API Key - Hol dir einen auf: https://steamcommunity.com/dev/apikey
+STEAM_API_KEY=your_steam_api_key_here
+
+# Steam Rate Limiting (Optional)
+STEAM_RATE_LIMIT=1.0
+
+# ===================================================================
+# CHEAPSHARK API CONFIGURATION
+# ===================================================================
+
+# CheapShark API Rate Limiting (Sekunden zwischen Requests)
+CHEAPSHARK_RATE_LIMIT=1.5
+
+# CheapShark Request Timeout (Sekunden)
+CHEAPSHARK_TIMEOUT=15
+
+# Store IDs für CheapShark (Standard: Steam, GMG, GOG, Humble, Fanatical, GamesPlanet)
+CHEAPSHARK_STORE_IDS=1,3,7,11,15,27
+
+# ===================================================================
+# DATABASE CONFIGURATION
+# ===================================================================
+
+# Hauptdatenbank Pfad
+TRACKER_DB_PATH=steam_price_tracker.db
+
+# Backup Verzeichnis
+BACKUP_DIR=backups
+
+# Datenbank Cleanup (Tage)
+DB_CLEANUP_DAYS=90
+
+# Auto Vacuum (true/false)
+DB_AUTO_VACUUM=true
+
+# ===================================================================
+# TRACKING CONFIGURATION
+# ===================================================================
+
+# Standard Tracking Intervall (Stunden)
+TRACKING_INTERVAL_HOURS=6
+
+# Namen Update Intervall (Minuten)
+NAME_UPDATE_INTERVAL_MINUTES=30
+
+# Maximum Apps pro Update-Batch
+MAX_APPS_PER_UPDATE=100
+
+# Automatisches Tracking beim Start aktivieren
+AUTO_START_TRACKING=false
+
+# ===================================================================
+# CHARTS CONFIGURATION
+# ===================================================================
+
+# Charts Feature aktivieren (true/false)
+CHARTS_ENABLED=true
+
+# Charts Update Intervall (Stunden)
+CHARTS_UPDATE_INTERVAL_HOURS=6
+
+# Charts Preis Update Intervall (Stunden)
+CHARTS_PRICE_INTERVAL_HOURS=4
+
+# Charts Cleanup Intervall (Stunden)  
+CHARTS_CLEANUP_INTERVAL_HOURS=24
+
+# Aktive Chart Typen (komma-getrennt)
+CHARTS_TYPES=most_played,top_releases,most_concurrent_players
+
+# Chart Anzahl pro Typ
+CHARTS_COUNT_MOST_PLAYED=100
+CHARTS_COUNT_TOP_RELEASES=50  
+CHARTS_COUNT_MOST_CONCURRENT_PLAYERS=50
+
+# ===================================================================
+# EXPORT CONFIGURATION
+# ===================================================================
+
+# Standard Export Format (csv/json/xlsx)
+EXPORT_FORMAT=csv
+
+# Export Verzeichnis
+EXPORT_DIRECTORY=exports
+
+# CSV Delimiter
+CSV_DELIMITER=,
+
+# Datum Format für Exports
+EXPORT_DATE_FORMAT=%Y-%m-%d %H:%M:%S
+
+# ===================================================================
+# ELASTICSEARCH CONFIGURATION (OPTIONAL)
+# ===================================================================
+
+# Elasticsearch aktivieren (true/false)
+ELASTICSEARCH_ENABLED=false
+
+# Elasticsearch Host
+ELASTICSEARCH_HOST=localhost
+
+# Elasticsearch Port
+ELASTICSEARCH_PORT=9200
+
+# Elasticsearch Username (falls Authentication aktiviert)
+ELASTICSEARCH_USERNAME=
+
+# Elasticsearch Password (falls Authentication aktiviert)  
+ELASTICSEARCH_PASSWORD=
+
+# Elasticsearch Index Prefix
+ELASTICSEARCH_INDEX_PREFIX=steam-tracker
+
+# Elasticsearch Timeout (Sekunden)
+ELASTICSEARCH_TIMEOUT=30
+
+# Bulk Insert Größe
+ELASTICSEARCH_BULK_SIZE=1000
+
+# ===================================================================
+# KIBANA CONFIGURATION (OPTIONAL)
+# ===================================================================
+
+# Kibana Host
+KIBANA_HOST=localhost
+
+# Kibana Port
+KIBANA_PORT=5601
+
+# Kibana Username (falls Authentication aktiviert)
+KIBANA_USERNAME=
+
+# Kibana Password (falls Authentication aktiviert)
+KIBANA_PASSWORD=
+
+# ===================================================================
+# LOGGING CONFIGURATION
+# ===================================================================
+
+# Log Level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+LOG_LEVEL=INFO
+
+# Log Datei
+LOG_FILE=logs/steam_tracker.log
+
+# Log Rotation (true/false)
+LOG_ROTATION=true
+
+# Log Datei Größe (MB)
+LOG_MAX_SIZE=10
+
+# Anzahl Backup Log Dateien
+LOG_BACKUP_COUNT=5
+
+# Console Logging (true/false)
+LOG_TO_CONSOLE=true
+
+# Structured Logging (true/false)
+LOG_STRUCTURED=false
+
+# ===================================================================
+# SCHEDULER CONFIGURATION
+# ===================================================================
+
+# Background Scheduler aktivieren
+SCHEDULER_ENABLED=true
+
+# Process Management Terminal aktivieren
+PROCESS_MANAGEMENT_TERMINAL=true
+
+# Enhanced Scheduler v2 Features
+ENHANCED_SCHEDULER=true
+
+# Parent Process Monitoring
+PARENT_PROCESS_MONITORING=true
+
+# Sign of Life Intervall (Sekunden)
+SIGN_OF_LIFE_INTERVAL=30
+
+# Scheduler Heartbeat Intervall (Sekunden)
+SCHEDULER_HEARTBEAT=60
+
+# ===================================================================
+# PERFORMANCE CONFIGURATION
+# ===================================================================
+
+# Request Pool Größe
+REQUEST_POOL_SIZE=10
+
+# Concurrent Downloads
+MAX_CONCURRENT_DOWNLOADS=5
+
+# Memory Limit für große Operationen (MB)
+MEMORY_LIMIT_MB=512
+
+# Cache Größe für API Responses
+API_CACHE_SIZE=1000
+
+# Cache TTL (Sekunden)
+API_CACHE_TTL=3600
+
+# ===================================================================
+# NOTIFICATION CONFIGURATION (OPTIONAL)
+# ===================================================================
+
+# Discord Webhook URL für Notifications
+DISCORD_WEBHOOK_URL=
+
+# Slack Webhook URL für Notifications
+SLACK_WEBHOOK_URL=
+
+# Email Notifications (true/false)
+EMAIL_NOTIFICATIONS=false
+
+# SMTP Server für Email
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=
+SMTP_PASSWORD=
+SMTP_FROM_EMAIL=
+
+# Notification Triggers
+NOTIFY_ON_NEW_DEALS=true
+NOTIFY_ON_PRICE_DROPS=true
+NOTIFY_ON_ERRORS=false
+
+# Deal Notification Threshold (Mindestrabatt %)
+DEAL_NOTIFICATION_THRESHOLD=50
+
+# ===================================================================
+# SECURITY CONFIGURATION
+# ===================================================================
+
+# API Key Verschlüsselung (true/false)
+ENCRYPT_API_KEYS=false
+
+# Encryption Key (32 Zeichen)
+ENCRYPTION_KEY=
+
+# Session Timeout (Minuten)
+SESSION_TIMEOUT=60
+
+# Rate Limiting für API Calls (Requests pro Minute)
+API_RATE_LIMIT=60
+
+# ===================================================================
+# DEVELOPMENT CONFIGURATION
+# ===================================================================
+
+# Debug Modus (true/false)
+DEBUG_MODE=false
+
+# Profiling aktivieren (true/false)
+PROFILING_ENABLED=false
+
+# Test Modus (true/false) 
+TEST_MODE=false
+
+# Mock API Responses (true/false)
+MOCK_API=false
+
+# Verbose Output (true/false)
+VERBOSE=false
+
+# ===================================================================
+# BACKUP CONFIGURATION
+# ===================================================================
+
+# Automatische Backups (true/false)
+AUTO_BACKUP=true
+
+# Backup Intervall (Stunden)
+BACKUP_INTERVAL_HOURS=24
+
+# Anzahl Backup Dateien aufbewahren
+BACKUP_RETENTION_COUNT=7
+
+# Backup Kompression (true/false)
+BACKUP_COMPRESSION=true
+
+# Remote Backup (S3, FTP, etc.)
+REMOTE_BACKUP_ENABLED=false
+REMOTE_BACKUP_URL=
+
+# ===================================================================
+# PROXY CONFIGURATION (OPTIONAL)
+# ===================================================================
+
+# HTTP Proxy
+HTTP_PROXY=
+
+# HTTPS Proxy  
+HTTPS_PROXY=
+
+# No Proxy Hosts (komma-getrennt)
+NO_PROXY=localhost,127.0.0.1
+
+# Proxy Authentication
+PROXY_USERNAME=
+PROXY_PASSWORD=
+
+# ===================================================================
+# ADVANCED CONFIGURATION
+# ===================================================================
+
+# Worker Threads für parallele Verarbeitung
+WORKER_THREADS=4
+
+# Batch Processing Chunk Size
+BATCH_CHUNK_SIZE=50
+
+# Retry Attempts für fehlgeschlagene Requests
+RETRY_ATTEMPTS=3
+
+# Retry Delay (Sekunden)
+RETRY_DELAY=5
+
+# Connection Pool Size
+CONNECTION_POOL_SIZE=20
+
+# User Agent für HTTP Requests
+USER_AGENT=SteamPriceTracker/3.0
+
+# ===================================================================
+# FEATURE FLAGS
+# ===================================================================
+
+# Experimentelle Features aktivieren
+EXPERIMENTAL_FEATURES=false
+
+# Beta Features aktivieren
+BETA_FEATURES=false
+
+# Legacy Kompatibilität (true/false)
+LEGACY_COMPATIBILITY=true
+
+# Advanced Analytics (true/false)
+ADVANCED_ANALYTICS=false
+
+# Machine Learning Features (true/false)
+ML_FEATURES=false
+
+# ===================================================================
+# MONITORING CONFIGURATION
+# ===================================================================
+
+# Health Check Endpoint aktivieren
+HEALTH_CHECK_ENABLED=true
+
+# Metrics Collection (true/false)
+METRICS_ENABLED=false
+
+# Prometheus Metrics (true/false)
+PROMETHEUS_METRICS=false
+
+# Metrics Port
+METRICS_PORT=8080
+
+# Status Page aktivieren
+STATUS_PAGE_ENABLED=false
+
+# ===================================================================
+# INTEGRATION CONFIGURATION
+# ===================================================================
+
+# Discord Bot Integration
+DISCORD_BOT_TOKEN=
+
+# Telegram Bot Integration
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+
+# IFTTT Integration
+IFTTT_WEBHOOK_KEY=
+
+# Zapier Webhook URL
+ZAPIER_WEBHOOK_URL=
+
+# ===================================================================
+# LOCALE & TIMEZONE
+# ===================================================================
+
+# Timezone
+TIMEZONE=Europe/Berlin
+
+# Locale
+LOCALE=de_DE.UTF-8
+
+# Währung
+CURRENCY=EUR
+
+# Datum Format
+DATE_FORMAT=%d.%m.%Y
+
+# Zeit Format
+TIME_FORMAT=%H:%M:%S
+
+# ===================================================================
+# BEISPIEL-KONFIGURATION FÜR PRODUKTION
+# ===================================================================
+
+# Für Produktionsumgebung empfohlene Werte:
+# STEAM_API_KEY=dein_echter_api_key
+# CHEAPSHARK_RATE_LIMIT=2.0
+# TRACKING_INTERVAL_HOURS=4
+# CHARTS_UPDATE_INTERVAL_HOURS=6
+# LOG_LEVEL=WARNING
+# AUTO_BACKUP=true
+# BACKUP_INTERVAL_HOURS=12

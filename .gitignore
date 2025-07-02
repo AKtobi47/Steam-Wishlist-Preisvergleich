@@ -81,5 +81,10 @@
 # !important-file.log
 # !build/specific-file.txt
 # !src/config/.env.example
-/backup_before_setup
+
 /temp_schedulers
+CHARTS_INTEGRATION_SUMMARY.md
+auto_integration_script.py
+setup_report.json
+/backup*
+/elasticsearch

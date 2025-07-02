@@ -1,5 +1,0 @@
-{
-  "title": "steam-price-snapshots*",
-  "timeFieldName": "timestamp",
-  "fields": "[{\"name\":\"@timestamp\",\"type\":\"date\",\"searchable\":true,\"aggregatable\":true},{\"name\":\"steam_app_id\",\"type\":\"string\",\"searchable\":true,\"aggregatable\":true},{\"name\":\"game_title\",\"type\":\"string\",\"searchable\":true,\"aggregatable\":false},{\"name\":\"game_title.keyword\",\"type\":\"string\",\"searchable\":true,\"aggregatable\":true},{\"name\":\"timestamp\",\"type\":\"date\",\"searchable\":true,\"aggregatable\":true},{\"name\":\"best_price\",\"type\":\"number\",\"searchable\":true,\"aggregatable\":true},{\"name\":\"best_store\",\"type\":\"string\",\"searchable\":true,\"aggregatable\":true},{\"name\":\"max_discount\",\"type\":\"number\",\"searchable\":true,\"aggregatable\":true},{\"name\":\"available_stores_count\",\"type\":\"number\",\"searchable\":true,\"aggregatable\":true}]"
-}

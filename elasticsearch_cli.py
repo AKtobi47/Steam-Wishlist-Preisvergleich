@@ -31,20 +31,14 @@ def cmd_setup(args):
         
         if result['success']:
             print("✅ Elasticsearch Setup erfolgreich!")
-            print(f"📊 Elasticsearch URL: {result['elasticsearch_url']}")
-            print(f"🔍 Kibana URL: http://{args.host}:5601")
-            print(f"📈 Exportierte Dokumente: {result['export_stats']['total_exported']}")
-            
-            # Index-Statistiken
-            print("\n📋 Index-Statistiken:")
-            for index_name, stats in result['index_stats'].items():
-                print(f"   • {index_name}: {stats['document_count']} Dokumente")
+            print(f"   📊 {result['indices_created']} Indizes erstellt")
+            print(f"   📋 {result['mappings_applied']} Mappings angewendet")
         else:
             print(f"❌ Setup fehlgeschlagen: {result['error']}")
             
-    except ImportError as e:
-        print(f"❌ Import-Fehler: {e}")
-        print("💡 Installiere Elasticsearch: pip install elasticsearch")
+    except ImportError:
+        print("❌ elasticsearch_manager Modul nicht gefunden")
+        print("💡 Installiere Elasticsearch: pip install -r requirements-elasticsearch.txt")
     except Exception as e:
         print(f"❌ Setup-Fehler: {e}")
 
