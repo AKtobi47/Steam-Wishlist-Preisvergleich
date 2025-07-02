@@ -32,7 +32,7 @@ try:
     from steam_charts_manager import CHART_TYPES
     SCHEDULER_CHART_TYPES = list(CHART_TYPES.keys())
 except ImportError:
-    SCHEDULER_CHART_TYPES = ['most_played', 'top_releases', 'best_of_year']
+    SCHEDULER_CHART_TYPES = ['most_played', 'top_releases', 'most_concurrent_players']
 
 # Logging Setup
 try:
@@ -393,7 +393,7 @@ class EnhancedSchedulerTasks:
         print("🔄 Starte Enhanced Steam Charts Update...")
         print(f"⏰ Start: {datetime.now().strftime('%H:%M:%S')}")
         
-        result = tracker.charts_manager.update_all_charts()
+        result = tracker.charts_manager.update_all_charts_batch()
         
         if result and result.get('success'):
             print(f"✅ Enhanced Charts-Update abgeschlossen:")

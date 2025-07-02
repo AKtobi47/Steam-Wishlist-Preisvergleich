@@ -24,7 +24,7 @@ try:
     VALID_CHART_TYPES = list(CHART_TYPES.keys())
 except ImportError:
     # Fallback falls steam_charts_manager nicht verfügbar
-    VALID_CHART_TYPES = ['most_played', 'top_releases', 'best_of_year']
+    VALID_CHART_TYPES = ['most_played', 'top_releases', 'most_concurrent_players']
     print("⚠️ steam_charts_manager nicht verfügbar - verwende Fallback Chart-Typen")
 
 # Logging Konfiguration
