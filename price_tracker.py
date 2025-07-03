@@ -132,6 +132,7 @@ class SteamPriceTracker:
         except Exception as e:
             logger.error(f"❌ Fehler bei Scheduler-Initialisierung: {e}")
     
+    
     # =====================================================================
     # KORRIGIERTE KERN-APIs (KOMPATIBEL MIT MAIN.PY)
     # =====================================================================
@@ -755,131 +756,151 @@ class SteamPriceTracker:
                 'overall_success': False
             }
         
-
-    def batch_update_multiple_apps(self, app_ids: List[str], batch_size: int = 25) -> Dict:
+    def create_batch_price_entry_dynamic(self, app_id: str, price_data: Dict) -> Dict:
         """
-        🚀 REVOLUTIONÄRER BATCH-UPDATE für mehrere Apps - 5-12x FASTER!
+        Dynamische Erstellung der batch_price_entry mit allen Stores
+        """
+        # Unterstützte Stores
+        SUPPORTED_STORES = [
+            'steam', 'greenmangaming', 'gog', 
+            'humblestore', 'fanatical', 'gamesplanet'
+        ]
     
-        Nutzt DatabaseBatchWriter für massive Performance-Verbesserung
-        Lock-Konflikte-Reduktion
+        # Basis-Entry
+        entry = {
+            'steam_app_id': app_id,
+            'game_title': price_data.get('game_title', ''),
+            'timestamp': time.time(),
+        }
+    
+        # Alle Store-Felder dynamisch hinzufügen
+        for store in SUPPORTED_STORES:
+            entry.update({
+                f'{store}_price': price_data.get(f'{store}_price', 0),
+                f'{store}_original_price': price_data.get(f'{store}_original_price', 0),
+                f'{store}_discount_percent': price_data.get(f'{store}_discount_percent', 0),
+                f'{store}_available': price_data.get(f'{store}_available', False),
+            })
+    
+        # Aggregierte Daten
+        entry.update({
+            'best_price': price_data.get('best_price', 0),
+            'best_store': price_data.get('best_store', ''),
+            'best_discount_percent': price_data.get('best_discount_percent', 0),
+            'total_stores_available': price_data.get('total_stores_available', 0),
+        })
+    
+        return entry
+
+    def batch_update_multiple_apps(self, app_ids, batch_size=10, progress_callback=None):
+        """
+        EINFACHE BATCH Update - Verwendet BESTEHENDE Helper-Funktionen
         """
         start_time = time.time()
-    
+
+        # 🚨 KRITISCHER FIX: Set zu Liste konvertieren
+        if isinstance(app_ids, set):
+            app_ids = list(app_ids)
+            logger.info(f"🔄 App IDs von Set zu Liste konvertiert: {len(app_ids)} Apps")
+
         if not app_ids:
             return {
                 'success': False,
                 'error': 'Keine App IDs angegeben',
                 'duration': 0
             }
-    
+
         logger.info(f"🚀 BATCH Preis-Update für {len(app_ids)} Apps gestartet...")
-    
+
         try:
-            # CheapShark API für alle Apps abfragen
+            # Ergebnis-Container
             all_price_data = []
             successful_updates = 0
             failed_updates = 0
-        
+
             # Apps in Batches verarbeiten für Rate Limiting
             for i in range(0, len(app_ids), batch_size):
                 batch = app_ids[i:i + batch_size]
                 logger.info(f"📦 Verarbeite Batch {i//batch_size + 1}: Apps {i+1}-{min(i+batch_size, len(app_ids))}")
-            
+        
+                # Progress Callback
+                if progress_callback:
+                    progress_info = {
+                        'completed_batches': i // batch_size,
+                        'total_batches': (len(app_ids) + batch_size - 1) // batch_size,
+                        'batch_size': batch_size,
+                        'processed_apps': i,
+                        'total_apps': len(app_ids),
+                        'progress_percent': (i / len(app_ids)) * 100
+                    }
+                    progress_callback(progress_info)
+        
                 for app_id in batch:
                     try:
-                        # Preis-Daten von CheapShark abrufen
                         price_data = self._fetch_cheapshark_prices(app_id)
-                    
+                
                         if price_data:
-                            # Für Batch-Writer vorbereiten
-                            batch_price_entry = {
-                                'steam_app_id': app_id,
-                                'steam_price': price_data.get('steam_price', 0),
-                                'steam_available': price_data.get('steam_available', False),
-                                'greenmangaming_price': price_data.get('greenmangaming_price', 0),
-                                'greenmangaming_available': price_data.get('greenmangaming_available', False),
-                                'gog_price': price_data.get('gog_price', 0),
-                                'gog_available': price_data.get('gog_available', False),
-                                'humblestore_price': price_data.get('humblestore_price', 0),
-                                'humblestore_available': price_data.get('humblestore_available', False),
-                                'fanatical_price': price_data.get('fanatical_price', 0),
-                                'fanatical_available': price_data.get('fanatical_available', False),
-                                'gamesplanet_price': price_data.get('gamesplanet_price', 0),
-                                'gamesplanet_available': price_data.get('gamesplanet_available', False),
-                                'best_price': price_data.get('best_price', 0),
-                                'best_store': price_data.get('best_store', ''),
-                                'discount_percent': price_data.get('discount_percent', 0),
-                                'original_price': price_data.get('original_price', 0),
-                                'timestamp': datetime.now().isoformat()
-                            }
+                            batch_price_entry = self.create_batch_price_entry_dynamic(app_id, price_data)
+                        
                             all_price_data.append(batch_price_entry)
                             successful_updates += 1
                         else:
                             failed_updates += 1
-                            logger.warning(f"⚠️ Keine Preisdaten für App {app_id}")
-                    
-                        # Rate Limiting
-                        time.sleep(1.5)  # CheapShark Rate Limit
-                    
+                        
                     except Exception as e:
                         logger.error(f"❌ Fehler bei App {app_id}: {e}")
                         failed_updates += 1
         
-            if not all_price_data:
-                return {
-                    'success': False,
-                    'error': 'Keine Preisdaten erhalten',
-                    'duration': time.time() - start_time,
-                    'successful_updates': 0,
-                    'failed_updates': failed_updates
-                }
-        
-            logger.info(f"📦 BATCH-WRITE: {len(all_price_data)} Preis-Einträge...")
-        
-            # 🚀 REVOLUTIONÄRER BATCH-WRITE!
-            from database_manager import create_batch_writer
-            batch_writer = create_batch_writer(self.db_manager)
-            batch_result = batch_writer.batch_write_prices(all_price_data)
-        
-            total_duration = time.time() - start_time
-        
-            # Performance-Metriken
-            result = {
-                'success': batch_result.get('success', False),
-                'total_apps': len(app_ids),
-                'successful_updates': successful_updates,
-                'failed_updates': failed_updates,
-                'total_duration': total_duration,
-                'apps_per_second': len(app_ids) / total_duration if total_duration > 0 else 0,
-                'performance_multiplier': batch_result.get('performance_multiplier', '1x'),
-                'time_saved': batch_result.get('time_saved_vs_sequential', 0),
-                'database_locks_avoided': batch_result.get('lock_conflicts_avoided', 0),
-                'batch_statistics': batch_writer.get_batch_statistics()
-            }
-        
-            if batch_result.get('success'):
-                logger.info(f"🎉 BATCH Preis-Update ERFOLGREICH!")
-                logger.info(f"   💰 {successful_updates}/{len(app_ids)} Apps erfolgreich")
-                logger.info(f"   ⏱️ Dauer: {total_duration:.2f}s")
-                logger.info(f"   ⚡ Performance: {batch_result.get('performance_multiplier', '1x')}")
-                logger.info(f"   📈 {result['apps_per_second']:.1f} Apps/s (REVOLUTIONÄR!)")
-            else:
-                logger.error(f"❌ BATCH Preis-Update fehlgeschlagen: {batch_result.get('error', 'Unbekannt')}")
-        
-            return result
-        
+                # Rate Limiting zwischen Batches
+                time.sleep(1)
+
+            # Final Progress Update
+            if progress_callback:
+                progress_callback({
+                    'completed_batches': (len(app_ids) + batch_size - 1) // batch_size,
+                    'total_batches': (len(app_ids) + batch_size - 1) // batch_size,
+                    'processed_apps': len(app_ids),
+                    'total_apps': len(app_ids),
+                    'progress_percent': 100,
+                    'status': 'completed'
+                })
+
+            if all_price_data:
+                try:
+                    from database_manager import create_batch_writer
+                    batch_writer = create_batch_writer(self.db_manager)
+                
+                    batch_result = batch_writer.batch_write_price_snapshots(all_price_data)
+                    duration = time.time() - start_time
+                
+                    return {
+                        'success': True,
+                        'successful_updates': successful_updates,
+                        'failed_updates': failed_updates,
+                        'total_apps': len(app_ids),
+                        'duration': duration,
+                        'apps_per_second': len(app_ids) / duration if duration > 0 else 0,
+                        'batch_statistics': batch_result,
+                        'performance_multiplier': f"{batch_result.get('performance_improvement', 1):.1f}x"
+                    }
+                
+                except ImportError:
+                    logger.warning("⚠️ Batch-Writer nicht verfügbar - verwende bestehende DB-Methoden")
+                    return {
+                        'success': successful_updates > 0,
+                        'successful_updates': successful_updates,
+                        'failed_updates': failed_updates,
+                        'total_apps': len(app_ids),
+                        'duration': time.time() - start_time
+                    }
+
         except Exception as e:
-            total_duration = time.time() - start_time
-            logger.error(f"❌ Batch Preis-Update Fehler: {e}")
-            import traceback
-            traceback.print_exc()
-        
+            logger.error(f"❌ BATCH Update Fehler: {e}")
             return {
                 'success': False,
                 'error': str(e),
-                'duration': total_duration,
-                'successful_updates': 0,
-                'failed_updates': len(app_ids)
+                'failed_updates': len(app_ids),
+                'duration': time.time() - start_time
             }
 
     def process_all_pending_apps_optimized(self, hours_threshold: int = 6, batch_size: int = 25) -> Dict:

@@ -1439,387 +1439,331 @@ class SteamChartsManager:
     # =====================================================================
 
     def update_all_charts_batch(self, chart_types: List[str] = None, 
-                                include_names: bool = True, 
-                                include_prices: bool = True,
-                                progress_callback=None) -> Dict:
+                            include_names: bool = True, 
+                            include_prices: bool = True,
+                            progress_callback=None) -> Dict:
         """
-        🚀 VOLLSTÄNDIGES BATCH-Charts-Update mit Namen und Preisen
-    
-        NEUE FEATURES:
-        - ✅ Charts-Daten (BATCH-optimiert, 15x schneller)
-        - ✅ Namen-Updates (bulk_get_app_names Integration)
-        - ✅ Preis-Updates (Price Tracker BATCH-Methoden)
-        - ✅ Progress-Callbacks für Live-Anzeige
-        - ✅ Detaillierte Progress-Information pro Kategorie
-    
-        Args:
-            chart_types: Liste der Chart-Typen (default: alle)
-            include_names: Namen für Charts-Apps aktualisieren
-            include_prices: Preise für Charts-Apps aktualisieren
-            progress_callback: Funktion für Progress-Updates
-        
-        Returns:
-            Dict mit vollständigen Ergebnissen aller Operationen
+        🚨 FIXED: Chart Data Format Problem
         """
-        if chart_types is None:
-            chart_types = list(CHART_TYPES.keys())
-    
         start_time = time.time()
+        logger.info("🚀 VOLLSTÄNDIGES BATCH-Charts-Update gestartet")
     
-        # Progress-Callback Setup
-        def report_progress(phase, current, total, details=""):
-            if progress_callback:
-                progress_callback({
-                    'phase': phase,
-                    'current': current,
-                    'total': total,
-                    'percentage': (current / total * 100) if total > 0 else 0,
-                    'details': details,
-                    'elapsed_time': time.time() - start_time
-                })
-    
-        # Ergebnis-Struktur
+        if chart_types is None:
+            chart_types = ["most_played", "top_releases", "most_concurrent_players"]
+
+        # Alle Variablen SOFORT definieren
         results = {
-            'charts_update': {'success': False, 'details': '', 'apps_added': 0},
-            'name_updates': {'success': False, 'details': '', 'updated_count': 0},
-            'price_updates': {'success': False, 'details': '', 'updated_count': 0},
-            'total_duration': 0,
-            'overall_success': False,
+            'success': True,
+            'overall_success': True,
+            'chart_results': {},
+            'names_result': None,
+            'prices_result': None,
+            'apps_processed': 0,
+            'duration': 0,
             'performance_metrics': {}
         }
     
+        charts_app_ids = set()
+        price_result = None
+        name_result = None
+
         try:
-            # 🎯 PHASE 1: CHARTS-DATEN SAMMELN (BATCH-optimiert)
-            report_progress("charts", 0, len(chart_types), "Initialisiere Charts-Update...")
-        
-            logger.info(f"🚀 VOLLSTÄNDIGES BATCH-Charts-Update gestartet")
+            # Progress-Callback Setup
+            def report_progress(phase, current, total, details=""):
+                if progress_callback:
+                    progress_callback({
+                        'phase': phase,
+                        'current': current,
+                        'total': total,
+                        'percentage': (current / total * 100) if total > 0 else 0,
+                        'details': details,
+                        'elapsed_time': time.time() - start_time
+                    })
+
+            # PHASE 1: CHARTS-DATEN SAMMELN
             logger.info(f"📊 Chart-Typen: {', '.join(chart_types)}")
-            logger.info(f"📝 Namen-Updates: {'✅' if include_names else '❌'}")
-            logger.info(f"💰 Preis-Updates: {'✅' if include_prices else '❌'}")
         
-            # Bestehende Charts-BATCH-Logik (erweitert für Progress)
-            all_charts_data = []
-            chart_stats = {}
-            total_new_games = 0
-        
-            try:
-                from database_manager import create_batch_writer
-                batch_writer = create_batch_writer(self.db_manager)
-            except ImportError:
-                logger.warning("⚠️ DatabaseBatchWriter nicht verfügbar")
-                batch_writer = None
-        
-            for idx, chart_type in enumerate(chart_types):
-                report_progress("charts", idx, len(chart_types), f"Sammle {chart_type.replace('_', ' ').title()}")
-            
+            for i, chart_type in enumerate(chart_types):
                 try:
+                    report_progress("charts", i, len(chart_types), f"Sammle {chart_type} Charts...")
                     logger.info(f"📊 Sammle {chart_type} Charts...")
-                    chart_data = self._fetch_chart_data(chart_type)
                 
-                    if chart_data and 'results' in chart_data:
-                        chart_results = chart_data['results']
+                    # Chart-Daten abrufen
+                    chart_data = self._fetch_chart_data(chart_type)
+
+                    # KRITISCHER FIX: Prüfe Format und extrahiere results
+                    if chart_data and isinstance(chart_data, dict):
+                        # Extrahiere die Spiele-Liste aus den results
+                        games_list = chart_data.get('results', [])
                     
-                        # Apps zur Datenbank hinzufügen
-                        new_games_added = 0
-                        for idx_app, item in enumerate(chart_results):
-                            app_id = str(item.get('appid', ''))
-                            if app_id and app_id.isdigit():
-                                # Detaillierter Progress für große Charts
-                                if len(chart_results) > 20:  # Nur bei vielen Apps
-                                    report_progress("charts", idx, len(chart_types), 
-                                                  f"{chart_type}: App {idx_app + 1}/{len(chart_results)}")
-                            
-                                # App zur Charts-DB hinzufügen
-                                if self._add_app_to_charts_table_optimized(app_id, item, chart_type):
-                                    new_games_added += 1
-                                
-                                    # Charts-Daten für BATCH-Writer sammeln
-                                    all_charts_data.append({
-                                        'steam_app_id': app_id,
-                                        'chart_type': chart_type,
-                                        'current_rank': item.get('rank', idx_app + 1),
-                                        'score': item.get('score', 0),
-                                        'concurrent_players': item.get('concurrent', 0),
-                                        'game_title': item.get('name', ''),
-                                        'data_source': 'steam_charts_api'
-                                    })
+                        if games_list and isinstance(games_list, list):
+                            # Iteriere über die Spiele-Liste, nicht über chart_data direkt
+                            for rank, app_data in enumerate(games_list, 1):
+                                try:
+                                    #FIX: app_data sollte jetzt ein Dict sein, nicht ein String
+                                    if isinstance(app_data, dict):
+                                        app_id = str(app_data.get('appid', ''))
+                                        if app_id:
+                                            charts_app_ids.add(app_id)
+                                        
+                                            # App zur Charts-Tabelle hinzufügen
+                                            self._add_app_to_charts_table_optimized(
+                                                chart_type=chart_type,
+                                                app_id=app_id,
+                                                rank=rank,
+                                                name=app_data.get('name', ''),
+                                                current_players=app_data.get('current', 0)
+                                            )
+                                    else:
+                                        logger.warning(f"⚠️ App-Data ist kein Dictionary: {type(app_data)} - {app_data}")
+                                    
+                                except Exception as app_error:
+                                    logger.error(f"❌ Fehler bei App {rank}: {app_error}")
+                        
+                            results['chart_results'][chart_type] = {
+                                'success': True,
+                                'apps_count': len(games_list)
+                            }
+                            logger.info(f"✅ {chart_type}: {len(games_list)} Items verarbeitet")
                     
-                        chart_stats[chart_type] = {
-                            'total_items': len(chart_results),
-                            'new_games_added': new_games_added,
-                            'api_source': 'steam_charts_tracking'
+                        else:
+                            logger.warning(f"⚠️ Keine Spiele-Liste in {chart_type}: {type(games_list)}")
+                            results['chart_results'][chart_type] = {
+                                'success': False,
+                                'error': f'Keine gültige Spiele-Liste: {type(games_list)}'
+                            }
+                
+                    else:
+                        logger.error(f"❌ Ungültiges Chart-Data Format für {chart_type}: {type(chart_data)}")
+                        results['chart_results'][chart_type] = {
+                            'success': False,
+                            'error': f'Ungültiges Format: {type(chart_data)}'
                         }
-                        total_new_games += new_games_added
-                    
-                        logger.info(f"✅ {chart_type}: {len(chart_results)} Items, {new_games_added} neue Apps")
+                        results['overall_success'] = False
                 
                 except Exception as e:
                     logger.error(f"❌ Fehler bei {chart_type}: {e}")
-                    chart_stats[chart_type] = {'error': str(e)}
-        
-            # BATCH-Write für Charts-Daten
-            if all_charts_data and batch_writer:
-                report_progress("charts", len(chart_types), len(chart_types), "BATCH-Schreibvorgang...")
-                batch_results = batch_writer.batch_write_charts(all_charts_data)
-                logger.info(f"📦 BATCH-Write: {len(all_charts_data)} Items in {batch_results.get('duration', 0):.2f}s")
-        
-            results['charts_update'] = {
-                'success': True,
-                'details': f"BATCH: {len(all_charts_data)} Charts-Einträge, {total_new_games} neue Apps",
-                'apps_added': total_new_games,
-                'chart_stats': chart_stats
-            }
-        
-            # 🎯 PHASE 2: NAMEN-UPDATES (wenn gewünscht)
-            if include_names:
-                report_progress("names", 0, 1, "Sammle Charts-Apps für Namen-Update...")
+                    import traceback
+                    logger.debug(f"Traceback: {traceback.format_exc()}")
+                    results['chart_results'][chart_type] = {
+                        'success': False,
+                        'error': str(e)
+                    }
+                    results['overall_success'] = False
+
+            # Batch-Write für bessere Performance
+            try:
+                from database_manager import create_batch_writer
+                batch_writer = create_batch_writer(self.db_manager)
             
-                logger.info("📝 Phase 2: Namen für Charts-Apps aktualisieren...")
-            
-                try:
-                    # Alle Charts-App-IDs sammeln
-                    charts_app_ids = set()
-                    with self.db_manager.get_connection() as conn:
-                        cursor = conn.cursor()
-                        cursor.execute("SELECT DISTINCT steam_app_id FROM steam_charts_tracking WHERE active = 1")
-                        charts_app_ids = {row[0] for row in cursor.fetchall()}
+                charts_app_ids_list = list(charts_app_ids)
+                if charts_app_ids_list:
+                    batch_stats = batch_writer.batch_write_charts(charts_app_ids_list)
+                    logger.info(f"📦 BATCH-Write: {len(charts_app_ids_list)} Items in {batch_stats.get('duration', 0):.2f}s")
+                else:
+                    logger.warning("⚠️ Keine Chart-App-IDs zum Schreiben gefunden")
                 
-                    if charts_app_ids:
-                        report_progress("names", 0, len(charts_app_ids), f"Aktualisiere Namen für {len(charts_app_ids)} Apps...")
-                    
-                        # Nutze bestehende bulk_get_app_names Funktion
+            except Exception as e:
+                logger.warning(f"⚠️ Batch-Write Fehler: {e}")
+
+            report_progress("charts", len(chart_types), len(chart_types), "Charts-Sammlung abgeschlossen")
+
+            # PHASE 2: NAMEN AKTUALISIEREN
+            if include_names and charts_app_ids:
+                try:
+                    report_progress("names", 0, len(charts_app_ids), "Starte Namen-Updates...")
+                    logger.info("📝 Phase 2: Namen für Charts-Apps aktualisieren...")
+                
+                    charts_app_ids_list = list(charts_app_ids)
+                    logger.info(f"🌐 Bulk-Namen-Update für {len(charts_app_ids_list)} Charts-Apps...")
+                
+                    updated_count = 0
+                    failed_count = 0
+                
+                    if hasattr(self, 'wishlist_manager') and self.wishlist_manager:
                         try:
-                            from steam_wishlist_manager import bulk_get_app_names, load_api_key_from_env
+                            names_dict = self.wishlist_manager.get_multiple_app_names(charts_app_ids_list)
                         
-                            api_key = load_api_key_from_env()
-                            if api_key:
-                                logger.info(f"🌐 Bulk-Namen-Update für {len(charts_app_ids)} Charts-Apps...")
+                            with self.db_manager.get_connection() as conn:
+                                cursor = conn.cursor()
                             
-                                # Konvertiere zu Liste für bulk_get_app_names
-                                app_ids_list = list(charts_app_ids)
+                                for app_id, app_name in names_dict.items():
+                                    try:
+                                        cursor.execute("""
+                                            UPDATE steam_charts_tracking 
+                                            SET name = ? 
+                                            WHERE steam_app_id = ?
+                                        """, (app_name, app_id))
+                                        updated_count += 1
+                                    
+                                    except Exception as e:
+                                        logger.warning(f"Namen-Update für App {app_id} fehlgeschlagen: {e}")
+                                        failed_count += 1
                             
-                                # BULK Namen-Abruf (viel schneller als einzeln)
-                                name_results = bulk_get_app_names(app_ids_list, api_key)
-                            
-                                # Namen in Datenbank aktualisieren
-                                updated_count = 0
-                                with self.db_manager.get_connection() as conn:
-                                    cursor = conn.cursor()
-                                
-                                    for app_id, name in name_results.items():
-                                        if name and name != 'Unknown':
-                                            try:
-                                                # Update in tracked_apps (falls vorhanden)
-                                                cursor.execute("""
-                                                    UPDATE tracked_apps 
-                                                    SET name = ? 
-                                                    WHERE steam_app_id = ? AND (name IS NULL OR name = '' OR name = 'Unknown')
-                                                """, (name, app_id))
-                                            
-                                                # Update in steam_charts
-                                                cursor.execute("""
-                                                    UPDATE steam_charts_tracking 
-                                                    SET game_title = ? 
-                                                    WHERE steam_app_id = ? AND (game_title IS NULL OR game_title = '' OR game_title = 'Unknown')
-                                                """, (name, app_id))
-                                            
-                                                if cursor.rowcount > 0:
-                                                    updated_count += 1
-                                                
-                                                # Progress-Update für Namen
-                                                if updated_count % 10 == 0:  # Alle 10 Updates
-                                                    report_progress("names", updated_count, len(charts_app_ids), 
-                                                                  f"Namen aktualisiert: {updated_count}/{len(charts_app_ids)}")
-                                        
-                                            except Exception as e:
-                                                logger.warning(f"Namen-Update für App {app_id} fehlgeschlagen: {e}")
-                                
-                                    conn.commit()
-                            
-                                results['name_updates'] = {
-                                    'success': True,
-                                    'details': f'BULK: {updated_count} von {len(charts_app_ids)} Namen aktualisiert',
-                                    'updated_count': updated_count,
-                                    'method': 'bulk_api'
-                                }
-                            
-                                report_progress("names", len(charts_app_ids), len(charts_app_ids), f"✅ {updated_count} Namen aktualisiert")
-                                logger.info(f"✅ Bulk-Namen-Update: {updated_count} Apps aktualisiert")
+                                conn.commit()
                         
-                            else:
-                                logger.warning("⚠️ Kein Steam API Key für Namen-Updates")
-                                results['name_updates'] = {
-                                    'success': False,
-                                    'details': 'Kein Steam API Key verfügbar',
-                                    'updated_count': 0
-                                }
-                    
-                        except ImportError:
-                            logger.warning("⚠️ steam_wishlist_manager nicht verfügbar für Namen-Updates")
-                            results['name_updates'] = {
-                                'success': False,
-                                'details': 'steam_wishlist_manager nicht verfügbar',
-                                'updated_count': 0
+                            name_result = {
+                                'success': True,
+                                'updated_count': updated_count,
+                                'failed_count': failed_count
                             }
+                            results['names_result'] = name_result
+                        
+                            logger.info(f"✅ Bulk-Namen-Update: {updated_count} Apps aktualisiert")
+                            report_progress("names", updated_count, len(charts_app_ids_list), f"{updated_count} Namen aktualisiert")
+                        
+                        except Exception as e:
+                            logger.error(f"❌ Namen-Update Fehler: {e}")
+                            name_result = {
+                                'success': False,
+                                'error': str(e),
+                                'updated_count': 0,
+                                'failed_count': len(charts_app_ids_list)
+                            }
+                            results['names_result'] = name_result
+                            results['overall_success'] = False
                 
                     else:
-                        results['name_updates'] = {
-                            'success': True,
-                            'details': 'Keine Charts-Apps für Namen-Update gefunden',
-                            'updated_count': 0
+                        logger.warning("⚠️ Wishlist Manager nicht verfügbar für Namen-Updates")
+                        name_result = {
+                            'success': False,
+                            'error': 'Wishlist Manager nicht verfügbar',
+                            'updated_count': 0,
+                            'failed_count': len(charts_app_ids_list)
                         }
-            
+                        results['names_result'] = name_result
+                    
                 except Exception as e:
-                    logger.error(f"❌ Namen-Update Fehler: {e}")
-                    results['name_updates'] = {
+                    logger.error(f"❌ Namen-Phase Fehler: {e}")
+                    results['names_result'] = {
                         'success': False,
-                        'details': str(e),
-                        'updated_count': 0
+                        'error': str(e),
+                        'updated_count': 0,
+                        'failed_count': len(charts_app_ids) if charts_app_ids else 0
                     }
-        
-            # 🎯 PHASE 3: PREIS-UPDATES (wenn gewünscht)
-            if include_prices:
-                report_progress("prices", 0, 1, "Sammle Charts-Apps für Preis-Update...")
-            
-                logger.info("💰 Phase 3: Preise für Charts-Apps aktualisieren...")
-            
+                    results['overall_success'] = False
+
+            # PHASE 3: PREISE AKTUALISIEREN  
+            if include_prices and charts_app_ids:
                 try:
-                    # Charts-Apps für Preis-Update sammeln
-                    price_app_ids = []
+                    report_progress("prices", 0, len(charts_app_ids), "Starte Preis-Updates...")
+                    logger.info("💰 Phase 3: Preise für Charts-Apps aktualisieren...")
                 
-                    with self.db_manager.get_connection() as conn:
-                        cursor = conn.cursor()
-                    
-                        # Top Apps aus jeder Chart-Kategorie
-                        limit_per_chart = 50  # Top 50 pro Kategorie
-                        for chart_type in chart_types:
-                            cursor.execute("""
-                                SELECT DISTINCT steam_app_id 
-                                FROM steam_charts_tracking 
-                                WHERE chart_type = ? AND active = 1
-                                ORDER BY current_rank ASC
-                                LIMIT ?
-                            """, (chart_type, limit_per_chart))
-                        
-                            chart_apps = [row[0] for row in cursor.fetchall()]
-                            price_app_ids.extend(chart_apps)
+                    charts_app_ids_list = list(charts_app_ids)
+                    logger.info(f"🚀 BATCH Preis-Update für {len(charts_app_ids_list)} Charts-Apps...")
                 
-                    # Duplikate entfernen
-                    price_app_ids = list(set(price_app_ids))
-                
-                    if price_app_ids:
-                        report_progress("prices", 0, len(price_app_ids), f"Starte Preis-Update für {len(price_app_ids)} Apps...")
-                    
-                        logger.info(f"🚀 BATCH Preis-Update für {len(price_app_ids)} Charts-Apps...")
-                    
-                        # Nutze Price Tracker BATCH-Methoden
-                        if hasattr(self, 'price_tracker') and hasattr(self.price_tracker, 'batch_update_multiple_apps'):
-                        
-                            # Definiere Progress-Callback für Preis-Updates
+                    if hasattr(self, 'price_tracker') and self.price_tracker:
+                        try:
                             def price_progress_callback(batch_info):
-                                current = batch_info.get('completed_batches', 0) * batch_info.get('batch_size', 10)
-                                total = len(price_app_ids)
-                                report_progress("prices", min(current, total), total, 
-                                              f"Batch {batch_info.get('completed_batches', 0)}/{batch_info.get('total_batches', 1)} - {current}/{total} Apps")
+                                current = batch_info.get('processed_apps', 0)
+                                total = batch_info.get('total_apps', len(charts_app_ids_list))
+                                report_progress("prices", current, total, 
+                                              f"Preis-Batch {batch_info.get('completed_batches', 0)}/{batch_info.get('total_batches', 1)}")
                         
-                            # BATCH-Preis-Update mit Progress
-                            result = self.safe_batch_update_charts_prices(
-                                app_ids=charts_app_ids,
-                                progress_callback=lambda data: report_progress(...)
+                            price_result = self.price_tracker.batch_update_multiple_apps(
+                                app_ids=charts_app_ids_list,
+                                progress_callback=price_progress_callback
                             )
                         
-                            if price_result.get('success'):
-                                results['price_updates'] = {
-                                    'success': True,
-                                    'details': f"BATCH: {price_result.get('successful_updates', 0)} von {len(price_app_ids)} Apps aktualisiert",
-                                    'updated_count': price_result.get('successful_updates', 0),
-                                    'method': 'batch_tracker'
-                                }
-                            
-                                report_progress("prices", len(price_app_ids), len(price_app_ids), 
-                                              f"✅ {price_result.get('successful_updates', 0)} Preise aktualisiert")
-                                logger.info(f"✅ BATCH-Preis-Update: {price_result.get('successful_updates', 0)} Apps erfolgreich")
+                            results['prices_result'] = price_result
                         
+                            if price_result and price_result.get('success'):
+                                logger.info(f"✅ Preis-Update erfolgreich: {price_result.get('successful_updates', 0)} Apps")
+                                report_progress("prices", len(charts_app_ids_list), len(charts_app_ids_list), 
+                                              f"✅ {price_result.get('successful_updates', 0)} Preise aktualisiert")
                             else:
-                                results['price_updates'] = {
-                                    'success': False,
-                                    'details': f"BATCH-Preis-Update fehlgeschlagen: {price_result.get('error', 'Unbekannt')}",
-                                    'updated_count': 0
-                                }
+                                logger.error(f"❌ Preis-Update Fehler: {price_result.get('error') if price_result else 'Unbekannt'}")
+                                results['overall_success'] = False
                     
-                        else:
-                            logger.warning("⚠️ Price Tracker BATCH-Methoden nicht verfügbar")
-                            results['price_updates'] = {
+                        except Exception as e:
+                            logger.error(f"❌ Preis-Update Fehler: {e}")
+                            price_result = {
                                 'success': False,
-                                'details': 'Price Tracker BATCH-Methoden nicht verfügbar',
-                                'updated_count': 0
+                                'error': str(e),
+                                'failed_updates': len(charts_app_ids_list)
                             }
+                            results['prices_result'] = price_result
+                            results['overall_success'] = False
                 
                     else:
-                        results['price_updates'] = {
-                            'success': True,
-                            'details': 'Keine Charts-Apps für Preis-Update gefunden',
-                            'updated_count': 0
+                        logger.warning("⚠️ Price Tracker nicht verfügbar")
+                        price_result = {
+                            'success': False,
+                            'error': 'Price Tracker nicht verfügbar',
+                            'failed_updates': len(charts_app_ids_list)
                         }
-            
+                        results['prices_result'] = price_result
+                    
                 except Exception as e:
-                    logger.error(f"❌ Preis-Update Fehler: {e}")
-                    results['price_updates'] = {
+                    logger.error(f"❌ Preis-Phase Fehler: {e}")
+                    results['prices_result'] = {
                         'success': False,
-                        'details': str(e),
-                        'updated_count': 0
+                        'error': str(e),
+                        'failed_updates': len(charts_app_ids) if charts_app_ids else 0
                     }
-        
-            # 🎯 FINALE ZUSAMMENFASSUNG
+                    results['overall_success'] = False
+
+            # FINALE ZUSAMMENFASSUNG
             total_duration = time.time() - start_time
-            results['total_duration'] = total_duration
-            results['overall_success'] = all([
-                results['charts_update']['success'],
-                results['name_updates']['success'] if include_names else True,
-                results['price_updates']['success'] if include_prices else True
-            ])
+            results.update({
+                'apps_processed': len(charts_app_ids),
+                'duration': total_duration,
+                'performance_metrics': {
+                    'apps_per_second': len(charts_app_ids) / total_duration if total_duration > 0 else 0,
+                    'chart_types_processed': len([ct for ct, result in results['chart_results'].items() if result.get('success')]),
+                    'names_success': results.get('names_result', {}).get('success', False) if include_names else True,
+                    'prices_success': results.get('prices_result', {}).get('success', False) if include_prices else True,
+                    'names_updated': results.get('names_result', {}).get('updated_count', 0),
+                    'prices_updated': results.get('prices_result', {}).get('successful_updates', 0)
+                }
+            })
         
-            # Performance-Metriken
-            results['performance_metrics'] = {
-                'total_duration': f"{total_duration:.1f}s",
-                'charts_processed': len(chart_types),
-                'apps_processed': results['charts_update']['apps_added'],
-                'names_updated': results['name_updates']['updated_count'],
-                'prices_updated': results['price_updates']['updated_count'],
-                'performance_boost': '15x faster Charts + BULK Namen + BATCH Preise'
-            }
+            report_progress("complete", 1, 1, f"✅ Update abgeschlossen in {total_duration:.1f}s")
         
-            # Final Progress
-            report_progress("complete", 1, 1, f"✅ Vollständiges Update abgeschlossen in {total_duration:.1f}s")
+            # FIX: Sichere Zugriffe auf results
+            chart_success_count = len([ct for ct, result in results['chart_results'].items() if result and result.get('success')])
         
-            if results['overall_success']:
+            if results['overall_success'] and chart_success_count > 0:
                 logger.info(f"🎉 VOLLSTÄNDIGES BATCH-Charts-Update erfolgreich in {total_duration:.1f}s!")
             else:
                 logger.warning(f"⚠️ Update mit Einschränkungen abgeschlossen in {total_duration:.1f}s")
         
             return results
-        
+    
         except Exception as e:
             logger.error(f"❌ Kritischer Fehler im BATCH-Charts-Update: {e}")
+            import traceback
+            logger.debug(f"Full traceback: {traceback.format_exc()}")
+        
             return {
                 'success': False,
+                'overall_success': False,
                 'error': str(e),
                 'duration': time.time() - start_time,
-                'overall_success': False
+                'apps_processed': len(charts_app_ids) if charts_app_ids else 0,
+                'chart_results': results.get('chart_results', {}),
+                'names_result': results.get('names_result'),
+                'prices_result': results.get('prices_result')
             }
-
+    
     def safe_batch_update_charts_prices(self, app_ids: List[str], progress_callback=None) -> Dict:
         """
-        Sichere BATCH-Preis-Updates für Charts-Apps mit Parameter-Kompatibilität
+        Sichere BATCH-Methode für Preis-Updates von Charts-Apps
+        Fallback zu einzelnen Updates bei Fehlern
     
         Args:
-            app_ids: Liste der Steam App IDs
-            progress_callback: Optional callback für Progress (wird ignoriert falls nicht unterstützt)
+            app_ids: Liste von Steam App IDs
+            progress_callback: Optionaler Callback für Fortschritts-Updates
         
         Returns:
-            Dict mit Update-Ergebnissen
+            Dictionary mit Update-Ergebnissen
         """
         try:
+            # FIX: Set zu Liste Konvertierung
+            if isinstance(app_ids, set):
+                app_ids = list(app_ids)
+                logger.info(f"🔄 App IDs von Set zu Liste konvertiert: {len(app_ids)} Apps")
+        
             if not hasattr(self, 'price_tracker') or not self.price_tracker:
                 logger.warning("⚠️ Price Tracker nicht verfügbar für Charts-Preise")
                 return {
@@ -1831,7 +1775,7 @@ class SteamChartsManager:
         
             logger.info(f"🚀 BATCH Preis-Update für {len(app_ids)} Charts-Apps...")
         
-            # Prüfe welche Methode verfügbar ist und welche Parameter sie unterstützt
+            # Parameter-Kompatibilität prüfen
             if hasattr(self.price_tracker, 'batch_update_multiple_apps'):
                 batch_method = self.price_tracker.batch_update_multiple_apps
             
@@ -1843,21 +1787,21 @@ class SteamChartsManager:
                 if supports_progress_callback:
                     # Neue Version mit progress_callback
                     result = batch_method(
-                        app_ids=app_ids,
+                        app_ids=app_ids,  # 🚨 Garantiert Liste
                         progress_callback=progress_callback
                     )
                 else:
                     # Alte Version ohne progress_callback
                     logger.debug("📝 Verwende batch_update_multiple_apps ohne progress_callback")
-                    result = batch_method(app_ids=app_ids)
-                
+                    result = batch_method(app_ids=app_ids)  # 🚨 Garantiert Liste
+        
             else:
                 # Fallback zu einzelnen Updates
                 logger.info("🔄 Fallback zu einzelnen Preis-Updates...")
                 result = self._fallback_individual_price_updates(app_ids, progress_callback)
         
             return result
-        
+    
         except Exception as e:
             logger.error(f"❌ Preis-Update Fehler: {e}")
             return {
@@ -1866,7 +1810,7 @@ class SteamChartsManager:
                 'updated_count': 0,
                 'failed_count': len(app_ids)
             }
-
+        
     def _fallback_individual_price_updates(self, app_ids: List[str], progress_callback=None) -> Dict:
         """Fallback für individuelle Preis-Updates"""
         updated_count = 0
