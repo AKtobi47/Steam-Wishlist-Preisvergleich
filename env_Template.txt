@@ -743,6 +743,44 @@ CONNECTION_POOL_SIZE=20
 # User Agent für HTTP Requests
 USER_AGENT=SteamPriceTracker/3.0
 
+# ==========================================
+# STEAM PRICE TRACKER - MENÜ KONFIGURATION
+# ==========================================
+
+# Beschreibungen anzeigen (true/false)
+SHOW_MENU_DESCRIPTIONS=true
+
+# Kategorie-Beschreibungen anzeigen (true/false)
+SHOW_CATEGORY_DESCRIPTIONS=true
+
+# Option-Beschreibungen anzeigen (true/false) 
+SHOW_OPTION_DESCRIPTIONS=true
+
+# Menü-Stil (standard/compact/detailed)
+MENU_STYLE=standard
+
+# Symbol für Beschreibungen
+MENU_DESCRIPTION_SYMBOL=⨠
+
+# Einrückung für Beschreibungen (Anzahl Leerzeichen)
+MENU_DESCRIPTION_INDENT=6
+
+# Debug-Informationen anzeigen (true/false)
+SHOW_MENU_DEBUG=false
+
+# ==========================================
+# WEITERE MENÜ-ANPASSUNGEN (Optional)
+# ==========================================
+
+# Menü-Breite (Anzahl Zeichen für Trennlinien)
+MENU_WIDTH=60
+
+# Kategorien-Trennlinie (standard/double/none)
+MENU_SEPARATOR_STYLE=standard
+
+# Farbschema (falls terminal colors unterstützt)
+# MENU_COLOR_SCHEME=default
+
 # ===================================================================
 # FEATURE FLAGS
 # ===================================================================

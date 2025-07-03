@@ -9,6 +9,23 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def load_menu_config_from_env():
+        """
+        Lädt Menü-Konfiguration aus .env
+    
+        Returns:
+            Dict mit Menü-Einstellungen
+        """
+        return {
+            'show_descriptions': os.getenv('SHOW_MENU_DESCRIPTIONS', 'true').lower() in ['true', '1', 'yes', 'on'],
+            'menu_style': os.getenv('MENU_STYLE', 'standard').lower(),
+            'show_category_descriptions': os.getenv('SHOW_CATEGORY_DESCRIPTIONS', 'true').lower() in ['true', '1', 'yes', 'on'],
+            'show_option_descriptions': os.getenv('SHOW_OPTION_DESCRIPTIONS', 'true').lower() in ['true', '1', 'yes', 'on'],
+            'description_symbol': os.getenv('MENU_DESCRIPTION_SYMBOL', '⨠'),
+            'description_indent': int(os.getenv('MENU_DESCRIPTION_INDENT', '6')),
+            'show_debug': os.getenv('SHOW_MENU_DEBUG', 'false').lower() in ['true', '1', 'yes', 'on']
+        }
+
 @dataclass
 class MenuOption:
     """Einzelne Menüoption"""
@@ -155,48 +172,64 @@ class DynamicMenuSystem:
                 option_number += 1
         
         logger.debug(f"Option-Mapping neu erstellt: {len(self.option_mapping)} Optionen")
-    
+
     def display_menu(self) -> None:
         """
-        Zeigt das dynamische Menü an
-        Nur verfügbare Kategorien und Optionen werden angezeigt
+        VOLLSTÄNDIG KONFIGURIERBARE Menü-Anzeige
+        Alle Aspekte über .env steuerbar
         """
+        config = load_menu_config_from_env()
+    
         print("\n" + "=" * 60)
         print("🎮 STEAM PRICE TRACKER - DYNAMISCHES MENÜ")
         print("=" * 60)
-        
+    
         option_number = 1
         displayed_categories = 0
-        
+    
         for category in self.categories:
-            # Hole verfügbare Optionen für diese Kategorie
             available_options = category.get_available_options(self.feature_flags)
-            
-            # Überspringe Kategorien ohne verfügbare Optionen
+        
             if not available_options:
                 continue
-                
-            # Zeige Kategorie-Header
+            
+            # Kategorie-Header
             print(f"\n{category.icon} {category.name}")
-            if category.description:
-                print(f"   {category.description}")
-            print("-" * 40)
-            
-            # Zeige alle verfügbaren Optionen dieser Kategorie
-            for option in available_options:
-                print(f"{option_number:2d}. {option.icon} {option.name}")
-                if len(option.description) > 0:
-                    print(f"    {option.description}")
-                option_number += 1
-            
-            displayed_categories += 1
         
+            # Kategorie-Beschreibung (konfigurierbar)
+            if config['show_descriptions'] and config['show_category_descriptions'] and category.description:
+                indent = " " * 3
+                print(f"{indent}{category.description}")
+        
+            # Trennlinie
+            separator_length = 40 if config['menu_style'] == 'standard' else 30 if config['menu_style'] == 'compact' else 50
+            print("-" * separator_length)
+        
+            # Optionen anzeigen
+            for option in available_options:
+                # Option-Zeile
+                print(f"{option_number:2d}. {option.icon} {option.name}")
+            
+                # Option-Beschreibung (konfigurierbar)
+                if (config['show_descriptions'] and 
+                    config['show_option_descriptions'] and 
+                    option.description):
+                
+                    indent = " " * config['description_indent']
+                    symbol = config['description_symbol']
+                    print(f"{indent}{symbol} {option.description}")
+            
+                option_number += 1
+        
+            displayed_categories += 1
+    
         print(f"\n 0. 👋 Beenden")
         print("=" * 60)
-        
-        # Debug-Info (optional)
-        if logger.isEnabledFor(logging.DEBUG):
-            print(f"Debug: {displayed_categories} Kategorien, {len(self.option_mapping)} Optionen angezeigt")
+    
+        # Debug-Info (konfigurierbar)
+        if config['show_debug']:
+            print(f"📊 {displayed_categories} Kategorien, {len(self.option_mapping)} Optionen")
+            print(f"⚙️ Stil: {config['menu_style']}, Beschreibungen: {config['show_descriptions']}")
     
     def get_handler(self, choice: str) -> Optional[str]:
         """
