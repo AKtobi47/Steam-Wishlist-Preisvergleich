@@ -53,8 +53,11 @@ class DynamicMenuSystem:
         self._initialize_menu_structure()
     
     def _initialize_menu_structure(self):
-        """Initialisiert die komplette Menüstruktur mit allen Optionen"""
-        
+        """
+        Initialisiert die komplette Menüstruktur mit allen Optionen
+        VOLLSTÄNDIGE VERSION mit menu_batch_charts_update Integration
+        """
+    
         # 🏠 BASIS-FUNKTIONEN (automatisch nummeriert)
         basic_category = MenuCategory("BASIS-FUNKTIONEN", "🏠", "Grundlegende Tracking-Funktionen")
         basic_category.add_option(MenuOption("App manuell hinzufügen", "App zum Tracking hinzufügen", "menu_add_app_manually", icon="📱"))
@@ -63,27 +66,29 @@ class DynamicMenuSystem:
         basic_category.add_option(MenuOption("Beste Deals anzeigen", "Top-Deals mit Rabatten", "menu_show_best_deals", icon="📊"))
         basic_category.add_option(MenuOption("Preisverlauf anzeigen", "Historische Preisdaten", "menu_show_price_history", icon="📈"))
         basic_category.add_option(MenuOption("Preise manuell aktualisieren", "Sofortiges Preis-Update", "menu_update_prices", icon="🔄"))
-        
+    
         # 🚀 AUTOMATION & BATCH (automatisch nummeriert)
         automation_category = MenuCategory("AUTOMATION & BATCH", "🚀", "Automatisierungs-Features")
         automation_category.add_option(MenuOption("Automatisches Tracking", "Scheduler starten/stoppen", "menu_toggle_scheduler", icon="🚀"))
         automation_category.add_option(MenuOption("Namen für alle Apps aktualisieren", "BATCH Namen-Update (Wishlist+Manual+Charts)", "menu_update_names_all_apps", icon="📝"))
-        
+    
         # 🎮 APP-VERWALTUNG (automatisch nummeriert)
         management_category = MenuCategory("APP-VERWALTUNG", "🎮", "Verwaltung der getrackte Apps")
         management_category.add_option(MenuOption("Getrackte Apps verwalten", "Apps bearbeiten", "menu_manage_apps", icon="📋"))
         management_category.add_option(MenuOption("Apps entfernen", "Apps aus Tracking entfernen", "menu_remove_apps", icon="🗑️"))
         management_category.add_option(MenuOption("CSV-Export erstellen", "Daten exportieren", "menu_csv_export", icon="📄"))
         management_category.add_option(MenuOption("Detaillierte Statistiken", "System-Analytics", "menu_detailed_statistics", icon="📊"))
-        
-        # 📊 CHARTS & ANALYTICS (nur wenn charts_enabled=True)
+    
+        # 📊 CHARTS & ANALYTICS (nur wenn charts_enabled=True) - VOLLSTÄNDIG MIT BATCH
         charts_category = MenuCategory("CHARTS & ANALYTICS", "📊", "Steam Charts Integration")
         charts_category.add_option(MenuOption("Charts anzeigen", "Steam Charts-Daten", "menu_show_charts", ["charts_enabled"], "📈"))
         charts_category.add_option(MenuOption("Charts vollständig aktualisieren", "Charts + Namen + Preise (BATCH)", "menu_update_charts_complete", ["charts_enabled"], "🔄"))
         charts_category.add_option(MenuOption("Charts-Deals anzeigen", "Deals aus Charts-Daten", "menu_charts_deals", ["charts_enabled"], "🎯"))
         charts_category.add_option(MenuOption("Charts-Statistiken", "Charts-Analysen", "menu_charts_statistics", ["charts_enabled"], "📊"))
         charts_category.add_option(MenuOption("Charts-Automation", "Automatische Charts", "menu_charts_automation", ["charts_enabled"], "🤖"))
-        
+        # 🚀 NEUE ERWEITERTE BATCH-OPTION
+        charts_category.add_option(MenuOption("Erweiterte BATCH-Optionen", "Power-User BATCH-Charts-Updates", "menu_batch_charts_update", ["charts_enabled"], "📦"))
+    
         # 🔍 ELASTICSEARCH (nur wenn es_available=True)
         es_category = MenuCategory("ELASTICSEARCH", "🔍", "Erweiterte Analytics mit Elasticsearch")
         es_category.add_option(MenuOption("ES Daten exportieren", "Export zu Elasticsearch", "menu_elasticsearch_export", ["es_available"], "📤"))
@@ -91,16 +96,17 @@ class DynamicMenuSystem:
         es_category.add_option(MenuOption("ES Analytics", "Erweiterte Analysen", "menu_elasticsearch_analytics", ["es_available"], "🔬"))
         es_category.add_option(MenuOption("ES Konfiguration", "ES-Einstellungen", "menu_elasticsearch_config", ["es_available"], "⚙️"))
         es_category.add_option(MenuOption("ES Synchronisierung", "Daten sync", "menu_elasticsearch_sync", ["es_available"], "🔄"))
-        
+    
         # 🛠️ SYSTEM-TOOLS (automatisch nummeriert)
         system_category = MenuCategory("SYSTEM-TOOLS", "🛠️", "System-Wartung und Konfiguration")
-        system_category.add_option(MenuOption("System-Tools", "System-Information", "menu_system_tools", icon="🔧"))
-        system_category.add_option(MenuOption("Process Management", "Prozess-Terminal", "menu_process_management", icon="🔧"))
-        system_category.add_option(MenuOption("Batch Processing", "Massenverarbeitung", "menu_batch_processing", icon="📦"))
-        system_category.add_option(MenuOption("Datenbank-Wartung", "DB-Optimierung", "menu_database_maintenance", icon="🧹"))
-        system_category.add_option(MenuOption("Backup erstellen", "System-Backup", "menu_create_backup", icon="💾"))
-        system_category.add_option(MenuOption("Konfiguration bearbeiten", "Config-Editor", "menu_edit_configuration", icon="⚙️"))
-        
+        system_category.add_option(MenuOption("System-Einstellungen", "Konfiguration bearbeiten", "menu_system_settings", icon="⚙️"))
+        system_category.add_option(MenuOption("System-Informationen", "System-Status", "menu_system_info", icon="📊"))
+        system_category.add_option(MenuOption("Backup erstellen", "Datenbank-Backup", "menu_backup_export", icon="💾"))
+        system_category.add_option(MenuOption("Backup importieren", "Datenbank wiederherstellen", "menu_backup_import", icon="📥"))
+        system_category.add_option(MenuOption("Health Check", "System-Diagnose", "menu_health_check", icon="🔍"))
+        system_category.add_option(MenuOption("Datenbank bereinigen", "DB-Wartung", "menu_clean_database", icon="🧹"))
+        system_category.add_option(MenuOption("Developer Tools", "Entwickler-Werkzeuge", "menu_dev_tools", icon="🔧"))
+    
         # Kategorien zur Liste hinzufügen
         self.categories = [
             basic_category,
@@ -110,7 +116,7 @@ class DynamicMenuSystem:
             es_category,           # Wird nur angezeigt wenn es_available=True
             system_category
         ]
-    
+
     def update_feature_flags(self, **flags):
         """
         Aktualisiert Feature-Flags und baut Nummerierung neu auf
