@@ -810,6 +810,159 @@ class SteamChartsManager:
         except Exception as e:
             logger.error(f"❌ Fehler beim Speichern der Update-Statistiken: {e}")
     
+    def _fetch_chart_data(self, chart_type: str, limit: int = 100) -> Dict:
+        """
+        Holt Chart-Daten von Steam basierend auf dem Chart-Typ
+    
+        Args:
+            chart_type: Type des Charts ('most_played', 'top_releases', 'most_concurrent_players')
+            limit: Maximale Anzahl der Ergebnisse
+        
+        Returns:
+            Dict mit 'results' Key containing Liste der Spiele-Daten
+        """
+        try:
+            logger.info(f"📊 Lade {chart_type} Charts von Steam API...")
+        
+            if chart_type == 'most_played':
+                games_data = self._fetch_most_played_games(limit)
+            elif chart_type == 'top_releases':
+                games_data = self._fetch_top_releases(limit)
+            elif chart_type == 'most_concurrent_players':
+                games_data = self._fetch_most_concurrent_players(limit)
+            else:
+                logger.warning(f"⚠️ Unbekannter Chart-Typ: {chart_type}")
+                return {'results': []}
+        
+            # Format für Kompatibilität mit existierendem Code
+            return {
+                'success': True,
+                'results': games_data,
+                'total_count': len(games_data),
+                'chart_type': chart_type
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Fehler beim Laden der {chart_type} Charts: {e}")
+            return {'results': []}
+
+    def _fetch_most_played_games(self, limit: int = 100) -> List[Dict]:
+        """Holt die meistgespielten Spiele von SteamSpy"""
+        try:
+            url = "https://steamspy.com/api.php"
+            params = {
+                'request': 'top100in2weeks',
+                'format': 'json'
+            }
+        
+            response = requests.get(url, params=params, timeout=30)
+            response.raise_for_status()
+        
+            data = response.json()
+            games = []
+        
+            for rank, (app_id, game_data) in enumerate(data.items(), 1):
+                if rank > limit:
+                    break
+                
+                games.append({
+                    'appid': app_id,
+                    'name': game_data.get('name', f'App {app_id}'),
+                    'concurrent': game_data.get('players_forever', 0),
+                    'peak': game_data.get('players_2weeks', 0),
+                    'rank': rank,
+                    'score': game_data.get('players_forever', 0)
+                })
+        
+            logger.info(f"✅ {len(games)} meistgespielte Spiele geladen")
+            return games
+        
+        except Exception as e:
+            logger.error(f"❌ Fehler beim Abrufen der meistgespielten Spiele: {e}")
+            return []
+
+    def _fetch_top_releases(self, limit: int = 100) -> List[Dict]:
+        """Holt die Top-Neuerscheinungen von Steam"""
+        try:
+            url = "https://store.steampowered.com/api/featuredcategories"
+        
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
+        
+            data = response.json()
+            games = []
+        
+            # Neue Releases sammeln
+            if 'new_releases' in data:
+                new_releases = data['new_releases'].get('items', [])
+                for rank, item in enumerate(new_releases[:limit], 1):
+                    games.append({
+                        'appid': str(item.get('id', 0)),
+                        'name': item.get('name', f'App {item.get("id", 0)}'),
+                        'concurrent': 0,
+                        'peak': 0,
+                        'rank': rank,
+                        'score': 0
+                    })
+        
+            # Falls nicht genug, auch Top Sellers hinzufügen
+            if len(games) < limit and 'top_sellers' in data:
+                remaining = limit - len(games)
+                top_sellers = data['top_sellers'].get('items', [])
+            
+                for item in top_sellers[:remaining]:
+                    games.append({
+                        'appid': str(item.get('id', 0)),
+                        'name': item.get('name', f'App {item.get("id", 0)}'),
+                        'concurrent': 0,
+                        'peak': 0,
+                        'rank': len(games) + 1,
+                        'score': 0
+                    })
+        
+            logger.info(f"✅ {len(games)} Top-Releases geladen")
+            return games
+        
+        except Exception as e:
+            logger.error(f"❌ Fehler beim Abrufen der Top-Releases: {e}")
+            return []
+
+    def _fetch_most_concurrent_players(self, limit: int = 100) -> List[Dict]:
+        """Holt Spiele mit den meisten gleichzeitigen Spielern"""
+        try:
+            url = "https://steamspy.com/api.php"
+            params = {
+                'request': 'top100gamesbyccu',
+                'format': 'json'
+            }
+        
+            response = requests.get(url, params=params, timeout=30)
+            response.raise_for_status()
+        
+            data = response.json()
+            games = []
+        
+            for rank, (app_id, game_data) in enumerate(data.items(), 1):
+                if rank > limit:
+                    break
+                
+                current_ccu = game_data.get('ccu', 0)
+                games.append({
+                    'appid': app_id,
+                    'name': game_data.get('name', f'App {app_id}'),
+                    'concurrent': current_ccu,
+                    'peak': current_ccu,
+                    'rank': rank,
+                    'score': current_ccu
+                })
+        
+            logger.info(f"✅ {len(games)} Concurrent-Player-Charts geladen")
+            return games
+        
+        except Exception as e:
+            logger.error(f"❌ Fehler beim Abrufen der Concurrent-Player-Charts: {e}")
+            return []
+
     # =====================================================================
     # CHARTS CLEANUP FUNKTIONEN
     # =====================================================================
@@ -1328,7 +1481,7 @@ class SteamChartsManager:
                         chart_stats[chart_type] = {
                             'total_items': len(chart_results),
                             'new_games_added': new_games_added,
-                            'api_source': 'steam_charts'
+                            'api_source': 'steam_charts_tracking'
                         }
                         total_new_games += new_games_added
                     
@@ -1362,7 +1515,7 @@ class SteamChartsManager:
                     charts_app_ids = set()
                     with self.db_manager.get_connection() as conn:
                         cursor = conn.cursor()
-                        cursor.execute("SELECT DISTINCT steam_app_id FROM steam_charts WHERE active = 1")
+                        cursor.execute("SELECT DISTINCT steam_app_id FROM steam_charts_tracking WHERE active = 1")
                         charts_app_ids = {row[0] for row in cursor.fetchall()}
                 
                     if charts_app_ids:
@@ -1399,7 +1552,7 @@ class SteamChartsManager:
                                             
                                                 # Update in steam_charts
                                                 cursor.execute("""
-                                                    UPDATE steam_charts 
+                                                    UPDATE steam_charts_tracking 
                                                     SET game_title = ? 
                                                     WHERE steam_app_id = ? AND (game_title IS NULL OR game_title = '' OR game_title = 'Unknown')
                                                 """, (name, app_id))
@@ -1476,7 +1629,7 @@ class SteamChartsManager:
                         for chart_type in chart_types:
                             cursor.execute("""
                                 SELECT DISTINCT steam_app_id 
-                                FROM steam_charts 
+                                FROM steam_charts_tracking 
                                 WHERE chart_type = ? AND active = 1
                                 ORDER BY current_rank ASC
                                 LIMIT ?
