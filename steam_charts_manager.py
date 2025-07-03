@@ -1367,6 +1367,72 @@ class SteamChartsManager:
     def is_automation_active(self) -> bool:
         """Prüft ob Automation aktiv ist"""
         return getattr(self, 'charts_scheduler_running', False)
+
+
+    def _add_app_to_charts_table_optimized(self, app_id: str, game_data: Dict, chart_type: str) -> bool:
+        """
+        Optimierte Version zum Hinzufügen von Apps zur Charts-Tabelle
+    
+        Args:
+            app_id: Steam App ID
+            game_data: Spiel-Daten Dictionary mit name, rank, concurrent, etc.
+            chart_type: Chart-Typ (most_played, top_releases, etc.)
+        
+        Returns:
+            bool: True wenn erfolgreich hinzugefügt
+        """
+        try:
+            # Daten vorbereiten
+            app_name = game_data.get('name', f'App {app_id}')
+            current_rank = game_data.get('rank', 0)
+            current_players = game_data.get('concurrent', 0)
+            peak_players = game_data.get('peak', current_players)
+        
+            # Zur Datenbank hinzufügen (über DatabaseManager)
+            success = self.db_manager.add_chart_game(
+                steam_app_id=app_id,
+                chart_type=chart_type,
+                rank_position=current_rank,
+                current_players=current_players,
+                game_name=app_name
+            )
+        
+            if success:
+                logger.debug(f"✅ Charts-App hinzugefügt: {app_name} (Rank: {current_rank})")
+            else:
+                logger.warning(f"⚠️ Charts-App nicht hinzugefügt: {app_id}")
+            
+            return success
+        
+        except Exception as e:
+            logger.error(f"❌ Fehler beim Hinzufügen der Charts-App {app_id}: {e}")
+            return False
+
+    def safe_add_app_to_charts_table(self, app_id: str, game_data: Dict, chart_type: str) -> bool:
+        """
+        Sichere Fallback-Methode für Charts-App hinzufügen
+        """
+        try:
+            # Versuche zuerst die optimierte Version
+            if hasattr(self, '_add_app_to_charts_table_optimized'):
+                return self._add_app_to_charts_table_optimized(app_id, game_data, chart_type)
+        
+            # Fallback zu Standard-Methoden
+            app_name = game_data.get('name', f'App {app_id}')
+            current_rank = game_data.get('rank', 0)
+            current_players = game_data.get('concurrent', 0)
+        
+            return self.db_manager.add_chart_game(
+                steam_app_id=app_id,
+                chart_type=chart_type,
+                rank_position=current_rank,
+                current_players=current_players,
+                game_name=app_name
+            )
+        
+        except Exception as e:
+            logger.error(f"❌ Sichere Charts-App-Hinzufügung fehlgeschlagen für {app_id}: {e}")
+            return False
     
     # =====================================================================
     # 🚀 NEUE BATCH-METHODEN
@@ -1657,10 +1723,9 @@ class SteamChartsManager:
                                               f"Batch {batch_info.get('completed_batches', 0)}/{batch_info.get('total_batches', 1)} - {current}/{total} Apps")
                         
                             # BATCH-Preis-Update mit Progress
-                            price_result = self.price_tracker.batch_update_multiple_apps(
-                                price_app_ids, 
-                                batch_size=20,
-                                progress_callback=price_progress_callback
+                            result = self.safe_batch_update_charts_prices(
+                                app_ids=charts_app_ids,
+                                progress_callback=lambda data: report_progress(...)
                             )
                         
                             if price_result.get('success'):
@@ -1742,6 +1807,101 @@ class SteamChartsManager:
                 'duration': time.time() - start_time,
                 'overall_success': False
             }
+
+    def safe_batch_update_charts_prices(self, app_ids: List[str], progress_callback=None) -> Dict:
+        """
+        Sichere BATCH-Preis-Updates für Charts-Apps mit Parameter-Kompatibilität
+    
+        Args:
+            app_ids: Liste der Steam App IDs
+            progress_callback: Optional callback für Progress (wird ignoriert falls nicht unterstützt)
+        
+        Returns:
+            Dict mit Update-Ergebnissen
+        """
+        try:
+            if not hasattr(self, 'price_tracker') or not self.price_tracker:
+                logger.warning("⚠️ Price Tracker nicht verfügbar für Charts-Preise")
+                return {
+                    'success': False,
+                    'error': 'Price Tracker nicht verfügbar',
+                    'updated_count': 0,
+                    'failed_count': len(app_ids)
+                }
+        
+            logger.info(f"🚀 BATCH Preis-Update für {len(app_ids)} Charts-Apps...")
+        
+            # Prüfe welche Methode verfügbar ist und welche Parameter sie unterstützt
+            if hasattr(self.price_tracker, 'batch_update_multiple_apps'):
+                batch_method = self.price_tracker.batch_update_multiple_apps
+            
+                # Teste Parameter-Kompatibilität
+                import inspect
+                method_signature = inspect.signature(batch_method)
+                supports_progress_callback = 'progress_callback' in method_signature.parameters
+            
+                if supports_progress_callback:
+                    # Neue Version mit progress_callback
+                    result = batch_method(
+                        app_ids=app_ids,
+                        progress_callback=progress_callback
+                    )
+                else:
+                    # Alte Version ohne progress_callback
+                    logger.debug("📝 Verwende batch_update_multiple_apps ohne progress_callback")
+                    result = batch_method(app_ids=app_ids)
+                
+            else:
+                # Fallback zu einzelnen Updates
+                logger.info("🔄 Fallback zu einzelnen Preis-Updates...")
+                result = self._fallback_individual_price_updates(app_ids, progress_callback)
+        
+            return result
+        
+        except Exception as e:
+            logger.error(f"❌ Preis-Update Fehler: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'updated_count': 0,
+                'failed_count': len(app_ids)
+            }
+
+    def _fallback_individual_price_updates(self, app_ids: List[str], progress_callback=None) -> Dict:
+        """Fallback für individuelle Preis-Updates"""
+        updated_count = 0
+        failed_count = 0
+    
+        for i, app_id in enumerate(app_ids):
+            try:
+                if progress_callback:
+                    progress_callback({
+                        'phase': 'prices',
+                        'current': i + 1,
+                        'total': len(app_ids),
+                        'details': f"Updating prices for app {app_id}"
+                    })
+            
+                # Einzelnes Preis-Update
+                if hasattr(self.price_tracker, 'track_app_prices'):
+                    result = self.price_tracker.track_app_prices([app_id])
+                    if result and result.get('success', False):
+                        updated_count += 1
+                    else:
+                        failed_count += 1
+                else:
+                    failed_count += 1
+                
+            except Exception as e:
+                logger.debug(f"Preis-Update für {app_id} fehlgeschlagen: {e}")
+                failed_count += 1
+    
+        return {
+            'success': updated_count > 0,
+            'updated_count': updated_count,
+            'failed_count': failed_count,
+            'method': 'individual_fallback'
+        }
 
     def save_chart_game_safe(self, game_data: Dict) -> bool:
         """
