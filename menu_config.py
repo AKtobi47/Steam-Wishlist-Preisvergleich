@@ -6,6 +6,7 @@ Finale Version - WIRKLICH dynamisch ohne statische Mappings
 from dataclasses import dataclass
 from typing import Dict, List, Callable, Optional
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -175,57 +176,87 @@ class DynamicMenuSystem:
 
     def display_menu(self) -> None:
         """
-        VOLLSTÄNDIG KONFIGURIERBARE Menü-Anzeige
-        Alle Aspekte über .env steuerbar
+        VOLLSTÄNDIG KONFIGURIERBARE Menü-Anzeige - KORRIGIERTE VERSION
+        Alle Aspekte über .env steuerbar + funktionierende Menü-Stile
         """
         config = load_menu_config_from_env()
-    
+
         print("\n" + "=" * 60)
         print("🎮 STEAM PRICE TRACKER - DYNAMISCHES MENÜ")
         print("=" * 60)
-    
+
         option_number = 1
         displayed_categories = 0
-    
+
         for category in self.categories:
             available_options = category.get_available_options(self.feature_flags)
-        
+
             if not available_options:
                 continue
+        
+            # 🎨 VERSCHIEDENE KATEGORIE-STILE basierend auf menu_style
+            if config['menu_style'] == 'compact':
+                # COMPACT: Minimaler Stil
+                print(f"\n{category.icon} {category.name}")
+                if config['show_descriptions'] and config['show_category_descriptions'] and category.description:
+                    print(f"   ⨠ {category.description}")
+                print("-" * 30)
             
-            # Kategorie-Header
-            print(f"\n{category.icon} {category.name}")
-        
-            # Kategorie-Beschreibung (konfigurierbar)
-            if config['show_descriptions'] and config['show_category_descriptions'] and category.description:
-                indent = " " * 3
-                print(f"{indent}{category.description}")
-        
-            # Trennlinie
-            separator_length = 40 if config['menu_style'] == 'standard' else 30 if config['menu_style'] == 'compact' else 50
-            print("-" * separator_length)
-        
-            # Optionen anzeigen
+            elif config['menu_style'] == 'detailed':
+                # DETAILED: Ausführlicher Stil
+                print(f"\n{category.icon} {category.name.upper()}")
+                if config['show_descriptions'] and config['show_category_descriptions'] and category.description:
+                    print(f"   ⨠ {category.description}")
+                print("─" * 50)
+            
+            else:
+                # STANDARD: Gewohnter Stil (default)
+                print(f"\n{category.icon} {category.name}")
+                if config['show_descriptions'] and config['show_category_descriptions'] and category.description:
+                    print(f"   {category.description}")
+                print("-" * 40)
+
+            # 🎨 VERSCHIEDENE OPTION-STILE basierend auf menu_style
             for option in available_options:
-                # Option-Zeile
-                print(f"{option_number:2d}. {option.icon} {option.name}")
             
-                # Option-Beschreibung (konfigurierbar)
-                if (config['show_descriptions'] and 
-                    config['show_option_descriptions'] and 
-                    option.description):
+                if config['menu_style'] == 'compact':
+                    # COMPACT: Einzeilig, minimale Beschreibungen
+                    option_line = f"{option_number:2d}. {option.icon} {option.name}"
+                    if (config['show_descriptions'] and 
+                        config['show_option_descriptions'] and 
+                        option.description and 
+                        len(option.description) <= 30):  # Nur kurze Beschreibungen
+                        option_line += f" ⨠ {option.description}"
+                    print(option_line)
                 
-                    indent = " " * config['description_indent']
-                    symbol = config['description_symbol']
-                    print(f"{indent}{symbol} {option.description}")
-            
+                elif config['menu_style'] == 'detailed':
+                    # DETAILED: Mehrzeilig mit ausführlichen Informationen
+                    print(f" {option_number:2d}. {option.icon} {option.name}")
+                    if (config['show_descriptions'] and 
+                        config['show_option_descriptions'] and 
+                        option.description):
+                        indent = " " * config['description_indent']
+                        symbol = config['description_symbol']
+                        print(f"{indent}{symbol} {option.description}")
+                        print()  # Extra Leerzeile zwischen Optionen
+                
+                else:
+                    # STANDARD: Bewährter mehrzeiliger Stil (default)
+                    print(f"{option_number:2d}. {option.icon} {option.name}")
+                    if (config['show_descriptions'] and 
+                        config['show_option_descriptions'] and 
+                        option.description):
+                        indent = " " * config['description_indent']
+                        symbol = config['description_symbol']
+                        print(f"{indent}{symbol} {option.description}")
+
                 option_number += 1
-        
+
             displayed_categories += 1
-    
+
         print(f"\n 0. 👋 Beenden")
         print("=" * 60)
-    
+
         # Debug-Info (konfigurierbar)
         if config['show_debug']:
             print(f"📊 {displayed_categories} Kategorien, {len(self.option_mapping)} Optionen")

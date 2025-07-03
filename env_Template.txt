@@ -768,10 +768,6 @@ MENU_DESCRIPTION_INDENT=6
 # Debug-Informationen anzeigen (true/false)
 SHOW_MENU_DEBUG=false
 
-# ==========================================
-# WEITERE MENÜ-ANPASSUNGEN (Optional)
-# ==========================================
-
 # Menü-Breite (Anzahl Zeichen für Trennlinien)
 MENU_WIDTH=60
 
