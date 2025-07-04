@@ -88,3 +88,8 @@ auto_integration_script.py
 setup_report.json
 /backup*
 /elasticsearch
+*.broken_1751618936
+*.corrected_fix_backup_1751618936
+*.schema_fix_backup_1751618543
+*.json
+*.py

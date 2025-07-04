@@ -866,84 +866,150 @@ class SteamPriceTracker:
     
         return entry
 
-    def batch_update_multiple_apps(self, app_ids: List[str], progress_callback=None) -> Dict:
+    def batch_update_multiple_apps(self, app_ids: List[str], progress_callback=None) -> Dict[str, Any]:
         """
-        BATCH-UPDATE FÜR MEHRERE APPS
-        Aktualisiert Preise für mehrere Apps in Batches
+        Batch-Update für mehrere Apps mit ProgressTracker-Integration
+        Diese Methode aktualisiert Preise für mehrere Apps in Batches und verwendet den Batch-Writer
 
         Args:
             app_ids: Liste von Steam App IDs
-            progress_callback: Optionaler Callback für Fortschritts-Updates
+            progress_callback: Optionaler Callback für Progress-Updates (ProgressTracker-kompatibel)
+        
         Returns:
-            Dictionary mit Ergebnissen
+            Dictionary mit Ergebnissen:
+                - success: bool
+                - successful_updates: Anzahl erfolgreicher Updates
+                - failed_updates: Anzahl fehlgeschlagener Updates
+                - total_apps: Gesamtanzahl der Apps
+                - duration: Dauer des gesamten Prozesses in Sekunden
+                - apps_per_second: Durchschnittliche Apps pro Sekunde
+                - batch_writer_result: Ergebnis des Batch-Writers (falls verwendet)
+                - database_writes: Anzahl der geschriebenen Einträge in die Datenbank
+                - performance_multiplier: Performance-Multiplikator des Batch-Writers (falls verwendet)
         """
         if not app_ids:
-            return {'success': False, 'error': 'Keine App IDs angegeben'}
+            return {'success': False, 'error': 'Keine App-IDs angegeben'}
     
         start_time = time.time()
-        logger.info(f"🚀 BATCH Preis-Update für {len(app_ids)} Apps gestartet...")
-    
-        batch_size = 10
-        all_price_data = []
         successful_updates = 0
         failed_updates = 0
-        total_batches = (len(app_ids) + batch_size - 1) // batch_size
+        all_price_data = []
     
-        try:
-            for batch_num, i in enumerate(range(0, len(app_ids), batch_size), 1):
-                batch = app_ids[i:i + batch_size]
-            
-                logger.info(f"📦 Verarbeite Batch {batch_num}: Apps {i+1}-{min(i+batch_size, len(app_ids))}")
-            
-                # Progress-Update für jeden Batch
-                if progress_callback:
-                    progress_info = {
-                        'completed_batches': batch_num,
-                        'total_batches': total_batches,
-                        'batch_size': batch_size,
-                        'processed_apps': min(i + batch_size, len(app_ids)),
-                        'total_apps': len(app_ids),
-                        'progress_percent': (min(i + batch_size, len(app_ids)) / len(app_ids)) * 100,
-                        'status': 'processing'
-                    }
-                    progress_callback(progress_info)
+        # ProgressTracker-kompatible Callback-Wrapper
+        current_phase = 'prices'
     
-                for app_id in batch:
-                    try:
-                        price_data = self._fetch_cheapshark_prices(app_id)
-            
-                        if price_data:
-                            batch_price_entry = self.create_batch_price_entry_dynamic(app_id, price_data)
-                            all_price_data.append(batch_price_entry)
-                            successful_updates += 1
-                        else:
-                            failed_updates += 1
-                    
-                    except Exception as e:
-                        logger.error(f"❌ Fehler bei App {app_id}: {e}")
-                        failed_updates += 1
+        def progress_tracker_callback(progress_info):
+            """ProgressTracker-kompatible Progress-Updates für Preise"""
+            if not progress_callback:
+                return
+        
+            # ProgressTracker-Format
+            tracker_info = {
+                'phase': 'prices',
+                'current': progress_info.get('processed_apps', 0),
+                'total': progress_info.get('total_apps', len(app_ids)),
+                'percentage': progress_info.get('progress_percent', 0),
+                'details': progress_info.get('status', progress_info.get('current_task', '')),
+                'elapsed_time': time.time() - start_time
+            }
+        
+            progress_callback(tracker_info)
     
-                time.sleep(1)  # Rate Limiting zwischen Batches
-
-            # FINALE Progress-Meldung mit 100%
-            if progress_callback:
-                progress_callback({
-                    'completed_batches': total_batches,
-                    'total_batches': total_batches,
-                    'processed_apps': len(app_ids),
-                    'total_apps': len(app_ids),
-                    'progress_percent': 100.0,  # Explizit 100%
-                    'status': 'completed'
+        # Batch-Processing Setup
+        batch_size = 10
+        total_batches = math.ceil(len(app_ids) / batch_size)
+    
+        logger.info(f"🚀 BATCH Preis-Update für {len(app_ids)} Apps gestartet...")
+    
+        # Start Progress
+        if progress_tracker_callback:
+            progress_tracker_callback({
+                'progress_percent': 0,
+                'status': f'{len(app_ids)} Apps in {total_batches} Batches',
+                'processed_apps': 0,
+                'total_apps': len(app_ids)
+            })
+    
+        # Batch-Processing
+        for i in range(0, len(app_ids), batch_size):
+            batch = app_ids[i:i+batch_size]
+            batch_num = (i // batch_size) + 1
+        
+            logger.info(f"📦 Verarbeite Batch {batch_num}: Apps {i+1}-{min(i+batch_size, len(app_ids))}")
+        
+            # Progress-Update
+            if progress_tracker_callback:
+                progress_tracker_callback({
+                    'progress_percent': (i / len(app_ids)) * 85,  # 85% für Data-Collection
+                    'status': f'💰 Batch {batch_num}/{total_batches}',
+                    'processed_apps': i,
+                    'total_apps': len(app_ids)
                 })
 
-            if all_price_data:
+            for app_id in batch:
                 try:
-                    from database_manager import create_batch_writer
-                    batch_writer = create_batch_writer(self.db_manager)
+                    price_data = self._fetch_cheapshark_prices(app_id)
+        
+                    if price_data:
+                        # KORREKTE Batch-Entry für den Batch-Writer erstellen
+                        batch_price_entry = self._create_batch_price_entry_for_batch_writer(app_id, price_data)
+                    
+                        # Validierung
+                        if self._validate_batch_price_entry(batch_price_entry):
+                            all_price_data.append(batch_price_entry)
+                            successful_updates += 1
+                            logger.debug(f"✅ Preise für App {app_id} vorbereitet")
+                        else:
+                            logger.warning(f"⚠️ Ungültige Preisdaten für App {app_id}")
+                            failed_updates += 1
+                    else:
+                        failed_updates += 1
             
-                    batch_result = batch_writer.batch_write_price_snapshots(all_price_data)
-                    duration = time.time() - start_time
+                except Exception as e:
+                    logger.error(f"❌ Fehler bei App {app_id}: {e}")
+                    failed_updates += 1
+
+            time.sleep(1)  # Rate Limiting zwischen Batches
+
+        # Progress: Data Collection abgeschlossen
+        if progress_tracker_callback:
+            progress_tracker_callback({
+                'progress_percent': 85,
+                'status': '💾 Bereite Batch-Write vor...',
+                'processed_apps': len(app_ids),
+                'total_apps': len(app_ids)
+            })
+
+        # BATCH-WRITER verwenden
+        if all_price_data:
+            try:
+                logger.info(f"💾 Verwende BATCH-WRITER für {len(all_price_data)} Preis-Einträge...")
             
+                from database_manager import create_batch_writer
+                batch_writer = create_batch_writer(self.db_manager)
+            
+                # Progress während Write
+                if progress_tracker_callback:
+                    progress_tracker_callback({
+                        'progress_percent': 90,
+                        'status': f'💾 Batch-Write: {len(all_price_data)} Einträge'
+                    })
+            
+                # KORREKTER Batch-Write für Preise
+                batch_result = batch_writer.batch_write_prices(all_price_data)
+            
+                duration = time.time() - start_time
+            
+                if batch_result.get('success'):
+                    logger.info(f"✅ BATCH-WRITER erfolgreich: {batch_result.get('total_items', 0)} Preise geschrieben")
+                
+                    # Finale Progress
+                    if progress_tracker_callback:
+                        progress_tracker_callback({
+                            'progress_percent': 100,
+                            'status': f"Erfolgreich: {batch_result.get('total_items', 0)} Preise"
+                        })
+                
                     return {
                         'success': True,
                         'successful_updates': successful_updates,
@@ -951,51 +1017,154 @@ class SteamPriceTracker:
                         'total_apps': len(app_ids),
                         'duration': duration,
                         'apps_per_second': len(app_ids) / duration if duration > 0 else 0,
-                        'batch_write_result': batch_result
+                        'batch_writer_result': batch_result,
+                        'database_writes': batch_result.get('total_items', 0),
+                        'performance_multiplier': batch_result.get('performance_multiplier', 'N/A')
                     }
-                
-                except Exception as e:
-                    logger.error(f"❌ Batch-Write fehlgeschlagen: {e}")
-                    return {
-                        'success': False,
-                        'error': f'Batch-Write Fehler: {str(e)}',
-                        'successful_updates': successful_updates,
-                        'failed_updates': failed_updates
-                    }
-            else:
-                duration = time.time() - start_time
-                return {
-                    'success': False,
-                    'error': 'Keine Preisdaten erhalten',
-                    'successful_updates': 0,
-                    'failed_updates': len(app_ids),
-                    'duration': duration
-                }
+                else:
+                    raise Exception(batch_result.get('error', 'Unbekannter Batch-Write Fehler'))
             
-        except Exception as e:
-            duration = time.time() - start_time
-            logger.error(f"❌ Batch-Update Fehler: {e}")
+            except Exception as e:
+                logger.error(f"❌ BATCH-WRITER fehlgeschlagen: {e}")
+                logger.warning("🔄 Versuche Fallback zu einzelnen Writes...")
+            
+                # Fallback zu einzelnen Writes
+                return self._fallback_individual_writes(all_price_data, start_time, successful_updates, failed_updates, len(app_ids), progress_tracker_callback)
+    
+        else:
+            logger.warning("⚠️ Keine gültigen Preisdaten zum Schreiben")
         
-            # Error-Progress-Meldung
-            if progress_callback:
-                progress_callback({
-                    'completed_batches': 0,
-                    'total_batches': total_batches,
-                    'processed_apps': 0,
-                    'total_apps': len(app_ids),
-                    'progress_percent': 0,
-                    'status': 'error',
-                    'error': str(e)
+            if progress_tracker_callback:
+                progress_tracker_callback({
+                    'progress_percent': 100,
+                    'status': 'Keine Preisdaten erhalten'
                 })
         
             return {
                 'success': False,
-                'error': str(e),
-                'successful_updates': successful_updates,
-                'failed_updates': failed_updates + (len(app_ids) - successful_updates - failed_updates),
-                'duration': duration
+                'error': 'Keine gültigen Preisdaten erhalten',
+                'successful_updates': 0,
+                'failed_updates': len(app_ids),
+                'duration': time.time() - start_time
             }
+        
+    def _create_batch_price_entry_for_batch_writer(self, app_id: str, price_data: Dict) -> Dict:
+        """
+        Erstellt Price-Entry im Format das der Batch-Writer erwartet
+        """
+        # Der Batch-Writer erwartet ein anderes Format als die normale DB
+        batch_entry = {
+            'steam_app_id': str(app_id),
+            'timestamp': datetime.now().isoformat()
+        }
+    
+        # Store-Mapping für Batch-Writer
+        store_mapping = {
+            'steam': 'steam',
+            'greenmangaming': 'greenmangaming', 
+            'gog': 'gog',
+            'humblestore': 'humblestore',
+            'fanatical': 'fanatical',
+            'gamesplanet': 'gamesplanet'
+        }
+    
+        # Preise für jeden Store hinzufügen
+        for original_store, batch_store in store_mapping.items():
+            if original_store in price_data:
+                store_data = price_data[original_store]
+            
+                # Für Batch-Writer Format
+                if isinstance(store_data, dict):
+                    batch_entry[f'{batch_store}_price'] = store_data.get('price', 0.0)
+                    batch_entry[f'{batch_store}_original_price'] = store_data.get('original_price', 0.0)
+                    batch_entry[f'{batch_store}_discount_percent'] = store_data.get('discount_percent', 0)
+                    batch_entry[f'{batch_store}_available'] = store_data.get('available', True)
+    
+        return batch_entry
 
+    def _validate_batch_price_entry(self, entry: Dict) -> bool:
+        """Validiert einen Batch-Price-Entry"""
+        required_fields = ['steam_app_id', 'timestamp']
+    
+        for field in required_fields:
+            if field not in entry:
+                logger.debug(f"❌ Fehlender Field: {field}")
+                return False
+    
+        # Prüfe ob mindestens ein Store-Preis vorhanden ist
+        store_found = False
+        for key, value in entry.items():
+            if key.endswith('_price') and value is not None and value > 0:
+                store_found = True
+                break
+    
+        if not store_found:
+            logger.debug("❌ Keine gültigen Store-Preise gefunden")
+            return False
+    
+        return True
+
+    def _fallback_individual_writes(self, price_data, start_time, successful_updates, failed_updates, total_apps, progress_callback=None):
+        """Fallback: Einzelne Database-Writes wenn Batch-Writer fehlschlägt"""
+        logger.warning("🔄 Fallback: Einzelne Database-Writes...")
+    
+        if progress_callback:
+            progress_callback({
+                'progress_percent': 95,
+                'status': '🔄 Fallback aktiv',
+                'current_task': 'Einzelne Writes versuchen...'
+            })
+    
+        individual_writes = 0
+        for entry in price_data:
+            try:
+                # Konvertiere Batch-Format zurück zu Standard-Format
+                standard_entry = self._convert_batch_to_standard_format(entry)
+            
+                if self.db_manager.add_price_snapshot(entry['steam_app_id'], standard_entry):
+                    individual_writes += 1
+            except Exception as e:
+                logger.debug(f"❌ Individual Write failed für {entry.get('steam_app_id')}: {e}")
+    
+        duration = time.time() - start_time
+    
+        if progress_callback:
+            progress_callback({
+                'progress_percent': 100,
+                'status': f'Fallback: {individual_writes} einzelne Writes'
+            })
+    
+        return {
+            'success': individual_writes > 0,
+            'successful_updates': successful_updates,
+            'failed_updates': failed_updates,
+            'total_apps': total_apps,
+            'duration': duration,
+            'database_writes': individual_writes,
+            'fallback_used': True,
+            'warning': f'Batch-Write fehlgeschlagen, {individual_writes} einzelne Writes erfolgreich'
+        }
+
+    def _convert_batch_to_standard_format(self, batch_entry: Dict) -> Dict:
+        """Konvertiert Batch-Format zurück zu Standard-Format für Fallback"""
+        standard_entry = {
+            'timestamp': batch_entry.get('timestamp', datetime.now().isoformat())
+        }
+    
+        # Store-Preise extrahieren
+        stores = ['steam', 'greenmangaming', 'gog', 'humblestore', 'fanatical', 'gamesplanet']
+    
+        for store in stores:
+            price_key = f'{store}_price'
+            if price_key in batch_entry and batch_entry[price_key]:
+                standard_entry[store] = {
+                    'price': batch_entry.get(price_key, 0.0),
+                    'original_price': batch_entry.get(f'{store}_original_price', 0.0),
+                    'discount_percent': batch_entry.get(f'{store}_discount_percent', 0),
+                    'available': batch_entry.get(f'{store}_available', True)
+                }
+    
+        return standard_entry
     
     def process_all_pending_apps_optimized(self, hours_threshold: int = 6, batch_size: int = 25) -> Dict:
         """
