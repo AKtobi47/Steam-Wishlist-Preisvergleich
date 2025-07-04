@@ -663,56 +663,130 @@ class SteamPriceTracker:
             logger.debug(f"Fehler beim Abrufen der Steam-Preise für {steam_app_id}: {e}")
             return None
     
-    def _fetch_cheapshark_prices(self, app_name: str) -> Dict:
-        """Holt Preise von CheapShark API"""
-        try:
-            url = "https://www.cheapshark.com/api/1.0/games"
-            params = {'title': app_name, 'limit': 5}
-            
-            response = requests.get(url, params=params, timeout=10)
-            response.raise_for_status()
-            
-            games = response.json()
-            if not games:
-                return {}
-            
-            # Store-Mapping
-            store_mapping = {
-                '1': 'steam',
-                '3': 'greenmangaming',
-                '7': 'gog',
-                '11': 'humblestore',
-                '15': 'fanatical',
-                '25': 'gamesplanet'
-            }
-            
-            prices = {}
-            
-            for game in games:
-                if game.get('external').lower() == app_name.lower():
-                    deals_url = f"https://www.cheapshark.com/api/1.0/games?id={game['gameID']}"
-                    deals_response = requests.get(deals_url, timeout=10)
-                    deals_data = deals_response.json()
-                    
-                    for deal in deals_data.get('deals', []):
-                        store_id = deal.get('storeID')
-                        store_name = store_mapping.get(store_id)
-                        
-                        if store_name:
-                            prices[store_name] = {
-                                'price': float(deal.get('price', 0)),
-                                'original_price': float(deal.get('retailPrice', 0)),
-                                'discount_percent': int(float(deal.get('savings', 0))),
-                                'available': True
-                            }
-                    break
-            
-            return prices
-            
-        except Exception as e:
-            logger.debug(f"Fehler beim Abrufen der CheapShark-Preise: {e}")
-            return {}
+    def _fetch_cheapshark_prices(self, app_id: str) -> Dict:
+        """
+        Holt Preise von CheapShark API für eine App
+        """
     
+        # Einfaches dynamisches Rate Limiting mit globalen Variablen
+        if not hasattr(self, '_cheapshark_last_request'):
+            self._cheapshark_last_request = 0
+            self._cheapshark_current_rate = float(os.getenv('CHEAPSHARK_RATE_LIMIT', '2.0'))
+            self._cheapshark_success_count = 0
+            self._cheapshark_error_count = 0
+    
+        max_retries = 6
+        base_timeout = int(os.getenv('CHEAPSHARK_TIMEOUT', '20'))
+    
+        for attempt in range(max_retries + 1):
+            try:
+                # Rate Limiting
+                current_time = time.time()
+                time_since_last = current_time - self._cheapshark_last_request
+            
+                if time_since_last < self._cheapshark_current_rate:
+                    wait_time = self._cheapshark_current_rate - time_since_last
+                    logger.debug(f"⏳ CheapShark Rate Limit: warte {wait_time:.1f}s")
+                    time.sleep(wait_time)
+            
+                self._cheapshark_last_request = time.time()
+            
+                # Request mit adaptivem Timeout
+                timeout = base_timeout + (attempt * 5)
+                url = "https://www.cheapshark.com/api/1.0/games"
+                params = {'title': app_id, 'limit': 5}
+            
+                response = requests.get(url, params=params, timeout=timeout)
+            
+                if response.status_code == 200:
+                    # Erfolg - optimiere Rate
+                    self._cheapshark_success_count += 1
+                    if self._cheapshark_success_count % 5 == 0 and self._cheapshark_current_rate > 1.0:
+                        self._cheapshark_current_rate = max(1.0, self._cheapshark_current_rate * 0.9)
+                        logger.debug(f"✅ CheapShark Rate optimiert: {self._cheapshark_current_rate:.1f}s")
+                
+                    # Parse Response (wie deine ursprüngliche Funktion)
+                    games = response.json()
+                    if not games:
+                        return {}
+                
+                    store_mapping = {
+                        '1': 'steam',
+                        '3': 'greenmangaming',
+                        '7': 'gog',
+                        '11': 'humblestore',
+                        '15': 'fanatical',
+                        '25': 'gamesplanet'
+                    }
+                
+                    prices = {}
+                
+                    for game in games:
+                        if game.get('external', '').lower() == app_id.lower():
+                            deals_url = f"https://www.cheapshark.com/api/1.0/games?id={game['gameID']}"
+                            time.sleep(0.5)  # Kurze Pause zwischen Requests
+                        
+                            try:
+                                deals_response = requests.get(deals_url, timeout=timeout)
+                                if deals_response.status_code == 200:
+                                    deals_data = deals_response.json()
+                                
+                                    for deal in deals_data.get('deals', []):
+                                        store_id = deal.get('storeID')
+                                        store_name = store_mapping.get(store_id)
+                                    
+                                        if store_name:
+                                            try:
+                                                prices[store_name] = {
+                                                    'price': float(deal.get('price', 0)),
+                                                    'original_price': float(deal.get('retailPrice', 0)),
+                                                    'discount_percent': int(float(deal.get('savings', 0))),
+                                                    'available': True
+                                                }
+                                            except (ValueError, TypeError):
+                                                continue
+                            except:
+                                continue
+                            break
+                
+                    return prices
+                
+                elif response.status_code == 429:
+                    # Rate Limit erreicht
+                    self._cheapshark_error_count += 1
+                    old_rate = self._cheapshark_current_rate
+                    self._cheapshark_current_rate = min(5.0, self._cheapshark_current_rate * 1.5)
+                    logger.warning(f"⚠️ CheapShark Rate Limit: {old_rate:.1f}s → {self._cheapshark_current_rate:.1f}s")
+                
+                    if attempt < max_retries:
+                        backoff_time = (2 ** attempt) * self._cheapshark_current_rate
+                        logger.warning(f"🔄 CheapShark 429 Retry in {backoff_time:.1f}s")
+                        time.sleep(backoff_time)
+                        continue
+                    else:
+                        logger.error(f"❌ CheapShark 429 nach {max_retries} Versuchen")
+                        return {}
+                    
+                else:
+                    logger.debug(f"Fehler beim Abrufen der CheapShark-Preise: {response.status_code}")
+                    return {}
+                
+            except requests.exceptions.Timeout:
+                if attempt < max_retries:
+                    wait_time = (2 ** attempt) * 2
+                    logger.warning(f"⏰ CheapShark Timeout - Retry in {wait_time}s")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    logger.debug(f"Fehler beim Abrufen der CheapShark-Preise: Timeout nach {max_retries} Versuchen")
+                    return {}
+                
+            except Exception as e:
+                logger.debug(f"Fehler beim Abrufen der CheapShark-Preise: {e}")
+                return {}
+    
+        return {}
+
     # =====================================================================
     # WARTUNG & UTILITY METHODEN
     # =====================================================================
@@ -792,76 +866,73 @@ class SteamPriceTracker:
     
         return entry
 
-    def batch_update_multiple_apps(self, app_ids, batch_size=10, progress_callback=None):
+    def batch_update_multiple_apps(self, app_ids: List[str], progress_callback=None) -> Dict:
         """
-        EINFACHE BATCH Update - Verwendet BESTEHENDE Helper-Funktionen
+        BATCH-UPDATE FÜR MEHRERE APPS
+        Aktualisiert Preise für mehrere Apps in Batches
+
+        Args:
+            app_ids: Liste von Steam App IDs
+            progress_callback: Optionaler Callback für Fortschritts-Updates
+        Returns:
+            Dictionary mit Ergebnissen
         """
-        start_time = time.time()
-
-        # 🚨 KRITISCHER FIX: Set zu Liste konvertieren
-        if isinstance(app_ids, set):
-            app_ids = list(app_ids)
-            logger.info(f"🔄 App IDs von Set zu Liste konvertiert: {len(app_ids)} Apps")
-
         if not app_ids:
-            return {
-                'success': False,
-                'error': 'Keine App IDs angegeben',
-                'duration': 0
-            }
-
+            return {'success': False, 'error': 'Keine App IDs angegeben'}
+    
+        start_time = time.time()
         logger.info(f"🚀 BATCH Preis-Update für {len(app_ids)} Apps gestartet...")
-
+    
+        batch_size = 10
+        all_price_data = []
+        successful_updates = 0
+        failed_updates = 0
+        total_batches = (len(app_ids) + batch_size - 1) // batch_size
+    
         try:
-            # Ergebnis-Container
-            all_price_data = []
-            successful_updates = 0
-            failed_updates = 0
-
-            # Apps in Batches verarbeiten für Rate Limiting
-            for i in range(0, len(app_ids), batch_size):
+            for batch_num, i in enumerate(range(0, len(app_ids), batch_size), 1):
                 batch = app_ids[i:i + batch_size]
-                logger.info(f"📦 Verarbeite Batch {i//batch_size + 1}: Apps {i+1}-{min(i+batch_size, len(app_ids))}")
-        
-                # Progress Callback
+            
+                logger.info(f"📦 Verarbeite Batch {batch_num}: Apps {i+1}-{min(i+batch_size, len(app_ids))}")
+            
+                # Progress-Update für jeden Batch
                 if progress_callback:
                     progress_info = {
-                        'completed_batches': i // batch_size,
-                        'total_batches': (len(app_ids) + batch_size - 1) // batch_size,
+                        'completed_batches': batch_num,
+                        'total_batches': total_batches,
                         'batch_size': batch_size,
-                        'processed_apps': i,
+                        'processed_apps': min(i + batch_size, len(app_ids)),
                         'total_apps': len(app_ids),
-                        'progress_percent': (i / len(app_ids)) * 100
+                        'progress_percent': (min(i + batch_size, len(app_ids)) / len(app_ids)) * 100,
+                        'status': 'processing'
                     }
                     progress_callback(progress_info)
-        
+    
                 for app_id in batch:
                     try:
                         price_data = self._fetch_cheapshark_prices(app_id)
-                
+            
                         if price_data:
                             batch_price_entry = self.create_batch_price_entry_dynamic(app_id, price_data)
-                        
                             all_price_data.append(batch_price_entry)
                             successful_updates += 1
                         else:
                             failed_updates += 1
-                        
+                    
                     except Exception as e:
                         logger.error(f"❌ Fehler bei App {app_id}: {e}")
                         failed_updates += 1
-        
-                # Rate Limiting zwischen Batches
-                time.sleep(1)
+    
+                time.sleep(1)  # Rate Limiting zwischen Batches
 
-            # Final Progress Update
+            # FINALE Progress-Meldung mit 100%
             if progress_callback:
                 progress_callback({
-                    'completed_batches': (len(app_ids) + batch_size - 1) // batch_size,
-                    'total_batches': (len(app_ids) + batch_size - 1) // batch_size,
+                    'completed_batches': total_batches,
+                    'total_batches': total_batches,
                     'processed_apps': len(app_ids),
                     'total_apps': len(app_ids),
-                    'progress_percent': 100,
+                    'progress_percent': 100.0,  # Explizit 100%
                     'status': 'completed'
                 })
 
@@ -869,10 +940,10 @@ class SteamPriceTracker:
                 try:
                     from database_manager import create_batch_writer
                     batch_writer = create_batch_writer(self.db_manager)
-                
+            
                     batch_result = batch_writer.batch_write_price_snapshots(all_price_data)
                     duration = time.time() - start_time
-                
+            
                     return {
                         'success': True,
                         'successful_updates': successful_updates,
@@ -880,29 +951,52 @@ class SteamPriceTracker:
                         'total_apps': len(app_ids),
                         'duration': duration,
                         'apps_per_second': len(app_ids) / duration if duration > 0 else 0,
-                        'batch_statistics': batch_result,
-                        'performance_multiplier': f"{batch_result.get('performance_improvement', 1):.1f}x"
+                        'batch_write_result': batch_result
                     }
                 
-                except ImportError:
-                    logger.warning("⚠️ Batch-Writer nicht verfügbar - verwende bestehende DB-Methoden")
+                except Exception as e:
+                    logger.error(f"❌ Batch-Write fehlgeschlagen: {e}")
                     return {
-                        'success': successful_updates > 0,
+                        'success': False,
+                        'error': f'Batch-Write Fehler: {str(e)}',
                         'successful_updates': successful_updates,
-                        'failed_updates': failed_updates,
-                        'total_apps': len(app_ids),
-                        'duration': time.time() - start_time
+                        'failed_updates': failed_updates
                     }
-
+            else:
+                duration = time.time() - start_time
+                return {
+                    'success': False,
+                    'error': 'Keine Preisdaten erhalten',
+                    'successful_updates': 0,
+                    'failed_updates': len(app_ids),
+                    'duration': duration
+                }
+            
         except Exception as e:
-            logger.error(f"❌ BATCH Update Fehler: {e}")
+            duration = time.time() - start_time
+            logger.error(f"❌ Batch-Update Fehler: {e}")
+        
+            # Error-Progress-Meldung
+            if progress_callback:
+                progress_callback({
+                    'completed_batches': 0,
+                    'total_batches': total_batches,
+                    'processed_apps': 0,
+                    'total_apps': len(app_ids),
+                    'progress_percent': 0,
+                    'status': 'error',
+                    'error': str(e)
+                })
+        
             return {
                 'success': False,
                 'error': str(e),
-                'failed_updates': len(app_ids),
-                'duration': time.time() - start_time
+                'successful_updates': successful_updates,
+                'failed_updates': failed_updates + (len(app_ids) - successful_updates - failed_updates),
+                'duration': duration
             }
 
+    
     def process_all_pending_apps_optimized(self, hours_threshold: int = 6, batch_size: int = 25) -> Dict:
         """
         🚀 REVOLUTIONÄRER OPTIMIERTER BATCH-PROCESSOR für alle ausstehenden Apps
