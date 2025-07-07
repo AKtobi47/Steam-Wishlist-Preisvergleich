@@ -333,182 +333,139 @@ class DatabaseManager:
         Behebt das "no such column: store" Problem automatisch
         """
         try:
-            cursor = self.conn.cursor()
+            with self.get_connection() as conn:  # KORRIGIERT: war self.conn.cursor()
+                cursor = conn.cursor()
         
-            # Prüfe ob 'store' Spalte in price_snapshots existiert
-            cursor.execute("PRAGMA table_info(price_snapshots)")
-            columns = [row[1] for row in cursor.fetchall()]
+                # Prüfe ob 'store' Spalte in price_snapshots existiert
+                cursor.execute("PRAGMA table_info(price_snapshots)")
+                columns = [row[1] for row in cursor.fetchall()]
         
-            if 'store' not in columns:
-                logger.info("🔧 Schema-Migration: Füge 'store' Spalte und Store-spezifische Preise hinzu...")
+                if 'store' not in columns:
+                    logger.info("🔧 Schema-Migration: Füge Store-spezifische Preise hinzu...")
             
-                # Beginne Transaktion
-                cursor.execute("BEGIN TRANSACTION")
+                    # Beginne Transaktion
+                    cursor.execute("BEGIN TRANSACTION")
             
-                try:
-                    # 1. Backup der aktuellen Tabelle
-                    cursor.execute("""
-                        CREATE TABLE price_snapshots_backup AS 
-                        SELECT * FROM price_snapshots
-                    """)
-                
-                    # 2. Neue Tabelle mit korrektem Schema erstellen
-                    cursor.execute("""
-                        CREATE TABLE price_snapshots_new (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            app_id TEXT NOT NULL,
-                            timestamp DATETIME NOT NULL,
-                            store TEXT DEFAULT 'steam',
-                        
-                            -- Store-Specific Prices (Batch-Writer kompatibel)
-                            steam_price REAL,
-                            steam_original_price REAL,
-                            steam_discount_percent INTEGER DEFAULT 0,
-                        
-                            greenmangaming_price REAL,
-                            greenmangaming_original_price REAL,
-                            greenmangaming_discount_percent INTEGER DEFAULT 0,
-                        
-                            gog_price REAL,
-                            gog_original_price REAL,
-                            gog_discount_percent INTEGER DEFAULT 0,
-                        
-                            humblestore_price REAL,
-                            humblestore_original_price REAL,
-                            humblestore_discount_percent INTEGER DEFAULT 0,
-                        
-                            fanatical_price REAL,
-                            fanatical_original_price REAL,
-                            fanatical_discount_percent INTEGER DEFAULT 0,
-                        
-                            gamesplanet_price REAL,
-                            gamesplanet_original_price REAL,
-                            gamesplanet_discount_percent INTEGER DEFAULT 0,
-                        
-                            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                            FOREIGN KEY (app_id) REFERENCES tracked_apps (app_id)
-                        )
-                    """)
-                
-                    # 3. Intelligente Daten-Migration
-                    old_columns = [row[1] for row in cursor.execute("PRAGMA table_info(price_snapshots_backup)").fetchall()]
-                
-                    if 'price' in old_columns:
-                        # Alte Schema-Version: 'price' → 'steam_price'
-                        logger.info("   🔄 Migriere alte Schema-Version (price → steam_price)...")
-                    
-                        migration_query = """
-                            INSERT INTO price_snapshots_new 
-                            (id, app_id, timestamp, store, steam_price, steam_original_price, created_at)
-                            SELECT 
-                                id, 
-                                app_id, 
-                                timestamp, 
-                                'steam' as store,
-                                COALESCE(price, 0) as steam_price,
-                                COALESCE(original_price, price, 0) as steam_original_price,
-                                COALESCE(created_at, timestamp) as created_at
-                            FROM price_snapshots_backup
-                        """
-                    
-                    elif 'steam_price' in old_columns:
-                        # Neuere Version ohne 'store': Direkte Übertragung
-                        logger.info("   🔄 Migriere neuere Schema-Version (füge store hinzu)...")
-                    
-                        # Bestimme welche Spalten übertragen werden können
-                        transferable_columns = []
-                        for col in old_columns:
-                            if col in ['id', 'app_id', 'timestamp', 'created_at']:
-                                transferable_columns.append(col)
-                            elif col.endswith(('_price', '_original_price', '_discount_percent')):
-                                transferable_columns.append(col)
-                    
-                        columns_str = ', '.join(transferable_columns)
-                        migration_query = f"""
-                            INSERT INTO price_snapshots_new 
-                            (store, {columns_str})
-                            SELECT 
-                                'steam' as store,
-                                {columns_str}
-                            FROM price_snapshots_backup
-                        """
-                    
-                    else:
-                        # Fallback: Minimale Migration
-                        logger.info("   🔄 Fallback-Migration (Basis-Spalten)...")
-                    
-                        migration_query = """
-                            INSERT INTO price_snapshots_new 
-                            (app_id, timestamp, store, created_at)
-                            SELECT 
-                                app_id, 
-                                timestamp, 
-                                'steam' as store,
-                                COALESCE(created_at, timestamp) as created_at
-                            FROM price_snapshots_backup
-                        """
-                
-                    # 4. Migration ausführen
-                    cursor.execute(migration_query)
-                    migrated_rows = cursor.rowcount
-                    logger.info(f"   ✅ {migrated_rows} Datensätze migriert")
-                
-                    # 5. Alte Tabelle entfernen, neue umbenennen
-                    cursor.execute("DROP TABLE price_snapshots")
-                    cursor.execute("ALTER TABLE price_snapshots_new RENAME TO price_snapshots")
-                
-                    # 6. Indizes neu erstellen
-                    cursor.execute("""
-                        CREATE INDEX IF NOT EXISTS idx_price_snapshots_app_timestamp 
-                        ON price_snapshots(app_id, timestamp DESC)
-                    """)
-                
-                    cursor.execute("""
-                        CREATE INDEX IF NOT EXISTS idx_price_snapshots_store 
-                        ON price_snapshots(store)
-                    """)
-                
-                    # 7. Backup-Tabelle entfernen
-                    cursor.execute("DROP TABLE price_snapshots_backup")
-                
-                    # 8. Transaktion committen
-                    cursor.execute("COMMIT")
-                
-                    logger.info("✅ Schema-Migration erfolgreich abgeschlossen")
-                    logger.info("   📊 Neue Spalten: store, *_price, *_original_price, *_discount_percent")
-                    logger.info("   🔗 Batch-Writer Kompatibilität: Aktiviert")
-                
-                except Exception as e:
-                    # Rollback bei Fehler
-                    cursor.execute("ROLLBACK")
-                    logger.error(f"❌ Schema-Migration fehlgeschlagen: {e}")
-                
-                    # Versuche Backup wiederherzustellen
                     try:
-                        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='price_snapshots_backup'")
-                        if cursor.fetchone():
-                            cursor.execute("DROP TABLE IF EXISTS price_snapshots_new")
-                            logger.info("🔄 Backup wiederhergestellt")
-                    except:
-                        pass
+                        # 1. Backup der aktuellen Tabelle
+                        cursor.execute("""
+                            CREATE TABLE price_snapshots_backup AS 
+                            SELECT * FROM price_snapshots
+                        """)
                 
-                    raise e
+                        # 2. Neue Tabelle mit korrektem Schema erstellen
+                        cursor.execute("""
+                            CREATE TABLE price_snapshots_new (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                steam_app_id TEXT NOT NULL,
+                                game_title TEXT,
+                                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        
+                                -- Steam Store
+                                steam_price REAL,
+                                steam_original_price REAL,
+                                steam_discount_percent INTEGER DEFAULT 0,
+                                steam_available BOOLEAN DEFAULT 0,
+                        
+                                -- Green Man Gaming
+                                greenmangaming_price REAL,
+                                greenmangaming_original_price REAL,
+                                greenmangaming_discount_percent INTEGER DEFAULT 0,
+                                greenmangaming_available BOOLEAN DEFAULT 0,
+                        
+                                -- GOG
+                                gog_price REAL,
+                                gog_original_price REAL,
+                                gog_discount_percent INTEGER DEFAULT 0,
+                                gog_available BOOLEAN DEFAULT 0,
+                        
+                                -- Humble Store
+                                humblestore_price REAL,
+                                humblestore_original_price REAL,
+                                humblestore_discount_percent INTEGER DEFAULT 0,
+                                humblestore_available BOOLEAN DEFAULT 0,
+                        
+                                -- Fanatical
+                                fanatical_price REAL,
+                                fanatical_original_price REAL,
+                                fanatical_discount_percent INTEGER DEFAULT 0,
+                                fanatical_available BOOLEAN DEFAULT 0,
+                        
+                                -- Gamesplanet
+                                gamesplanet_price REAL,
+                                gamesplanet_original_price REAL,
+                                gamesplanet_discount_percent INTEGER DEFAULT 0,
+                                gamesplanet_available BOOLEAN DEFAULT 0
+                            )
+                        """)
+                
+                        # 3. Intelligente Daten-Migration
+                        old_columns = [row[1] for row in cursor.execute("PRAGMA table_info(price_snapshots_backup)").fetchall()]
+                
+                        # Migration basierend auf vorhandenen Spalten
+                        if 'app_id' in old_columns:
+                            # Alte Schema-Version: app_id → steam_app_id
+                            migration_query = """
+                                INSERT INTO price_snapshots_new 
+                                (steam_app_id, game_title, timestamp, steam_price, steam_original_price, steam_discount_percent)
+                                SELECT 
+                                    app_id as steam_app_id,
+                                    game_title,
+                                    timestamp,
+                                    COALESCE(price, steam_price, 0) as steam_price,
+                                    COALESCE(original_price, steam_original_price, 0) as steam_original_price,
+                                    COALESCE(discount_percent, steam_discount_percent, 0) as steam_discount_percent
+                                FROM price_snapshots_backup
+                            """
+                        else:
+                            # Bereits steam_app_id, übertrage verfügbare Spalten
+                            transferable_columns = ['steam_app_id', 'game_title', 'timestamp']
+                        
+                            # Dynamisch alle vorhandenen Store-Spalten hinzufügen
+                            for col in old_columns:
+                                if col.endswith(('_price', '_original_price', '_discount_percent', '_available')):
+                                    transferable_columns.append(col)
+                        
+                            columns_str = ', '.join(transferable_columns)
+                            migration_query = f"""
+                                INSERT INTO price_snapshots_new ({columns_str})
+                                SELECT {columns_str}
+                                FROM price_snapshots_backup
+                            """
+                
+                        cursor.execute(migration_query)
+                        migrated_count = cursor.rowcount
+                
+                        # 4. Alte Tabelle ersetzen
+                        cursor.execute("DROP TABLE price_snapshots")
+                        cursor.execute("ALTER TABLE price_snapshots_new RENAME TO price_snapshots")
+                
+                        # 5. Cleanup
+                        cursor.execute("DROP TABLE price_snapshots_backup")
+                
+                        # 6. Transaktion committen
+                        cursor.execute("COMMIT")
+                
+                        logger.info(f"✅ Schema-Migration erfolgreich: {migrated_count} Datensätze migriert")
+                        logger.info("   📊 Alle Store-Spalten dynamisch erstellt")
+                        logger.info("   🔗 Batch-Writer Kompatibilität: Aktiviert")
+                
+                    except Exception as e:
+                        # Rollback bei Fehler
+                        cursor.execute("ROLLBACK")
+                        logger.error(f"❌ Schema-Migration fehlgeschlagen: {e}")
+                        raise e
         
-            else:
-                logger.debug("✅ Schema bereits aktuell - keine Migration nötig")
+                else:
+                    logger.debug("✅ Schema bereits aktuell - keine Migration nötig")
         
-            # Prüfe auch andere kritische Tabellen
-            self._ensure_charts_schema_compatibility()
+                # Prüfe auch andere kritische Tabellen
+                self._ensure_charts_schema_compatibility()
         
-            return True
-        
+                return True
+    
         except Exception as e:
             logger.error(f"❌ Schema-Migration fehlgeschlagen: {e}")
-            if hasattr(self, 'conn') and self.conn:
-                try:
-                    self.conn.rollback()
-                except:
-                    pass
             return False
     
     def _migrate_chart_games_to_steam_charts_tracking(self, cursor):
@@ -1191,7 +1148,7 @@ class DatabaseBatchWriter:
                 cursor = conn.cursor()
                 
                 # Schema-Kompatibilität sicherstellen
-                self._ensure_charts_schema_compatibility(conn)
+                self._ensure_charts_schema_compatibility()
                 
                 # Temp-Table erstellen
                 cursor.execute(f"""
@@ -1375,150 +1332,93 @@ class DatabaseBatchWriter:
     
     def _ensure_charts_schema_compatibility(self):
         """
-        Stellt sicher dass Charts-Tabellen mit Batch-Writer kompatibel sind
+        Stellt sicher dass steam_charts_tracking alle erforderlichen Spalten hat
         """
         try:
-            cursor = self.conn.cursor()
+            with self.get_connection() as conn:  # KORRIGIERT: war self.conn
+                cursor = conn.cursor()
         
-            # Prüfe ob steam_charts_tracking existiert
-            cursor.execute("""
-                SELECT name FROM sqlite_master 
-                WHERE type='table' AND name='steam_charts_tracking'
-            """)
-        
-            if not cursor.fetchone():
-                # Erstelle Charts-Tabelle falls nicht vorhanden
-                logger.info("🔧 Erstelle steam_charts_tracking Tabelle...")
-            
-                cursor.execute("""
-                    CREATE TABLE steam_charts_tracking (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        steam_app_id TEXT NOT NULL,
-                        name TEXT,
-                        chart_type TEXT,
-                        current_rank INTEGER,
-                        best_rank INTEGER,
-                        first_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        total_appearances INTEGER DEFAULT 1,
-                        active BOOLEAN DEFAULT 1,
-                        metadata TEXT DEFAULT '{}',
-                        days_in_charts INTEGER DEFAULT 1,
-                        rank_trend TEXT DEFAULT 'new',
-                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        peak_players INTEGER,
-                        current_players INTEGER,
-                        UNIQUE(steam_app_id, chart_type)
-                    )
-                """)
-            
-                # Index erstellen
-                cursor.execute("""
-                    CREATE INDEX idx_charts_app_chart 
-                    ON steam_charts_tracking(steam_app_id, chart_type)
-                """)
-            
-                cursor.execute("""
-                    CREATE INDEX idx_charts_rank 
-                    ON steam_charts_tracking(chart_type, current_rank)
-                """)
-            
-                self.conn.commit()
-                logger.info("✅ Charts-Tabelle erstellt")
-            
-            else:
-                # Prüfe ob alle nötigen Spalten vorhanden sind
+                # Prüfe aktuelle Spalten
                 cursor.execute("PRAGMA table_info(steam_charts_tracking)")
-                columns = [row[1] for row in cursor.fetchall()]
-            
-                required_columns = [
-                    'steam_app_id', 'name', 'chart_type', 'current_rank', 
-                    'metadata', 'peak_players', 'current_players'
-                ]
-            
-                missing_columns = [col for col in required_columns if col not in columns]
-            
-                if missing_columns:
-                    logger.info(f"🔧 Füge fehlende Charts-Spalten hinzu: {', '.join(missing_columns)}")
-                
-                    for column in missing_columns:
-                        if column == 'steam_app_id':
-                            cursor.execute("ALTER TABLE steam_charts_tracking ADD COLUMN steam_app_id TEXT")
-                        elif column == 'name':
-                            cursor.execute("ALTER TABLE steam_charts_tracking ADD COLUMN name TEXT")
-                        elif column == 'chart_type':
-                            cursor.execute("ALTER TABLE steam_charts_tracking ADD COLUMN chart_type TEXT")
-                        elif column == 'current_rank':
-                            cursor.execute("ALTER TABLE steam_charts_tracking ADD COLUMN current_rank INTEGER")
-                        elif column == 'metadata':
-                            cursor.execute("ALTER TABLE steam_charts_tracking ADD COLUMN metadata TEXT DEFAULT '{}'")
-                        elif column == 'peak_players':
-                            cursor.execute("ALTER TABLE steam_charts_tracking ADD COLUMN peak_players INTEGER")
-                        elif column == 'current_players':
-                            cursor.execute("ALTER TABLE steam_charts_tracking ADD COLUMN current_players INTEGER")
-                
-                    self.conn.commit()
-                    logger.info("✅ Charts-Schema aktualisiert")
+                existing_columns = {row[1] for row in cursor.fetchall()}
         
+                # Erforderliche Spalten definieren
+                required_columns = {
+                    'peak_players': 'INTEGER',
+                    'current_players': 'INTEGER',
+                    'updated_at': 'TIMESTAMP DEFAULT NULL',
+                    'rank_trend': 'TEXT DEFAULT "new"'
+                }
+        
+                # Fehlende Spalten hinzufügen
+                for column, column_type in required_columns.items():
+                    if column not in existing_columns:
+                        cursor.execute(f"ALTER TABLE steam_charts_tracking ADD COLUMN {column} {column_type}")
+                        logger.info(f"✅ steam_charts_tracking: {column} Spalte hinzugefügt")
+        
+                conn.commit()
+                logger.info("✅ Charts-Schema aktualisiert")
+    
         except Exception as e:
             logger.error(f"❌ Charts-Schema-Check fehlgeschlagen: {e}")
-
+    
     def get_schema_version(self) -> Dict[str, Any]:
         """
         Gibt aktuelle Schema-Version und Kompatibilität zurück
         """
         try:
-            cursor = self.conn.cursor()
+            with self.get_connection() as conn:  # KORRIGIERT: war self.conn
+                cursor = conn.cursor()
         
-            schema_info = {
-                'version': '2.0',
-                'batch_writer_compatible': False,
-                'tables': {},
-                'migration_needed': False
-            }
+                schema_info = {
+                    'version': '2.0',
+                    'batch_writer_compatible': False,
+                    'tables': {},
+                    'migration_needed': False
+                }
         
-            # Prüfe price_snapshots
-            cursor.execute("PRAGMA table_info(price_snapshots)")
-            price_columns = [row[1] for row in cursor.fetchall()]
+                # Prüfe price_snapshots
+                cursor.execute("PRAGMA table_info(price_snapshots)")
+                price_columns = [row[1] for row in cursor.fetchall()]
         
-            schema_info['tables']['price_snapshots'] = {
-                'exists': True,
-                'columns_count': len(price_columns),
-                'has_store_column': 'store' in price_columns,
-                'has_store_prices': any(col.endswith('_price') for col in price_columns),
-                'batch_writer_ready': 'store' in price_columns and 'steam_price' in price_columns
-            }
-        
-            # Prüfe charts
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='steam_charts_tracking'")
-            charts_exists = cursor.fetchone() is not None
-        
-            if charts_exists:
-                cursor.execute("PRAGMA table_info(steam_charts_tracking)")
-                charts_columns = [row[1] for row in cursor.fetchall()]
-            
-                schema_info['tables']['steam_charts_tracking'] = {
+                schema_info['tables']['price_snapshots'] = {
                     'exists': True,
-                    'columns_count': len(charts_columns),
-                    'has_app_id': 'steam_app_id' in charts_columns,
-                    'batch_writer_ready': 'steam_app_id' in charts_columns and 'chart_type' in charts_columns
-                }
-            else:
-                schema_info['tables']['steam_charts_tracking'] = {
-                    'exists': False,
-                    'batch_writer_ready': False
+                    'columns_count': len(price_columns),
+                    'has_store_column': 'store' in price_columns,
+                    'has_store_prices': any(col.endswith('_price') for col in price_columns),
+                    'batch_writer_ready': 'steam_app_id' in price_columns  # KORRIGIERT
                 }
         
-            # Gesamt-Kompatibilität bestimmen
-            schema_info['batch_writer_compatible'] = (
-                schema_info['tables']['price_snapshots']['batch_writer_ready'] and
-                schema_info['tables']['steam_charts_tracking']['batch_writer_ready']
-            )
+                # Prüfe charts
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='steam_charts_tracking'")
+                charts_exists = cursor.fetchone() is not None
         
-            schema_info['migration_needed'] = not schema_info['batch_writer_compatible']
+                if charts_exists:
+                    cursor.execute("PRAGMA table_info(steam_charts_tracking)")
+                    charts_columns = [row[1] for row in cursor.fetchall()]
+            
+                    schema_info['tables']['steam_charts_tracking'] = {
+                        'exists': True,
+                        'columns_count': len(charts_columns),
+                        'has_app_id': 'steam_app_id' in charts_columns,
+                        'batch_writer_ready': 'steam_app_id' in charts_columns and 'chart_type' in charts_columns
+                    }
+                else:
+                    schema_info['tables']['steam_charts_tracking'] = {
+                        'exists': False,
+                        'batch_writer_ready': False
+                    }
         
-            return schema_info
+                # Gesamt-Kompatibilität bestimmen
+                schema_info['batch_writer_compatible'] = (
+                    schema_info['tables']['price_snapshots']['batch_writer_ready'] and
+                    schema_info['tables']['steam_charts_tracking']['batch_writer_ready']
+                )
         
+                schema_info['migration_needed'] = not schema_info['batch_writer_compatible']
+        
+                return schema_info
+    
         except Exception as e:
             return {
                 'version': 'unknown',
@@ -1526,6 +1426,38 @@ class DatabaseBatchWriter:
                 'batch_writer_compatible': False,
                 'migration_needed': True
             }
+    
+    def _ensure_charts_schema_compatibility(self):
+        """
+        Stellt sicher dass steam_charts_tracking alle erforderlichen Spalten hat
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Prüfe aktuelle Spalten
+                cursor.execute("PRAGMA table_info(steam_charts_tracking)")
+                existing_columns = {row[1] for row in cursor.fetchall()}
+        
+                # Erforderliche Spalten definieren
+                required_columns = {
+                    'peak_players': 'INTEGER',
+                    'current_players': 'INTEGER',
+                    'updated_at': 'TIMESTAMP DEFAULT NULL',
+                    'rank_trend': 'TEXT DEFAULT "new"'
+                }
+        
+                # Fehlende Spalten hinzufügen
+                for column, column_type in required_columns.items():
+                    if column not in existing_columns:
+                        cursor.execute(f"ALTER TABLE steam_charts_tracking ADD COLUMN {column} {column_type}")
+                        logger.info(f"✅ steam_charts_tracking: {column} Spalte hinzugefügt")
+        
+                conn.commit()
+                logger.info("✅ Charts-Schema aktualisiert")
+    
+        except Exception as e:
+            logger.error(f"❌ Charts-Schema-Check fehlgeschlagen: {e}")
 
     def get_batch_statistics(self) -> Dict:
         """Performance-Statistiken"""

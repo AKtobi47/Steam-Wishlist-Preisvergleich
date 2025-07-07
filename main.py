@@ -655,7 +655,7 @@ def menu_update_charts(charts_manager, tracker):
     # Update-Optionen anzeigen
     print("📊 Update-Optionen:")
     print("1. 🚀 Vollständig (Charts + Namen + Preise) - Empfohlen")
-    print("2. 📊 Nur Charts-Daten (Schnell)")  
+    print("2. 📊 Nur Charts-Daten (Schnell)")
     print("3. 📝 Charts + Namen (ohne Preise)")
     print("4. 💰 Charts + Preise (ohne Namen)")
     print("5. 🎯 Erweiterte Optionen")
@@ -666,10 +666,10 @@ def menu_update_charts(charts_manager, tracker):
     if choice == "0":
         return
     
-    # Parameter basierend auf Auswahl
+    # Parameter basierend auf Auswahl setzen
     include_names = True
     include_prices = True
-    chart_types = None  # Alle Chart-Typen
+    chart_types = None
     
     if choice == "2":
         include_names = False
@@ -683,41 +683,22 @@ def menu_update_charts(charts_manager, tracker):
         include_names = safe_input("Namen aktualisieren? (j/n): ").lower() in ['j', 'y', 'ja', 'yes']
         include_prices = safe_input("Preise aktualisieren? (j/n): ").lower() in ['j', 'y', 'ja', 'yes']
         
-        # Chart-Typen auswählen
-        print("\n📊 Chart-Typen auswählen:")
-        try:
-            from steam_charts_manager import CHART_TYPES
-            available_chart_types = list(CHART_TYPES.keys())
-        except ImportError:
-            available_chart_types = ['most_played', 'top_releases', 'most_concurrent_players']
-        
-        for i, chart_type in enumerate(available_chart_types, 1):
-            print(f"{i}. {chart_type.replace('_', ' ').title()}")
-        print(f"{len(available_chart_types) + 1}. 🚀 Alle (Empfohlen)")
-        
-        chart_choice = safe_input(f"Chart-Typen (1-{len(available_chart_types) + 1}): ")
-        
-        if chart_choice != str(len(available_chart_types) + 1):
-            try:
-                idx = int(chart_choice) - 1
-                if 0 <= idx < len(available_chart_types):
-                    chart_types = [available_chart_types[idx]]
-            except ValueError:
-                pass
+        custom_types = safe_input("Spezifische Chart-Typen (leer für alle): ").strip()
+        if custom_types:
+            chart_types = [t.strip() for t in custom_types.split(',')]
     
     # Update-Zusammenfassung
-    chart_count = len(chart_types) if chart_types else "alle"
     print(f"\n🎯 UPDATE-ZUSAMMENFASSUNG:")
-    print(f"📊 Chart-Typen: {chart_count}")
+    print(f"📊 Chart-Typen: {'alle' if not chart_types else ', '.join(chart_types)}")
     print(f"📝 Namen-Updates: {'✅ Ja' if include_names else '❌ Nein'}")
     print(f"💰 Preis-Updates: {'✅ Ja' if include_prices else '❌ Nein'}")
     
-    confirm = safe_input("\n🚀 Update starten? (j/n): ")
+    confirm = safe_input("🚀 Update starten? (j/n): ")
     if confirm.lower() not in ['j', 'y', 'ja', 'yes']:
         print("❌ Update abgebrochen")
         return
     
-    # PROGRESS-TRACKER STARTEN
+    # PROGRESS-TRACKER STARTEN (KORRIGIERT)
     progress_tracker = ProgressTracker()
     progress_tracker.start()
     
@@ -725,18 +706,18 @@ def menu_update_charts(charts_manager, tracker):
         print("\n🚀 Update gestartet...")
         start_time = time.time()
         
-        # Progress-Callback definieren
+        # Progress-Callback definieren (KORRIGIERT)
         def progress_callback(progress_info):
             progress_tracker.update_progress(progress_info)
         
-        # 🚀 UNIFIED BATCH UPDATE
+        # 🚀 UNIFIED BATCH UPDATE (KORRIGIERT)
         if hasattr(charts_manager, 'update_all_charts_batch'):
             try:
                 result = charts_manager.update_all_charts_batch(
                     chart_types=chart_types,
                     include_names=include_names,
                     include_prices=include_prices,
-                    progress_callback=progress_callback
+                    progress_callback=progress_callback  # KORRIGIERT: Korrekte Callback-Übergabe
                 )
             except TypeError:
                 # Fallback für Version ohne neue Parameter
@@ -759,7 +740,7 @@ def menu_update_charts(charts_manager, tracker):
     finally:
         progress_tracker.stop()
     
-    # ERGEBNISSE ANZEIGEN
+    # ERGEBNISSE ANZEIGEN (KORRIGIERT)
     total_duration = time.time() - start_time
     
     print(f"\n🎉 UPDATE ABGESCHLOSSEN!")
@@ -769,22 +750,15 @@ def menu_update_charts(charts_manager, tracker):
     if result.get('overall_success'):
         print("✅ Update erfolgreich!")
         
-        # Details anzeigen
-        if 'charts_update' in result:
-            charts_result = result['charts_update']
-            print(f"📊 Charts: {charts_result.get('details', 'Erfolgreich')}")
-        
-        if include_names and 'name_updates' in result:
-            names_result = result['name_updates']
-            if names_result.get('updated_count', 0) > 0:
-                print(f"📝 Namen: {names_result['updated_count']} Apps aktualisiert")
-        
-        if include_prices and 'price_updates' in result:
-            prices_result = result['price_updates']
-            if prices_result.get('updated_count', 0) > 0:
-                print(f"💰 Preise: {prices_result['updated_count']} Apps aktualisiert")
-        
-        print("💡 Charts-Deals sind jetzt verfügbar")
+        # Performance-Metriken anzeigen (KORRIGIERT)
+        if 'performance_metrics' in result:
+            metrics = result['performance_metrics']
+            print(f"📊 Charts verarbeitet: {metrics.get('charts_processed', 'N/A')}")
+            print(f"🎮 Apps verarbeitet: {metrics.get('apps_processed', 'N/A')}")
+            if include_names:
+                print(f"📝 Namen aktualisiert: {metrics.get('names_updated', 'N/A')}")
+            if include_prices:
+                print(f"💰 Preise aktualisiert: {metrics.get('prices_updated', 'N/A')}")
     else:
         print("⚠️ Update mit Einschränkungen abgeschlossen")
         if 'error' in result:
