@@ -1,0 +1,4 @@
+python elasticsearch_cli.py docker setup
+python elasticsearch_cli.py export
+python kibana_dashboard_setup.py --ndjson dashboard.ndjson
+"oben dann auf z.B 15 Tage statt Minuten stellen"
