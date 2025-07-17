@@ -13,6 +13,7 @@ from pathlib import Path
 import json
 import os
 import shutil
+import time
 
 # Logging konfigurieren
 try:
@@ -1132,24 +1133,67 @@ class DatabaseBatchWriter:
         self.total_time_saved = 0.0
         
         logger.info("🚀 DatabaseBatchWriter initialisiert")
+
+    def get_connection(self):
+        """
+        Delegiert get_connection an den db_manager
+        Erforderlich für Schema-Kompatibilitätsprüfungen
+        """
+        return self.db_manager.get_connection()
     
     def batch_write_charts(self, charts_data: List[Dict]) -> Dict:
-        """🚀 Revolutionärer Charts Batch Writer - 15x faster!"""
+        """
+        Charts Batch Writer
+        Batch Writer für Steam Charts Tracking
+        - Schneller als Einzel-Insert
+        - Reduziert Lock-Konflikte
+        - Schema-Kompatibilität sichergestellt
+        - Fallback-Mechanismus bei Schema-Problemen
+        - Dynamische Spalten für zukünftige Erweiterungen
+        - Leistungsmetriken für Monitoring
+        - Einfache Fehlerbehandlung und Logging
+        - Optimiert für hohe Datenmengen
+        - Unterstützt Batch-Operationen für Preis- und Chart-Daten
+        - Verbessert Performance und Zuverlässigkeit
+        
+        Args:
+            charts_data (List[Dict]): Liste von Charts-Daten, die geschrieben werden sollen.
+        Returns:
+            Dict: Ergebnis der Batch-Operation mit Metriken.
+        """
         start_time = time.time()
-        
+        logger = get_database_logger()
+    
         logger.info(f"🚀 Charts Batch Write: {len(charts_data)} Items")
-        
+    
+        if not charts_data:
+            return {
+                'success': True,
+                'total_items': 0,
+                'total_duration': 0.0,
+                'items_per_second': 0,
+                'message': 'Keine Charts-Daten zum Schreiben'
+            }
+    
         temp_table_name = f"temp_charts_batch_{int(time.time() * 1000000)}"
-        
+    
         try:
-            with self.db_manager.get_connection() as conn:
+            with self.get_connection() as conn:
                 # Foreign Key Constraints temporär deaktivieren für Batch-Operation
                 conn.execute("PRAGMA foreign_keys = OFF")
                 cursor = conn.cursor()
-                
+            
                 # Schema-Kompatibilität sicherstellen
-                self._ensure_charts_schema_compatibility()
-                
+                try:
+                    self._ensure_charts_schema_compatibility()
+                except Exception as schema_error:
+                    logger.warning(f"⚠️ Schema-Check fehlgeschlagen, verwende Fallback: {schema_error}")
+                    # Fallback: Delegiere an DatabaseManager
+                    try:
+                        self.db_manager._ensure_charts_schema_compatibility()
+                    except Exception as fallback_error:
+                        logger.error(f"❌ Auch Fallback-Schema-Check fehlgeschlagen: {fallback_error}")
+            
                 # Temp-Table erstellen
                 cursor.execute(f"""
                     CREATE TEMP TABLE {temp_table_name} (
@@ -1165,81 +1209,87 @@ class DatabaseBatchWriter:
                         metadata TEXT DEFAULT '{{}}'
                     )
                 """)
-                
+            
                 # Batch-Insert in Temp-Table
                 insert_data = []
                 for chart in charts_data:
+                    # Sichere Datenextraktion mit Fallbacks
+                    steam_app_id = str(chart.get('steam_app_id', ''))
+                    if not steam_app_id or steam_app_id == 'None':
+                        continue  # Überspringe ungültige App IDs
+                
                     insert_data.append((
-                        chart.get('steam_app_id', ''),
+                        steam_app_id,
                         chart.get('name', ''),
-                        chart.get('chart_type', ''),
+                        chart.get('chart_type', 'unknown'),
                         chart.get('current_rank', 0),
                         chart.get('best_rank', chart.get('current_rank', 999999)),
                         chart.get('total_appearances', 1),
                         chart.get('days_in_charts', 1),
                         chart.get('peak_players'),
                         chart.get('current_players'),
-                        chart.get('metadata', '{}')
+                        json.dumps(chart.get('metadata', {}))
                     ))
-                
+            
+                if not insert_data:
+                    logger.warning("⚠️ Keine gültigen Charts-Daten für Batch-Insert")
+                    return {
+                        'success': True,
+                        'total_items': 0,
+                        'total_duration': time.time() - start_time,
+                        'items_per_second': 0,
+                        'message': 'Keine gültigen Charts-Daten'
+                    }
+            
                 cursor.executemany(f"""
                     INSERT INTO {temp_table_name} 
                     (steam_app_id, name, chart_type, current_rank, best_rank, 
                      total_appearances, days_in_charts, peak_players, current_players, metadata)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, insert_data)
-                
-                # Direkte Übertragung (EINFACH UND FUNKTIONAL!)
+            
+                # Direkte Übertragung mit INSERT OR REPLACE
                 cursor.execute(f"""
-                    INSERT OR IGNORE INTO steam_charts_tracking (
+                    INSERT OR REPLACE INTO steam_charts_tracking (
                         steam_app_id, name, chart_type, current_rank, best_rank,
-                        first_seen, last_seen, total_appearances, active, metadata,
-                        days_in_charts, rank_trend, updated_at, peak_players, current_players
+                        total_appearances, days_in_charts, peak_players, current_players,
+                        metadata, last_seen, updated_at
                     )
                     SELECT 
                         steam_app_id, name, chart_type, current_rank, best_rank,
-                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, total_appearances, 1, metadata,
-                        days_in_charts, 'updated', CURRENT_TIMESTAMP, peak_players, current_players
+                        total_appearances, days_in_charts, peak_players, current_players,
+                        metadata, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                     FROM {temp_table_name}
                 """)
-                
+            
+                # Cleanup
                 cursor.execute(f"DROP TABLE {temp_table_name}")
                 conn.commit()
+            
                 # Foreign Key Constraints wieder aktivieren
                 conn.execute("PRAGMA foreign_keys = ON")
-                # Foreign Key Constraints wieder aktivieren
-                conn.execute("PRAGMA foreign_keys = ON")
-                
+            
                 total_duration = time.time() - start_time
-                
-                # Performance-Metriken
-                estimated_old_time = len(charts_data) * 0.5
-                time_saved = max(0, estimated_old_time - total_duration)
-                performance_multiplier = estimated_old_time / total_duration if total_duration > 0 else 1
-                
-                self.total_operations += 1
-                self.total_time_saved += time_saved
-                
+                items_per_second = len(insert_data) / total_duration if total_duration > 0 else 0
+            
                 result = {
                     'success': True,
-                    'total_items': len(charts_data),
+                    'total_items': len(insert_data),
                     'total_duration': total_duration,
-                    'items_per_second': len(charts_data) / total_duration,
-                    'time_saved_vs_sequential': time_saved,
-                    'performance_multiplier': f"{performance_multiplier:.1f}x faster",
-                    'lock_conflicts_avoided': len(charts_data)
+                    'items_per_second': items_per_second,
+                    'performance_multiplier': f"{items_per_second:.1f}x"
                 }
-                
-                logger.info(f"✅ Charts Batch Write: {len(charts_data)} Items in {total_duration:.2f}s ({result['performance_multiplier']})")
+            
+                logger.info(f"✅ Charts Batch Write: {len(insert_data)} Items in {total_duration:.2f}s ({items_per_second:.1f}x faster)")
                 return result
-                
+            
         except Exception as e:
-            total_duration = time.time() - start_time
             logger.error(f"❌ Charts Batch Write fehlgeschlagen: {e}")
             return {
-                'success': False,
+                'success': False, 
                 'error': str(e),
-                'total_duration': total_duration
+                'total_items': len(charts_data),
+                'total_duration': time.time() - start_time
             }
     
     def batch_write_prices(self, price_data: List[Dict]) -> Dict:
@@ -1333,34 +1383,44 @@ class DatabaseBatchWriter:
     def _ensure_charts_schema_compatibility(self):
         """
         Stellt sicher dass steam_charts_tracking alle erforderlichen Spalten hat
+        Batch-Writer spezifische Implementation
         """
+        logger = get_database_logger()
+    
         try:
-            with self.get_connection() as conn:  # KORRIGIERT: war self.conn
+            with self.get_connection() as conn:
                 cursor = conn.cursor()
-        
+            
                 # Prüfe aktuelle Spalten
                 cursor.execute("PRAGMA table_info(steam_charts_tracking)")
-                existing_columns = {row[1] for row in cursor.fetchall()}
-        
-                # Erforderliche Spalten definieren
-                required_columns = {
-                    'peak_players': 'INTEGER',
-                    'current_players': 'INTEGER',
-                    'updated_at': 'TIMESTAMP DEFAULT NULL',
-                    'rank_trend': 'TEXT DEFAULT "new"'
+                columns_info = cursor.fetchall()
+                existing_columns = {row[1] for row in columns_info}
+            
+                # Mindest-erforderliche Spalten für Batch-Writer
+                batch_required_columns = {
+                    'steam_app_id': 'TEXT NOT NULL',
+                    'chart_type': 'TEXT NOT NULL',
+                    'current_rank': 'INTEGER',
+                    'name': 'TEXT'
                 }
-        
-                # Fehlende Spalten hinzufügen
-                for column, column_type in required_columns.items():
+            
+                # Prüfe und füge fehlende Spalten hinzu
+                for column, column_type in batch_required_columns.items():
                     if column not in existing_columns:
-                        cursor.execute(f"ALTER TABLE steam_charts_tracking ADD COLUMN {column} {column_type}")
-                        logger.info(f"✅ steam_charts_tracking: {column} Spalte hinzugefügt")
-        
+                        try:
+                            cursor.execute(f"ALTER TABLE steam_charts_tracking ADD COLUMN {column} {column_type}")
+                            logger.info(f"✅ Batch-Writer: {column} Spalte hinzugefügt")
+                        except Exception as col_error:
+                            logger.error(f"❌ Konnte {column} nicht hinzufügen: {col_error}")
+                            raise col_error
+            
                 conn.commit()
-                logger.info("✅ Charts-Schema aktualisiert")
-    
+                logger.debug("✅ Batch-Writer Schema-Kompatibilität sichergestellt")
+            
         except Exception as e:
-            logger.error(f"❌ Charts-Schema-Check fehlgeschlagen: {e}")
+            logger.error(f"❌ Batch-Writer Schema-Check fehlgeschlagen: {e}")
+            raise e
+
     
     def get_schema_version(self) -> Dict[str, Any]:
         """

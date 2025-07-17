@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-from database_manager import create_batch_writer
 """
 Steam Charts Manager mit Enhanced Universal Background Scheduler Integration
 Automatisches Tracking von Steam Charts (Most Played, Best Sellers, Top Releases)
 Vollständig integriert mit price_tracker.py und main.py Menüpunkten 17-18
 """
-
 import requests
 import time
 import json
@@ -1801,44 +1799,141 @@ class SteamChartsManager:
                 }
                 results['total_errors'] += 1
 
-        # Phase 3: Namen-Updates (wenn gewünscht)
+        # Phase 3: Namen für Charts-Apps aktualisieren...
         if include_names and all_charts_data:
             if progress_tracker_callback:
                 progress_tracker_callback({
                     'progress_percent': 80,
                     'status': '📝 Namen aktualisieren',
-                    'current_task': 'Fallback Namen-Update...'
+                    'current_task': 'Bulk-Namen-Update...'
                 })
-    
+
             logger.info("📝 Phase 3: Namen für Charts-Apps aktualisieren...")
-    
+
             try:
-                # Verwende bestehende Namen-Update Logik
+                # Extrahiere eindeutige App IDs
                 unique_app_ids = list(set([
                     chart['steam_app_id'] for chart in all_charts_data 
-                    if chart.get('steam_app_id')
+                    if chart.get('steam_app_id') and str(chart.get('steam_app_id')).strip()
                 ]))
-        
+
                 if unique_app_ids:
                     logger.info(f"🌐 Bulk-Namen-Update für {len(unique_app_ids)} Charts-Apps...")
-                
-                    # Nutze bestehende Implementierung
-                    if hasattr(self, 'steam_wishlist_manager'):
-                        app_names = self.steam_wishlist_manager.get_multiple_app_names(unique_app_ids)
-                        successful_names = sum(1 for name in app_names.values() if name)
-                
-                        results['name_updates'] = {
-                            'success': True,
-                            'apps_processed': len(unique_app_ids),
-                            'updated_count': successful_names,
-                            'success_rate': f"{(successful_names/len(unique_app_ids)*100):.1f}%"
-                        }
-                
-                        logger.info(f"✅ Namen-Update: {successful_names} Apps aktualisiert")
-                    else:
-                        logger.warning("⚠️ Steam Wishlist Manager nicht verfügbar für Namen-Updates")
-                        results['name_updates'] = {'success': False, 'error': 'Wishlist Manager nicht verfügbar'}
-                
+
+                    # Mehrfach-Fallback für Namen-Updates
+                    app_names = {}
+                    successful_names = 0
+            
+                    # Versuch 1: Bestehender Steam Wishlist Manager
+                    if hasattr(self, 'steam_wishlist_manager') and self.steam_wishlist_manager:
+                        try:
+                            app_names = self.steam_wishlist_manager.get_multiple_app_names(unique_app_ids)
+                            successful_names = sum(1 for name in app_names.values() if name and name.strip())
+                            logger.info(f"✅ Namen-Update (bestehend): {successful_names} Apps erfolgreich")
+                        except Exception as existing_error:
+                            logger.warning(f"⚠️ Bestehender Manager fehlgeschlagen: {existing_error}")
+            
+                    # Versuch 2: Neuer Steam Wishlist Manager
+                    if successful_names == 0:
+                        try:
+                            from steam_wishlist_manager import SteamWishlistManager
+                    
+                            # Versuche API Key zu bekommen
+                            api_key = None
+                            if hasattr(self, 'api_key') and self.api_key:
+                                api_key = self.api_key
+                            else:
+                                # Fallback: Aus Environment laden
+                                import os
+                                api_key = os.getenv('STEAM_API_KEY')
+                    
+                            if api_key:
+                                temp_wishlist_manager = SteamWishlistManager(
+                                    api_key=api_key, 
+                                    db_manager=self.db_manager
+                                )
+                                app_names = temp_wishlist_manager.get_multiple_app_names(unique_app_ids)
+                                successful_names = sum(1 for name in app_names.values() if name and name.strip())
+                                logger.info(f"✅ Namen-Update (neu): {successful_names} Apps erfolgreich")
+                            else:
+                                logger.warning("⚠️ Kein Steam API Key für Namen-Update verfügbar")
+                        
+                        except Exception as new_manager_error:
+                            logger.warning(f"⚠️ Neuer Manager fehlgeschlagen: {new_manager_error}")
+            
+                    # Versuch 3: Direkte Steam API Aufrufe (minimaler Fallback)
+                    if successful_names == 0:
+                        try:
+                            import requests
+                            import time
+                    
+                            logger.info("🔄 Verwende direkten Steam API Fallback...")
+                    
+                            # Nur eine kleine Anzahl Apps versuchen um Rate Limits zu vermeiden
+                            limited_app_ids = unique_app_ids[:20]  # Max 20 Apps
+                    
+                            for app_id in limited_app_ids:
+                                try:
+                                    url = f"https://store.steampowered.com/api/appdetails?appids={app_id}"
+                                    response = requests.get(url, timeout=10)
+                            
+                                    if response.status_code == 200:
+                                        data = response.json()
+                                        if str(app_id) in data and data[str(app_id)].get('success'):
+                                            game_data = data[str(app_id)]['data']
+                                            app_names[app_id] = game_data.get('name', '')
+                                            if app_names[app_id]:
+                                                successful_names += 1
+                            
+                                    time.sleep(1.1)  # Rate limiting
+                            
+                                except Exception as api_error:
+                                    logger.debug(f"Direkte API für {app_id} fehlgeschlagen: {api_error}")
+                                    continue
+                    
+                            if successful_names > 0:
+                                logger.info(f"✅ Namen-Update (direkt): {successful_names} Apps erfolgreich")
+                        
+                        except Exception as direct_error:
+                            logger.warning(f"⚠️ Direkter API Fallback fehlgeschlagen: {direct_error}")
+
+                    # Namen in Datenbank aktualisieren wenn welche gefunden wurden
+                    if successful_names > 0:
+                        try:
+                            with self.db_manager.get_connection() as conn:
+                                cursor = conn.cursor()
+                        
+                                for app_id, name in app_names.items():
+                                    if name and name.strip():
+                                        cursor.execute("""
+                                            UPDATE steam_charts_tracking 
+                                            SET name = ?, updated_at = CURRENT_TIMESTAMP
+                                            WHERE steam_app_id = ? AND (name IS NULL OR name = '')
+                                        """, (name.strip(), str(app_id)))
+                        
+                                conn.commit()
+                                logger.info(f"✅ {successful_names} Namen in Datenbank aktualisiert")
+                        
+                        except Exception as db_error:
+                            logger.error(f"❌ Fehler beim Speichern der Namen: {db_error}")
+
+                    results['name_updates'] = {
+                        'success': successful_names > 0,
+                        'apps_processed': len(unique_app_ids),
+                        'updated_count': successful_names,
+                        'success_rate': f"{(successful_names/len(unique_app_ids)*100):.1f}%" if unique_app_ids else "0%"
+                    }
+            
+                else:
+                    logger.info("📝 Keine Apps für Namen-Update gefunden")
+                    results['name_updates'] = {
+                        'success': True,
+                        'apps_processed': 0,
+                        'updated_count': 0,
+                        'success_rate': "0%",
+                        'message': 'Keine Apps für Namen-Update'
+                    }
+
             except Exception as e:
                 logger.error(f"❌ Namen-Update Fehler: {e}")
                 results['name_updates'] = {'success': False, 'error': str(e)}
@@ -1921,57 +2016,114 @@ class SteamChartsManager:
         Returns:
             Dictionary mit Update-Ergebnissen
         """
+        logger = get_steam_charts_logger()
+    
         try:
-            # FIX: Set zu Liste Konvertierung
-            if isinstance(app_ids, set):
-                app_ids = list(app_ids)
-                logger.info(f"🔄 App IDs von Set zu Liste konvertiert: {len(app_ids)} Apps")
-        
-            if not hasattr(self, 'price_tracker') or not self.price_tracker:
-                logger.warning("⚠️ Price Tracker nicht verfügbar für Charts-Preise")
+            if not app_ids:
                 return {
-                    'success': False,
-                    'error': 'Price Tracker nicht verfügbar',
+                    'success': True, 
+                    'apps_processed': 0, 
                     'updated_count': 0,
-                    'failed_count': len(app_ids)
+                    'message': 'Keine Apps für Preis-Update angegeben'
                 }
         
             logger.info(f"🚀 BATCH Preis-Update für {len(app_ids)} Charts-Apps...")
         
-            # Parameter-Kompatibilität prüfen
-            if hasattr(self.price_tracker, 'batch_update_multiple_apps'):
-                batch_method = self.price_tracker.batch_update_multiple_apps
-            
-                # Teste Parameter-Kompatibilität
-                import inspect
-                method_signature = inspect.signature(batch_method)
-                supports_progress_callback = 'progress_callback' in method_signature.parameters
-            
-                if supports_progress_callback:
-                    # Neue Version mit progress_callback
-                    result = batch_method(
-                        app_ids=app_ids,  # 🚨 Garantiert Liste
-                        progress_callback=progress_callback
-                    )
+            # Batch-Size berechnen mit korrektem Math-Import
+            total_apps = len(app_ids)
+            optimal_batch_size = max(10, min(50, math.ceil(total_apps / 4)))
+        
+            updated_count = 0
+            failed_count = 0
+            batches_processed = 0
+        
+            # Prüfe ob Price Tracker verfügbar ist
+            price_tracker = None
+            try:
+                if hasattr(self, 'price_tracker') and self.price_tracker:
+                    price_tracker = self.price_tracker
                 else:
-                    # Alte Version ohne progress_callback
-                    logger.debug("📝 Verwende batch_update_multiple_apps ohne progress_callback")
-                    result = batch_method(app_ids=app_ids)  # 🚨 Garantiert Liste
+                    # Fallback: Versuche Price Tracker zu importieren
+                    from price_tracker import create_price_tracker
+                    price_tracker = create_price_tracker()
+            except Exception as tracker_error:
+                logger.warning(f"⚠️ Price Tracker nicht verfügbar: {tracker_error}")
+                return {
+                    'success': False,
+                    'error': 'Price Tracker nicht verfügbar',
+                    'apps_processed': total_apps,
+                    'updated_count': 0
+                }
         
-            else:
-                # Fallback zu einzelnen Updates
-                logger.info("🔄 Fallback zu einzelnen Preis-Updates...")
-                result = self._fallback_individual_price_updates(app_ids, progress_callback)
+            # Apps in Batches verarbeiten
+            for i in range(0, total_apps, optimal_batch_size):
+                batch = app_ids[i:i + optimal_batch_size]
+                batches_processed += 1
+            
+                try:
+                    logger.info(f"📦 Batch {batches_processed}: Verarbeite {len(batch)} Apps...")
+                
+                    # Batch-Preis-Update durchführen
+                    if price_tracker and hasattr(price_tracker, 'batch_update_multiple_apps'):
+                        batch_result = price_tracker.batch_update_multiple_apps(batch)
+                    
+                        if batch_result.get('success', False):
+                            batch_updated = batch_result.get('successful_updates', 0)
+                            batch_failed = batch_result.get('failed_updates', 0)
+                        
+                            updated_count += batch_updated
+                            failed_count += batch_failed
+                        
+                            logger.info(f"✅ Batch {batches_processed}: {batch_updated} erfolgreich, {batch_failed} fehlgeschlagen")
+                        else:
+                            failed_count += len(batch)
+                            logger.warning(f"⚠️ Batch {batches_processed} komplett fehlgeschlagen")
+                    else:
+                        # Fallback: Einzelne Updates
+                        for app_id in batch:
+                            try:
+                                if price_tracker and hasattr(price_tracker, 'update_app_price'):
+                                    result = price_tracker.update_app_price(app_id)
+                                    if result.get('success', False):
+                                        updated_count += 1
+                                    else:
+                                        failed_count += 1
+                                else:
+                                    failed_count += 1
+                            except Exception as app_error:
+                                logger.debug(f"App {app_id} Update fehlgeschlagen: {app_error}")
+                                failed_count += 1
+                
+                    # Rate Limiting zwischen Batches
+                    if batches_processed < math.ceil(total_apps / optimal_batch_size):
+                        time.sleep(1.0)  # 1 Sekunde Pause zwischen Batches
+                    
+                except Exception as batch_error:
+                    logger.error(f"❌ Batch {batches_processed} Fehler: {batch_error}")
+                    failed_count += len(batch)
+                    continue
         
+            success_rate = (updated_count / total_apps * 100) if total_apps > 0 else 0
+        
+            result = {
+                'success': True,
+                'apps_processed': total_apps,
+                'updated_count': updated_count,
+                'failed_count': failed_count,
+                'batches_processed': batches_processed,
+                'success_rate': f"{success_rate:.1f}%"
+            }
+        
+            logger.info(f"✅ Preis-Update abgeschlossen: {updated_count}/{total_apps} Apps erfolgreich ({success_rate:.1f}%)")
             return result
-    
+        
         except Exception as e:
             logger.error(f"❌ Preis-Update Fehler: {e}")
             return {
-                'success': False,
+                'success': False, 
                 'error': str(e),
-                'updated_count': 0,
-                'failed_count': len(app_ids)
+                'apps_processed': len(app_ids) if app_ids else 0,
+                'updated_count': 0
             }
         
     def _fallback_individual_price_updates(self, app_ids: List[str], progress_callback=None) -> Dict:
