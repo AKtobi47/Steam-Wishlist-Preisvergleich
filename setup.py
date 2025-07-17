@@ -4,7 +4,7 @@ Setup.py - VOLLSTÄNDIGE PRODUKTIONSVERSION
 Steam Price Tracker Setup mit korrigiertem Schema-Testing
 100% kompatibel mit allen Komponenten und der echten DDL-Struktur
 """
-
+from typing import List
 import os
 import sys
 import subprocess

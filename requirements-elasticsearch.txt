@@ -5,3 +5,6 @@ elasticsearch-dsl>=8.11.0
 # Optional: Für erweiterte Funktionen
 pandas>=2.0.0
 numpy>=1.24.0
+
+# Docker-Support (z. B. für Container-Management über Python)
+docker>=7.1.0
