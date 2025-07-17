@@ -100,7 +100,7 @@ class DynamicMenuSystem:
         # 📊 CHARTS & ANALYTICS (nur wenn charts_enabled=True) - VOLLSTÄNDIG MIT BATCH
         charts_category = MenuCategory("CHARTS & ANALYTICS", "📊", "Steam Charts Integration")
         charts_category.add_option(MenuOption("Charts anzeigen", "Steam Charts-Daten", "menu_show_charts", ["charts_enabled"], "📈"))
-        charts_category.add_option(MenuOption("Charts vollständig aktualisieren", "Charts + Namen + Preise (BATCH)", "menu_update_charts_complete", ["charts_enabled"], "🔄"))
+        charts_category.add_option(MenuOption("Charts vollständig aktualisieren", "Charts + Namen + Preise (BATCH)", "menu_batch_charts_update", ["charts_enabled"], "🔄"))
         charts_category.add_option(MenuOption("Charts-Deals anzeigen", "Deals aus Charts-Daten", "menu_charts_deals", ["charts_enabled"], "🎯"))
         charts_category.add_option(MenuOption("Charts-Statistiken", "Charts-Analysen", "menu_charts_statistics", ["charts_enabled"], "📊"))
         charts_category.add_option(MenuOption("Charts-Automation", "Automatische Charts", "menu_charts_automation", ["charts_enabled"], "🤖"))

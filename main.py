@@ -642,127 +642,11 @@ def menu_show_charts(charts_manager, tracker):
 
 def menu_update_charts(charts_manager, tracker):
     """
-    🚀 UNIFIED Charts-Update-Funktion 
-    Nutzt update_all_charts_batch() mit allen Features
+    Einfache Weiterleitung zu menu_batch_charts_update
+    Nutzt die bereits perfekt funktionierende Batch-Funktion
     """
-    print("\n🚀 CHARTS VOLLSTÄNDIG AKTUALISIEREN")
-    print("=" * 40)
-    
-    if not charts_manager:
-        print("❌ Charts Manager nicht verfügbar")
-        return
-    
-    # Update-Optionen anzeigen
-    print("📊 Update-Optionen:")
-    print("1. 🚀 Vollständig (Charts + Namen + Preise) - Empfohlen")
-    print("2. 📊 Nur Charts-Daten (Schnell)")
-    print("3. 📝 Charts + Namen (ohne Preise)")
-    print("4. 💰 Charts + Preise (ohne Namen)")
-    print("5. 🎯 Erweiterte Optionen")
-    print("0. ↩️ Zurück")
-    
-    choice = safe_input("Auswahl (0-5): ")
-    
-    if choice == "0":
-        return
-    
-    # Parameter basierend auf Auswahl setzen
-    include_names = True
-    include_prices = True
-    chart_types = None
-    
-    if choice == "2":
-        include_names = False
-        include_prices = False
-    elif choice == "3":
-        include_prices = False
-    elif choice == "4":
-        include_names = False
-    elif choice == "5":
-        # Erweiterte Optionen
-        include_names = safe_input("Namen aktualisieren? (j/n): ").lower() in ['j', 'y', 'ja', 'yes']
-        include_prices = safe_input("Preise aktualisieren? (j/n): ").lower() in ['j', 'y', 'ja', 'yes']
-        
-        custom_types = safe_input("Spezifische Chart-Typen (leer für alle): ").strip()
-        if custom_types:
-            chart_types = [t.strip() for t in custom_types.split(',')]
-    
-    # Update-Zusammenfassung
-    print(f"\n🎯 UPDATE-ZUSAMMENFASSUNG:")
-    print(f"📊 Chart-Typen: {'alle' if not chart_types else ', '.join(chart_types)}")
-    print(f"📝 Namen-Updates: {'✅ Ja' if include_names else '❌ Nein'}")
-    print(f"💰 Preis-Updates: {'✅ Ja' if include_prices else '❌ Nein'}")
-    
-    confirm = safe_input("🚀 Update starten? (j/n): ")
-    if confirm.lower() not in ['j', 'y', 'ja', 'yes']:
-        print("❌ Update abgebrochen")
-        return
-    
-    # PROGRESS-TRACKER STARTEN (KORRIGIERT)
-    progress_tracker = ProgressTracker()
-    progress_tracker.start()
-    
-    try:
-        print("\n🚀 Update gestartet...")
-        start_time = time.time()
-        
-        # Progress-Callback definieren (KORRIGIERT)
-        def progress_callback(progress_info):
-            progress_tracker.update_progress(progress_info)
-        
-        # 🚀 UNIFIED BATCH UPDATE (KORRIGIERT)
-        if hasattr(charts_manager, 'update_all_charts_batch'):
-            try:
-                result = charts_manager.update_all_charts_batch(
-                    chart_types=chart_types,
-                    include_names=include_names,
-                    include_prices=include_prices,
-                    progress_callback=progress_callback  # KORRIGIERT: Korrekte Callback-Übergabe
-                )
-            except TypeError:
-                # Fallback für Version ohne neue Parameter
-                print("\n⚠️ Verwende Standard-BATCH-Funktion...")
-                result = charts_manager.update_all_charts_batch(chart_types or [])
-                result = {
-                    'charts_update': {'success': result.get('success', False), 'details': 'Standard-BATCH'},
-                    'name_updates': {'success': False, 'details': 'Nicht unterstützt', 'updated_count': 0},
-                    'price_updates': {'success': False, 'details': 'Nicht unterstützt', 'updated_count': 0},
-                    'overall_success': result.get('success', False)
-                }
-        else:
-            print("\n❌ BATCH-Funktion nicht verfügbar")
-            result = {'overall_success': False, 'error': 'BATCH-Update nicht verfügbar'}
-        
-    except Exception as e:
-        logger.error(f"❌ Fehler beim Charts-Update: {e}")
-        result = {'overall_success': False, 'error': str(e)}
-    
-    finally:
-        progress_tracker.stop()
-    
-    # ERGEBNISSE ANZEIGEN (KORRIGIERT)
-    total_duration = time.time() - start_time
-    
-    print(f"\n🎉 UPDATE ABGESCHLOSSEN!")
-    print("=" * 50)
-    print(f"⏱️ Gesamtdauer: {total_duration:.1f} Sekunden")
-    
-    if result.get('overall_success'):
-        print("✅ Update erfolgreich!")
-        
-        # Performance-Metriken anzeigen (KORRIGIERT)
-        if 'performance_metrics' in result:
-            metrics = result['performance_metrics']
-            print(f"📊 Charts verarbeitet: {metrics.get('charts_processed', 'N/A')}")
-            print(f"🎮 Apps verarbeitet: {metrics.get('apps_processed', 'N/A')}")
-            if include_names:
-                print(f"📝 Namen aktualisiert: {metrics.get('names_updated', 'N/A')}")
-            if include_prices:
-                print(f"💰 Preise aktualisiert: {metrics.get('prices_updated', 'N/A')}")
-    else:
-        print("⚠️ Update mit Einschränkungen abgeschlossen")
-        if 'error' in result:
-            print(f"❌ Fehler: {result['error']}")
+    logger.warning("⚠️ menu_update_charts ist veraltet - nutze menu_batch_charts_update")
+    menu_batch_charts_update(charts_manager)
 
 def menu_charts_deals(charts_manager, tracker):
     """Option 15: Charts-Deals anzeigen"""
@@ -1343,7 +1227,7 @@ def run_dynamic_menu():
             
             # 📊 CHARTS & ANALYTICS (alle unified auf update_all_charts_batch)
             'menu_show_charts': lambda: menu_show_charts(charts_manager, tracker) if charts_manager else print("❌ Charts Manager nicht verfügbar"),
-            'menu_update_charts_complete': lambda: menu_update_charts(charts_manager, tracker) if charts_manager else print("❌ Charts Manager nicht verfügbar"),
+            'menu_update_charts_complete': lambda: menu_batch_charts_update(charts_manager) if charts_manager else print("❌ Charts Manager nicht verfügbar"),
             'menu_charts_deals': lambda: menu_charts_deals(charts_manager, tracker) if charts_manager else print("❌ Charts Manager nicht verfügbar"),
             'menu_charts_statistics': lambda: menu_charts_statistics(charts_manager, tracker) if charts_manager else print("❌ Charts Manager nicht verfügbar"),
             'menu_charts_automation': lambda: menu_charts_automation(charts_manager, tracker) if charts_manager else print("❌ Charts Manager nicht verfügbar"),
