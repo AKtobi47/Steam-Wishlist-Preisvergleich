@@ -688,7 +688,7 @@ class SteamPriceTracker:
             
                     if time_since_last < self._cheapshark_current_rate:
                         wait_time = self._cheapshark_current_rate - time_since_last
-                        self.logger.debug(f"⏳ CheapShark Rate Limit: warte {wait_time:.1f}s")
+                        logger.debug(f"⏳ CheapShark Rate Limit: warte {wait_time:.1f}s")
                         time_module.sleep(wait_time)
             
                     self._cheapshark_last_request = time_module.time()
@@ -705,7 +705,7 @@ class SteamPriceTracker:
                         self._cheapshark_success_count += 1
                         if self._cheapshark_success_count % 5 == 0 and self._cheapshark_current_rate > 1.0:
                             self._cheapshark_current_rate = max(1.0, self._cheapshark_current_rate * 0.9)
-                            self.logger.debug(f"✅ CheapShark Rate optimiert: {self._cheapshark_current_rate:.1f}s")
+                            logger.debug(f"✅ CheapShark Rate optimiert: {self._cheapshark_current_rate:.1f}s")
                 
                         # Parse Response
                         games = response.json()
@@ -750,25 +750,25 @@ class SteamPriceTracker:
                         retry_delay = min(self._cheapshark_current_rate * (2 ** attempt), 20.0)
                         self._cheapshark_current_rate = min(self._cheapshark_current_rate * 1.5, 5.0)
                     
-                        self.logger.warning(f"⚠️ CheapShark Rate Limit: {self._cheapshark_current_rate:.1f}s")
+                        logger.warning(f"⚠️ CheapShark Rate Limit: {self._cheapshark_current_rate:.1f}s")
                     
                         if attempt < max_retries:
-                            self.logger.warning(f"🔄 CheapShark 429 Retry in {retry_delay}s")
+                            logger.warning(f"🔄 CheapShark 429 Retry in {retry_delay}s")
                             time_module.sleep(retry_delay)
                         else:
-                            self.logger.error(f"❌ CheapShark 429 nach {max_retries} Versuchen")
+                            logger.error(f"❌ CheapShark 429 nach {max_retries} Versuchen")
                             break
                     else:
-                        self.logger.warning(f"⚠️ CheapShark HTTP {response.status_code}")
+                        logger.warning(f"⚠️ CheapShark HTTP {response.status_code}")
                         break
                     
                 except Exception as e:
-                    self.logger.debug(f"⚠️ CheapShark Request-Fehler: {e}")
+                    logger.debug(f"⚠️ CheapShark Request-Fehler: {e}")
                     if attempt == max_retries:
                         break
                     
             # FALLBACK: Steam-Only wenn CheapShark fehlschlägt
-            self.logger.info(f"🔄 CheapShark fehlgeschlagen - verwende Steam-Only für {steam_app_id}")
+            logger.info(f"🔄 CheapShark fehlgeschlagen - verwende Steam-Only für {steam_app_id}")
             steam_price = self._get_steam_price_direct(steam_app_id)
         
             if steam_price is not None:
@@ -784,7 +784,7 @@ class SteamPriceTracker:
             return {}
         
         except Exception as e:
-            self.logger.debug(f"⚠️ CheapShark Fehler für {steam_app_id}: {e}")
+            logger.debug(f"⚠️ CheapShark Fehler für {steam_app_id}: {e}")
             return {}
         
     def _get_steam_price_direct(self, app_id: str) -> Optional[float]:
@@ -830,7 +830,7 @@ class SteamPriceTracker:
             return None
         
         except Exception as e:
-            self.logger.debug(f"Steam API Fehler für {app_id}: {e}")
+            logger.debug(f"Steam API Fehler für {app_id}: {e}")
             return None
 
     
@@ -943,7 +943,7 @@ class SteamPriceTracker:
         price_data_list = []
         steam_only_mode = False
 
-        self.logger.info(f"🚀 BATCH Preis-Update für {len(app_ids)} Apps gestartet...")
+        logger.info(f"🚀 BATCH Preis-Update für {len(app_ids)} Apps gestartet...")
 
         # Batch-Verarbeitung in kleineren Gruppen
         batch_size = 10
@@ -954,7 +954,7 @@ class SteamPriceTracker:
             end_idx = min(start_idx + batch_size, len(app_ids))
             batch_apps = app_ids[start_idx:end_idx]
         
-            self.logger.info(f"📦 Verarbeite Batch {batch_num + 1}: Apps {start_idx + 1}-{end_idx}")
+            logger.info(f"📦 Verarbeite Batch {batch_num + 1}: Apps {start_idx + 1}-{end_idx}")
 
             # Progress Update
             if progress_callback:
@@ -998,7 +998,7 @@ class SteamPriceTracker:
                         batch_failed += 1
                     
                 except Exception as e:
-                    self.logger.debug(f"⚠️ Fehler bei App {app_id}: {e}")
+                    logger.debug(f"⚠️ Fehler bei App {app_id}: {e}")
                     batch_failed += 1
 
             successful_updates += batch_successful
@@ -1006,7 +1006,7 @@ class SteamPriceTracker:
         
             # Prüfe ob CheapShark komplett fehlschlägt
             if batch_num >= 1 and successful_updates == 0 and not steam_only_mode:
-                self.logger.warning(f"⚠️ CheapShark komplett fehlgeschlagen - aktiviere Steam-Only Modus")
+                logger.warning(f"⚠️ CheapShark komplett fehlgeschlagen - aktiviere Steam-Only Modus")
                 steam_only_mode = True
             
                 # Steam-Only Fallback für alle verbleibenden Apps
@@ -1032,7 +1032,7 @@ class SteamPriceTracker:
                         else:
                             failed_updates += 1
                     except Exception as e:
-                        self.logger.debug(f"Steam-Only fehlgeschlagen für {app_id}: {e}")
+                        logger.debug(f"Steam-Only fehlgeschlagen für {app_id}: {e}")
                         failed_updates += 1
                     
                 break  # Verlasse die Batch-Schleife da alle verarbeitet
@@ -1057,14 +1057,14 @@ class SteamPriceTracker:
                             )
                             database_writes += 1
                         except Exception as write_error:
-                            self.logger.debug(f"Write-Fehler: {write_error}")
+                            logger.debug(f"Write-Fehler: {write_error}")
                         
-                self.logger.info(f"💾 Batch-Write: {database_writes} Preise in Datenbank geschrieben")
+                logger.info(f"💾 Batch-Write: {database_writes} Preise in Datenbank geschrieben")
             except Exception as e:
-                self.logger.error(f"❌ Batch-Write fehlgeschlagen: {e}")
+                logger.error(f"❌ Batch-Write fehlgeschlagen: {e}")
                 database_writes = 0
         else:
-            self.logger.warning("⚠️ Keine gültigen Preisdaten zum Schreiben")
+            logger.warning("⚠️ Keine gültigen Preisdaten zum Schreiben")
             database_writes = 0
 
         # Ergebnis
@@ -1081,7 +1081,7 @@ class SteamPriceTracker:
             'steam_only_mode': steam_only_mode
         }
     
-        self.logger.info(f"✅ BATCH-Update abgeschlossen: {successful_updates}/{len(app_ids)} Apps erfolgreich")
+        logger.info(f"✅ BATCH-Update abgeschlossen: {successful_updates}/{len(app_ids)} Apps erfolgreich")
     
         return result
         

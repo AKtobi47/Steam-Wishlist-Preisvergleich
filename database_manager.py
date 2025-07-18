@@ -1041,6 +1041,92 @@ class DatabaseManager:
             logger.error(f"❌ Fehler beim Aktualisieren des App-Namens: {e}")
             return False
     
+    def update_price(self, steam_app_id: str, game_name: str = None, price_data: Dict = None) -> bool:
+        """
+        KRITISCHE METHODE: Aktualisiert Preise für eine App
+        Wird von batch_update_multiple_apps() aufgerufen
+    
+        Args:
+            steam_app_id: Steam App ID
+            game_name: Name des Spiels (optional)
+            price_data: Dictionary mit Preisdaten (optional)
+        
+        Returns:
+            bool: True wenn erfolgreich, False sonst
+        """
+        try:
+            # Fall 1: Vollständige Preisdaten verfügbar
+            if game_name and price_data:
+                return self.save_price_snapshot(steam_app_id, game_name, price_data)
+        
+            # Fall 2: Nur steam_app_id - erstelle minimalen Eintrag
+            with self.lock:
+                with self.get_connection() as conn:
+                    cursor = conn.cursor()
+                
+                    # App-Namen holen falls nicht gegeben
+                    if not game_name:
+                        cursor.execute("SELECT name FROM tracked_apps WHERE steam_app_id = ?", (steam_app_id,))
+                        result = cursor.fetchone()
+                        game_name = result['name'] if result else f"Game {steam_app_id}"
+                
+                    # Minimalen Price-Snapshot erstellen (falls keine Preisdaten)
+                    if not price_data:
+                        cursor.execute("""
+                            INSERT INTO price_snapshots (
+                                steam_app_id, game_title, timestamp, store
+                            ) VALUES (?, ?, ?, ?)
+                        """, (steam_app_id, game_name, datetime.now(), 'steam'))
+                    else:
+                        # Vollständigen Snapshot mit Preisdaten
+                        steam_data = price_data.get('steam', {})
+                        cursor.execute("""
+                            INSERT INTO price_snapshots (
+                                steam_app_id, game_title, timestamp,
+                                steam_price, steam_original_price, steam_discount_percent, 
+                                steam_available, store
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            steam_app_id, game_name, datetime.now(),
+                            steam_data.get('price'), steam_data.get('original_price'),
+                            steam_data.get('discount_percent', 0), steam_data.get('available', False),
+                            'steam'
+                        ))
+                
+                    # Update tracked_apps
+                    cursor.execute("""
+                        UPDATE tracked_apps 
+                        SET last_price_update = ? 
+                        WHERE steam_app_id = ?
+                    """, (datetime.now(), steam_app_id))
+                
+                    conn.commit()
+                    logger.debug(f"✅ update_price erfolgreich für {steam_app_id}")
+                    return True
+                
+        except Exception as e:
+            logger.error(f"❌ update_price Fehler für {steam_app_id}: {e}")
+            return False
+        
+    def add_price_update(self, steam_app_id: str, price_data: Dict) -> bool:
+        """
+        Alternative Methode für Preis-Updates
+        Kompatibel mit verschiedenen Aufrufarten
+        """
+        try:
+            # App-Name aus tracked_apps holen
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT name FROM tracked_apps WHERE steam_app_id = ?", (steam_app_id,))
+                result = cursor.fetchone()
+                game_name = result['name'] if result else f"Game {steam_app_id}"
+        
+            return self.update_price(steam_app_id, game_name, price_data)
+        
+        except Exception as e:
+            logger.error(f"❌ add_price_update Fehler für {steam_app_id}: {e}")
+            return False
+
     def set_target_price(self, steam_app_id: str, target_price: float) -> bool:
         """Setzt einen Zielpreis für eine App"""
         try:
@@ -1385,42 +1471,35 @@ class DatabaseBatchWriter:
         Stellt sicher dass steam_charts_tracking alle erforderlichen Spalten hat
         Batch-Writer spezifische Implementation
         """
-        logger = get_database_logger()
-    
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
             
-                # Prüfe aktuelle Spalten
+                # Prüfe steam_charts_tracking Spalten
                 cursor.execute("PRAGMA table_info(steam_charts_tracking)")
-                columns_info = cursor.fetchall()
-                existing_columns = {row[1] for row in columns_info}
+                columns = [row[1] for row in cursor.fetchall()]
             
-                # Mindest-erforderliche Spalten für Batch-Writer
-                batch_required_columns = {
-                    'steam_app_id': 'TEXT NOT NULL',
-                    'chart_type': 'TEXT NOT NULL',
-                    'current_rank': 'INTEGER',
-                    'name': 'TEXT'
+                required_columns = {
+                    'days_in_charts': 'INTEGER DEFAULT 1',
+                    'rank_trend': 'TEXT DEFAULT "new"',
+                    'updated_at': 'TIMESTAMP DEFAULT NULL',
+                    'peak_players': 'INTEGER DEFAULT NULL',
+                    'current_players': 'INTEGER DEFAULT NULL'
                 }
             
-                # Prüfe und füge fehlende Spalten hinzu
-                for column, column_type in batch_required_columns.items():
-                    if column not in existing_columns:
+                for column, definition in required_columns.items():
+                    if column not in columns:
                         try:
-                            cursor.execute(f"ALTER TABLE steam_charts_tracking ADD COLUMN {column} {column_type}")
-                            logger.info(f"✅ Batch-Writer: {column} Spalte hinzugefügt")
-                        except Exception as col_error:
-                            logger.error(f"❌ Konnte {column} nicht hinzufügen: {col_error}")
-                            raise col_error
+                            cursor.execute(f"ALTER TABLE steam_charts_tracking ADD COLUMN {column} {definition}")
+                            logger.info(f"✅ Spalte {column} zu steam_charts_tracking hinzugefügt")
+                        except sqlite3.Error as e:
+                            logger.debug(f"Spalte {column} bereits vorhanden: {e}")
             
                 conn.commit()
-                logger.debug("✅ Batch-Writer Schema-Kompatibilität sichergestellt")
+                logger.info("✅ Charts-Schema aktualisiert")
             
         except Exception as e:
-            logger.error(f"❌ Batch-Writer Schema-Check fehlgeschlagen: {e}")
-            raise e
-
+            logger.error(f"❌ Charts-Schema-Update Fehler: {e}")
     
     def get_schema_version(self) -> Dict[str, Any]:
         """
