@@ -10,7 +10,7 @@ import csv
 from pathlib import Path
 from datetime import datetime, timedelta
 import logging
-import time
+import time as time_module
 import threading
 from typing import Dict, List, Optional
 
@@ -694,7 +694,7 @@ def menu_charts_statistics(charts_manager, tracker):
         print(f"❌ Fehler beim Laden der Charts-Statistiken: {e}")
 
 def menu_charts_automation(charts_manager, tracker):
-    """Charts-Automation mit BATCH-Updates"""
+    """Charts-Automation mit BATCH-Updates - FIXED VERSION"""
     print("\n🤖 CHARTS-AUTOMATION")
     print("=" * 25)
     
@@ -721,12 +721,14 @@ def menu_charts_automation(charts_manager, tracker):
         
         if hasattr(charts_manager, 'update_all_charts_batch'):
             try:
-                start_time = time.time()
+                # GEFIXT: VERWENDE time_module ANSTATT time
+                start_time = time_module.time()  # ← HIER WAR DAS PROBLEM!
                 result = charts_manager.update_all_charts_batch(
                     include_names=True,
                     include_prices=True
                 )
-                duration = time.time() - start_time
+                # GEFIXT: VERWENDE time_module ANSTATT time
+                duration = time_module.time() - start_time  # ← HIER WAR DAS PROBLEM!
                 
                 if result.get('overall_success'):
                     print(f"✅ Vollständiges Update erfolgreich in {duration:.1f}s!")
@@ -750,12 +752,14 @@ def menu_charts_automation(charts_manager, tracker):
         
         if hasattr(charts_manager, 'update_all_charts_batch'):
             try:
-                start_time = time.time()
+                # GEFIXT: VERWENDE time_module ANSTATT time
+                start_time = time_module.time()  # ← HIER WAR DAS PROBLEM!
                 result = charts_manager.update_all_charts_batch(
                     include_names=False,
                     include_prices=False
                 )
-                duration = time.time() - start_time
+                # GEFIXT: VERWENDE time_module ANSTATT time
+                duration = time_module.time() - start_time  # ← HIER WAR DAS PROBLEM!
                 
                 if result.get('overall_success'):
                     print(f"✅ Schnelles Update erfolgreich in {duration:.1f}s!")
@@ -799,7 +803,7 @@ def menu_charts_automation(charts_manager, tracker):
             print(f"❌ Fehler: {e}")
 
 def menu_batch_charts_update(charts_manager):
-    """🚀 Erweiterte BATCH-Charts-Update mit allen Optionen"""
+    """Erweiterte BATCH-Charts-Update mit allen Optionen"""
     print("\n🚀 ERWEITERTE BATCH-CHARTS-UPDATE")
     print("=" * 40)
     
@@ -896,7 +900,9 @@ def menu_batch_charts_update(charts_manager):
     
     try:
         print("\n🚀 BATCH-Update gestartet...")
-        start_time = time.time()
+        
+        # GEFIXT: VERWENDE time_module ANSTATT time
+        start_time = time_module.time()  # ← HIER WAR DAS PROBLEM!
         
         # Progress-Callback
         def progress_callback(progress_info):
@@ -912,7 +918,8 @@ def menu_batch_charts_update(charts_manager):
                 progress_callback=progress_callback if show_progress else None
             )
             
-            duration = time.time() - start_time
+            # GEFIXT: VERWENDE time_module ANSTATT time
+            duration = time_module.time() - start_time  # ← HIER WAR DAS PROBLEM!
             
             if result.get('overall_success'):
                 print(f"\n🎉 BATCH-Update erfolgreich in {duration:.1f}s!")
@@ -939,12 +946,13 @@ def menu_batch_charts_update(charts_manager):
     
     except Exception as e:
         print(f"❌ BATCH-Update Fehler: {e}")
+        # Für Debugging:
+        import traceback
+        traceback.print_exc()
     
     finally:
         if progress_tracker:
             progress_tracker.stop()
-
-
 
 # Elasticsearch-Funktionen (bestehend)
 def menu_elasticsearch_export(es_manager, tracker):
@@ -1601,7 +1609,7 @@ def run_classic_menu():
 
 class ProgressTracker:
     """
-    🎯 PROGRESS-ANZEIGE mit Throbber und Prozentanzeige
+    🎯 PROGRESS-ANZEIGE mit Throbber und Prozentanzeige - FIXED VERSION
     """
     
     def __init__(self):
@@ -1640,10 +1648,11 @@ class ProgressTracker:
         self.current_progress = progress_info
     
     def _update_display(self):
-        """Aktualisiert die Anzeige kontinuierlich"""
+        """Aktualisiert die Anzeige kontinuierlich - FIXED VERSION"""
         while self.is_running:
             self._draw_progress()
-            time.sleep(0.1)
+            # GEFIXT: VERWENDE time_module ANSTATT time
+            time_module.sleep(0.1)  # ← HIER WAR AUCH EIN PROBLEM!
             self.throbber_index = (self.throbber_index + 1) % len(self.throbber_chars)
     
     def _draw_progress(self):

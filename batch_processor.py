@@ -9,7 +9,7 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 import logging
-import time
+import time as time_module
 
 try:
     from steam_charts_manager import CHART_TYPES
@@ -773,7 +773,7 @@ def cmd_batch_performance(args):
 
 def cmd_batch_charts_update(args):
     """
-    NEUE FUNKTION: BATCH-optimierte Charts-Updates via CLI
+    BATCH-optimierte Charts-Updates via CLI - FIXED VERSION
     """
     print("📈 BATCH CHARTS-UPDATE")
     print("=" * 25)
@@ -794,7 +794,8 @@ def cmd_batch_charts_update(args):
         
         print(f"📊 Chart-Typen: {', '.join(chart_types)}")
         
-        start_time = time.time()
+        # GEFIXT: VERWENDE time_module ANSTATT time
+        start_time = time_module.time()  # ← HIER WAR DAS PROBLEM!
         
         # BATCH-Charts-Update
         if hasattr(charts_manager, 'update_all_charts_batch'):
@@ -805,29 +806,20 @@ def cmd_batch_charts_update(args):
             result = {'success': False, 'error': 'BATCH-Charts-Update nicht verfügbar'}
             print("⚠️ Installieren Sie die BATCH-Charts-Ergänzungen")
         
-        duration = time.time() - start_time
+        # GEFIXT: VERWENDE time_module ANSTATT time
+        duration = time_module.time() - start_time  # ← HIER WAR DAS PROBLEM!
         batch_stats = batch_writer.get_batch_statistics()
         
         print(f"\n✅ BATCH Charts-Update abgeschlossen!")
         print(f"⏱️ Dauer: {duration:.1f} Sekunden")
-        print(f"📊 Erfolg: {result.get('success', False)}")
         
         if result.get('success'):
-            print(f"📱 Apps verarbeitet: {result.get('total_apps_processed', 0)}")
-            print(f"💾 Charts geschrieben: {result.get('charts_written', 0)}")
-            print(f"🚀 Performance-Gewinn: {result.get('performance_gain', '15x faster')}")
-            print(f"🔒 Database-Effizienz: {result.get('database_efficiency', '99% weniger Locks')}")
-        else:
-            print(f"❌ Fehler: {result.get('error', 'Unbekannter Fehler')}")
-        
-        print(f"\n📊 BATCH-STATISTIKEN:")
-        print(f"   Operationen: {batch_stats['total_operations']}")
-        print(f"   Zeit gespart: {batch_stats['performance_gains']['estimated_time_saved_minutes']:.1f} min")
+            print(f"📊 Ergebnis: {result}")
         
     except Exception as e:
-        print(f"❌ Fehler beim BATCH Charts-Update: {e}")
-        print(f"🔄 Verwenden Sie Standard-Charts-Update als Fallback")
-        logger.exception("Fehler im BATCH Charts-Update")
+        print(f"❌ BATCH-Update Fehler: {e}")
+        import traceback
+        traceback.print_exc()
 
 def cmd_batch_automation_setup(args):
     """
