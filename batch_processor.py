@@ -641,7 +641,7 @@ def cmd_run_batch_optimized(args):
         tracker = create_tracker()
         batch_writer = create_batch_writer(tracker.db_manager)
         
-        start_time = time.time()
+        start_time = time_module.time()
         
         print(f"⏱️ Schwellenwert: {args.hours} Stunden")
         print(f"📊 Max Apps: {getattr(args, 'max_apps', 'Unbegrenzt')}")
@@ -677,7 +677,7 @@ def cmd_run_batch_optimized(args):
             else:
                 result = {'apps_processed': 0, 'success': True, 'message': 'Keine Apps benötigen Update'}
         
-        duration = time.time() - start_time
+        duration = time_module.time() - start_time
         batch_stats_final = batch_writer.get_batch_statistics()
         
         # Detaillierte Ergebnisse
@@ -884,7 +884,7 @@ def cmd_batch_automation_setup(args):
                 # Warte auf Stop-Signal
                 try:
                     while scheduler.running:
-                        time.sleep(30)
+                        time_module.sleep(30)
                         # Status-Update alle 30 Sekunden
                         status = scheduler.get_process_status()
                         running_tasks = status.get('running_tasks', 0)
@@ -919,7 +919,7 @@ def cmd_batch_health_check(args):
     print("=" * 37)
     
     health_report = {
-        'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+        'timestamp': time_module.strftime('%Y-%m-%d %H:%M:%S'),
         'overall_status': 'CHECKING',
         'components': {}
     }

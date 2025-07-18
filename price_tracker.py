@@ -299,7 +299,7 @@ class SteamPriceTracker:
                     logger.warning(f"⚠️ App {app_id} Preise nicht aktualisiert")
             
                 # Rate Limiting
-                time.sleep(1.5)
+                time_module.sleep(1.5)
             
             except Exception as e:
                 logger.error(f"❌ Fehler bei App {app_id}: {e}")
@@ -516,11 +516,11 @@ class SteamPriceTracker:
         while self.scheduler_running:
             try:
                 schedule.run_pending()
-                time.sleep(60)  # Prüfe alle 60 Sekunden
+                time_module.sleep(60)  # Prüfe alle 60 Sekunden
             except Exception as e:
                 logger.error(f"❌ Fehler im Scheduler: {e}")
                 self.error_count += 1
-                time.sleep(60)
+                time_module.sleep(60)
         
         logger.info("🔄 Scheduler-Thread beendet")
     
@@ -687,7 +687,7 @@ class SteamPriceTracker:
                 if time_since_last < self._cheapshark_current_rate:
                     wait_time = self._cheapshark_current_rate - time_since_last
                     logger.debug(f"⏳ CheapShark Rate Limit: warte {wait_time:.1f}s")
-                    time.sleep(wait_time)
+                    time_module.sleep(wait_time)
             
                 self._cheapshark_last_request = time_module.time()
             
@@ -724,7 +724,7 @@ class SteamPriceTracker:
                     for game in games:
                         if game.get('external', '').lower() == app_id.lower():
                             deals_url = f"https://www.cheapshark.com/api/1.0/games?id={game['gameID']}"
-                            time.sleep(0.5)  # Kurze Pause zwischen Requests
+                            time_module.sleep(0.5)  # Kurze Pause zwischen Requests
                         
                             try:
                                 deals_response = requests.get(deals_url, timeout=timeout)
@@ -761,7 +761,7 @@ class SteamPriceTracker:
                     if attempt < max_retries:
                         backoff_time = (2 ** attempt) * self._cheapshark_current_rate
                         logger.warning(f"🔄 CheapShark 429 Retry in {backoff_time:.1f}s")
-                        time.sleep(backoff_time)
+                        time_module.sleep(backoff_time)
                         continue
                     else:
                         logger.error(f"❌ CheapShark 429 nach {max_retries} Versuchen")
@@ -775,7 +775,7 @@ class SteamPriceTracker:
                 if attempt < max_retries:
                     wait_time = (2 ** attempt) * 2
                     logger.warning(f"⏰ CheapShark Timeout - Retry in {wait_time}s")
-                    time.sleep(wait_time)
+                    time_module.sleep(wait_time)
                     continue
                 else:
                     logger.debug(f"Fehler beim Abrufen der CheapShark-Preise: Timeout nach {max_retries} Versuchen")
@@ -969,7 +969,7 @@ class SteamPriceTracker:
                     logger.error(f"❌ Fehler bei App {app_id}: {e}")
                     failed_updates += 1
 
-            time.sleep(1)  # Rate Limiting zwischen Batches
+            time_module.sleep(1)  # Rate Limiting zwischen Batches
 
         # Progress: Data Collection abgeschlossen
         if progress_tracker_callback:

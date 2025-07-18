@@ -16,7 +16,7 @@ import logging
 from pathlib import Path
 from database_manager import create_batch_writer
 import json
-import math
+import math as math_module
 
 # Logging-Konfiguration
 try:
@@ -109,7 +109,7 @@ class SteamChartsManager:
         if time_since_last_call < self.rate_limit_delay:
             sleep_time = self.rate_limit_delay - time_since_last_call
             logger.debug(f"⏳ Steam API Rate Limiting: {sleep_time:.2f}s")
-            time.sleep(sleep_time)
+            time_module.sleep(sleep_time)
     
         self.last_api_call = time_module.time()
 
@@ -193,7 +193,7 @@ class SteamChartsManager:
         
         if elapsed < rate_limit:
             wait_time = rate_limit - elapsed
-            time.sleep(wait_time)
+            time_module.sleep(wait_time)
         
         self.last_steam_request = time_module.time()
     
@@ -1424,10 +1424,10 @@ class SteamChartsManager:
         while not self.stop_charts_scheduler_event.is_set():
             try:
                 schedule.run_pending()
-                time.sleep(60)  # Prüfe jede Minute
+                time_module.sleep(60)  # Prüfe jede Minute
             except Exception as e:
                 logger.error(f"❌ Charts-Scheduler-Fehler: {e}")
-                time.sleep(60)
+                time_module.sleep(60)
         
         logger.info("⏹️ Charts-Scheduler-Thread beendet")
     
@@ -1885,7 +1885,7 @@ class SteamChartsManager:
                                             if app_names[app_id]:
                                                 successful_names += 1
                             
-                                    time.sleep(1.1)  # Rate limiting
+                                    time_module.sleep(1.1)  # Rate limiting
                             
                                 except Exception as api_error:
                                     logger.debug(f"Direkte API für {app_id} fehlgeschlagen: {api_error}")
@@ -2031,7 +2031,7 @@ class SteamChartsManager:
         
             # Batch-Size berechnen mit korrektem Math-Import
             total_apps = len(app_ids)
-            optimal_batch_size = max(10, min(50, math.ceil(total_apps / 4)))
+            optimal_batch_size = max(10, min(50, math_module.ceil(total_apps / 4)))
         
             updated_count = 0
             failed_count = 0
@@ -2095,8 +2095,8 @@ class SteamChartsManager:
                                 failed_count += 1
                 
                     # Rate Limiting zwischen Batches
-                    if batches_processed < math.ceil(total_apps / optimal_batch_size):
-                        time.sleep(1.0)  # 1 Sekunde Pause zwischen Batches
+                    if batches_processed < math_module.ceil(total_apps / optimal_batch_size):
+                        time_module.sleep(1.0)  # 1 Sekunde Pause zwischen Batches
                     
                 except Exception as batch_error:
                     logger.error(f"❌ Batch {batches_processed} Fehler: {batch_error}")

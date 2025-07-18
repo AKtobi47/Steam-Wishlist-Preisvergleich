@@ -82,7 +82,7 @@ class SteamWishlistManager:
         if time_since_last < self.rate_limit:
             wait_time = self.rate_limit - time_since_last
             logger.debug(f"⏳ Steam API Rate Limit: Warte {wait_time:.2f}s")
-            time.sleep(wait_time)
+            time_module.sleep(wait_time)
         
         self.last_request_time = time_module.time()
     
@@ -332,7 +332,7 @@ class SteamWishlistManager:
             # Pause zwischen Batches
             if i + max_batch_size < len(app_ids):
                 logger.debug("⏳ Pause zwischen Batches...")
-                time.sleep(2)
+                time_module.sleep(2)
         
         success_rate = len(results) / len(app_ids) * 100 if app_ids else 0
         logger.info(f"✅ Namen-Abruf abgeschlossen: {len(results)}/{len(app_ids)} erfolgreich ({success_rate:.1f}%)")

@@ -293,7 +293,7 @@ class EnhancedSchedulerTasks:
                         success = tracker.update_single_app_price(app_id)
                         pbar.set_description(f"App {app_id}: {'✅' if success else '❌'}")
                         pbar.update(1)
-                        time.sleep(1)  # Rate limiting
+                        time_module.sleep(1)  # Rate limiting
                     except Exception as e:
                         print(f"❌ Fehler bei App {app_id}: {e}")
                         pbar.update(1)
@@ -302,7 +302,7 @@ class EnhancedSchedulerTasks:
                 try:
                     success = tracker.update_single_app_price(app_id)
                     print(f"📊 {i+1}/{len(pending_apps)} - App {app_id}: {'✅' if success else '❌'}")
-                    time.sleep(1)  # Rate limiting
+                    time_module.sleep(1)  # Rate limiting
                 except Exception as e:
                     print(f"❌ Fehler bei App {app_id}: {e}")
         
@@ -353,7 +353,7 @@ class EnhancedSchedulerTasks:
                 else:
                     print(f"❌ {i+1}/20 - Name nicht gefunden: {app_id}")
                 
-                time.sleep(1)  # Rate limiting
+                time_module.sleep(1)  # Rate limiting
                 
             except Exception as e:
                 print(f"❌ Fehler bei App {app_id}: {e}")
@@ -466,7 +466,7 @@ class EnhancedSchedulerTasks:
                             failed_count += 1
                         pbar.set_description(f"Preise: {updated_count}✅ {failed_count}❌")
                         pbar.update(1)
-                        time.sleep(0.5)  # Rate limiting
+                        time_module.sleep(0.5)  # Rate limiting
                     except Exception as e:
                         failed_count += 1
                         pbar.update(1)
@@ -479,7 +479,7 @@ class EnhancedSchedulerTasks:
                     else:
                         failed_count += 1
                     print(f"💰 {i+1}/{len(chart_apps)} - App {app_id}: {'✅' if success else '❌'}")
-                    time.sleep(0.5)  # Rate limiting
+                    time_module.sleep(0.5)  # Rate limiting
                 except Exception as e:
                     failed_count += 1
                     print(f"❌ Fehler bei App {app_id}: {e}")
@@ -753,11 +753,11 @@ class EnhancedBackgroundScheduler:
                 self._cleanup_finished_processes()
                 
                 # PATCHED: Längeres Intervall (weniger CPU-Last)
-                time.sleep(60)  # Prüfe alle 60 Sekunden statt 30
+                time_module.sleep(60)  # Prüfe alle 60 Sekunden statt 30
                 
             except Exception as e:
                 logger.error(f"❌ Scheduler-Fehler: {e}")
-                time.sleep(60)
+                time_module.sleep(60)
         
         logger.info("⏹️ Scheduler-Thread beendet")
     
@@ -798,7 +798,7 @@ class EnhancedBackgroundScheduler:
                 
                 # PATCHED: Process global registrieren MIT DELAY für bessere Erkennung
                 def delayed_registration():
-                    time.sleep(2)  # Warte bis Prozess stabilisiert ist
+                    time_module.sleep(2)  # Warte bis Prozess stabilisiert ist
                     try:
                         register_background_process(
                             process=process,
@@ -907,11 +907,11 @@ def start_heartbeat_monitor():
                 if heartbeat_count % 5 == 0:  # Alle 5 Heartbeats
                     print(f"🔄 Task läuft seit {{heartbeat_count * {task.heartbeat_interval}}} Sekunden...")
                 
-                time.sleep({task.heartbeat_interval})
+                time_module.sleep({task.heartbeat_interval})
                 
             except Exception as e:
                 print(f"❌ Heartbeat-Monitor Fehler: {{e}}")
-                time.sleep({task.heartbeat_interval})
+                time_module.sleep({task.heartbeat_interval})
         
         print("💓 Heartbeat-Monitor gestoppt")
     
@@ -1098,7 +1098,7 @@ if __name__ == "__main__":
         try:
             input("\\n📋 Drücke Enter zum Schließen...")
         except:
-            time.sleep(5)  # Fallback
+            time_module.sleep(5)  # Fallback
 '''
         
         return script
@@ -1362,10 +1362,10 @@ except ImportError as e:
                         logger.warning("⚠️ Parent-Prozess beendet - stoppe alle Tasks")
                         self.stop_scheduler()
                         break
-                    time.sleep(10)
+                    time_module.sleep(10)
                 except Exception as e:
                     logger.debug(f"Parent monitoring error: {e}")
-                    time.sleep(10)
+                    time_module.sleep(10)
         
         self.monitoring_thread = threading.Thread(target=monitor_parent, daemon=True)
         self.monitoring_thread.start()
@@ -1665,7 +1665,7 @@ def main():
                 if choice == "1":
                     # Status wird automatisch beim nächsten Loop angezeigt
                     print("🔄 Status wird aktualisiert...")
-                    time.sleep(1)
+                    time_module.sleep(1)
                     
                 elif choice == "2":
                     print("\\n⚠️ Alle Prozesse beenden? (j/N): ", end="")
@@ -1704,7 +1704,7 @@ def main():
                     
                 else:
                     print("❌ Ungültige Option. Bitte 0-5 eingeben.")
-                    time.sleep(1)
+                    time_module.sleep(1)
                 
                 # Clear screen für bessere Übersicht
                 os.system('cls' if os.name == 'nt' else 'clear')
