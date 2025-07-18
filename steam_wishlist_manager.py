@@ -5,7 +5,7 @@ Fokussiert auf Steam API Integration mit optimierten Namen-Abfragen
 
 import requests
 import os
-import time
+import time as time_module
 from pathlib import Path
 from typing import List, Dict, Optional
 import logging
@@ -76,7 +76,7 @@ class SteamWishlistManager:
     
     def _wait_for_rate_limit(self):
         """Wartet für Steam API Rate Limiting"""
-        current_time = time.time()
+        current_time = time_module.time()
         time_since_last = current_time - self.last_request_time
         
         if time_since_last < self.rate_limit:
@@ -84,7 +84,7 @@ class SteamWishlistManager:
             logger.debug(f"⏳ Steam API Rate Limit: Warte {wait_time:.2f}s")
             time.sleep(wait_time)
         
-        self.last_request_time = time.time()
+        self.last_request_time = time_module.time()
     
     def get_steam_id_64(self, steam_id_input: str) -> Optional[str]:
         """

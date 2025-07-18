@@ -13,7 +13,7 @@ from pathlib import Path
 import json
 import os
 import shutil
-import time
+import time as time_module
 
 # Logging konfigurieren
 try:
@@ -1161,7 +1161,7 @@ class DatabaseBatchWriter:
         Returns:
             Dict: Ergebnis der Batch-Operation mit Metriken.
         """
-        start_time = time.time()
+        start_time = time_module.time()
         logger = get_database_logger()
     
         logger.info(f"🚀 Charts Batch Write: {len(charts_data)} Items")
@@ -1175,7 +1175,7 @@ class DatabaseBatchWriter:
                 'message': 'Keine Charts-Daten zum Schreiben'
             }
     
-        temp_table_name = f"temp_charts_batch_{int(time.time() * 1000000)}"
+        temp_table_name = f"temp_charts_batch_{int(time_module.time() * 1000000)}"
     
         try:
             with self.get_connection() as conn:
@@ -1236,7 +1236,7 @@ class DatabaseBatchWriter:
                     return {
                         'success': True,
                         'total_items': 0,
-                        'total_duration': time.time() - start_time,
+                        'total_duration': time_module.time() - start_time,
                         'items_per_second': 0,
                         'message': 'Keine gültigen Charts-Daten'
                     }
@@ -1269,7 +1269,7 @@ class DatabaseBatchWriter:
                 # Foreign Key Constraints wieder aktivieren
                 conn.execute("PRAGMA foreign_keys = ON")
             
-                total_duration = time.time() - start_time
+                total_duration = time_module.time() - start_time
                 items_per_second = len(insert_data) / total_duration if total_duration > 0 else 0
             
                 result = {
@@ -1289,15 +1289,15 @@ class DatabaseBatchWriter:
                 'success': False, 
                 'error': str(e),
                 'total_items': len(charts_data),
-                'total_duration': time.time() - start_time
+                'total_duration': time_module.time() - start_time
             }
     
     def batch_write_prices(self, price_data: List[Dict]) -> Dict:
         """🚀 Revolutionärer Price Batch Writer - 5-12x faster!"""
-        start_time = time.time()
+        start_time = time_module.time()
         logger.info(f"💰 Price Batch Write: {len(price_data)} Items")
         
-        temp_table_name = f"temp_prices_batch_{int(time.time() * 1000000)}"
+        temp_table_name = f"temp_prices_batch_{int(time_module.time() * 1000000)}"
         
         try:
             with self.db_manager.get_connection() as conn:
@@ -1363,7 +1363,7 @@ class DatabaseBatchWriter:
                 # Foreign Key Constraints wieder aktivieren
                 conn.execute("PRAGMA foreign_keys = ON")
                 
-                total_duration = time.time() - start_time
+                total_duration = time_module.time() - start_time
                 
                 result = {
                     'success': True,

@@ -14,7 +14,7 @@ PATCHES APPLIED:
 
 import subprocess
 import threading
-import time
+import time as time_module
 import logging
 import json
 import signal
@@ -936,21 +936,21 @@ except ImportError:
             self.total = total or 100
             self.desc = desc
             self.current = 0
-            self.start_time = time.time()
+            self.start_time = time_module.time()
             print(f"📊 {self.desc}: Gestartet (Total: {self.total})")
         
         def __enter__(self):
             return self
         
         def __exit__(self, *args):
-            elapsed = time.time() - self.start_time
+            elapsed = time_module.time() - self.start_time
             print(f"📊 {self.desc}: Abgeschlossen in {elapsed:.1f}s")
         
         def update(self, n=1):
             self.current += n
             if self.total > 0:
                 percent = (self.current / self.total) * 100
-                elapsed = time.time() - self.start_time
+                elapsed = time_module.time() - self.start_time
                 rate = self.current / elapsed if elapsed > 0 else 0
                 print(f"📊 {self.desc}: {self.current}/{self.total} ({percent:.1f}%) - {rate:.1f}/s")
         
@@ -1062,9 +1062,9 @@ if __name__ == "__main__":
         print("=" * 60)
         
         # Task ausführen mit Live-Progress
-        task_start_time = time.time()
+        task_start_time = time_module.time()
         {task.scheduler_type.replace('-', '_')}()
-        task_duration = time.time() - task_start_time
+        task_duration = time_module.time() - task_start_time
         
         print("=" * 60)
         print(f"✅ Enhanced Background Task abgeschlossen")
@@ -1478,7 +1478,7 @@ def register_background_process(process: subprocess.Popen, scheduler_id: str = N
         True wenn erfolgreich registriert
     """
     if scheduler_id is None:
-        scheduler_id = f"{scheduler_type}_{process.pid}_{int(time.time())}"
+        scheduler_id = f"{scheduler_type}_{process.pid}_{int(time_module.time())}"
     
     return _global_process_manager.register_process(
         scheduler_id=scheduler_id,

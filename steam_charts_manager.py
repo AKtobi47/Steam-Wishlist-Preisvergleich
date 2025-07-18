@@ -5,7 +5,7 @@ Automatisches Tracking von Steam Charts (Most Played, Best Sellers, Top Releases
 Vollständig integriert mit price_tracker.py und main.py Menüpunkten 17-18
 """
 import requests
-import time
+import time as time_module
 import json
 import threading
 import schedule
@@ -103,7 +103,7 @@ class SteamChartsManager:
         """
         Steam API Rate Limiting basierend auf steam_wishlist_manager.py Pattern
         """
-        current_time = time.time()
+        current_time = time_module.time()
         time_since_last_call = current_time - self.last_api_call
     
         if time_since_last_call < self.rate_limit_delay:
@@ -111,7 +111,7 @@ class SteamChartsManager:
             logger.debug(f"⏳ Steam API Rate Limiting: {sleep_time:.2f}s")
             time.sleep(sleep_time)
     
-        self.last_api_call = time.time()
+        self.last_api_call = time_module.time()
 
     def set_price_tracker(self, price_tracker):
         """
@@ -188,14 +188,14 @@ class SteamChartsManager:
     
     def _wait_for_steam_rate_limit(self):
         """Wartet für Steam API Rate Limiting"""
-        elapsed = time.time() - self.last_steam_request
+        elapsed = time_module.time() - self.last_steam_request
         rate_limit = self.charts_config.get('rate_limit_seconds', 1.0)
         
         if elapsed < rate_limit:
             wait_time = rate_limit - elapsed
             time.sleep(wait_time)
         
-        self.last_steam_request = time.time()
+        self.last_steam_request = time_module.time()
     
     # =====================================================================
     # CHARTS DATA RETRIEVAL FUNKTIONEN
@@ -1590,7 +1590,7 @@ class SteamChartsManager:
         Returns:
             Dict mit Ergebnissen des Updates, inklusive Performance-Metriken
         """
-        start_time = time.time()
+        start_time = time_module.time()
     
         # ProgressTracker-kompatible Callback-Wrapper
         current_phase = 'charts'
@@ -1628,7 +1628,7 @@ class SteamChartsManager:
                 'total': progress_info.get('total_apps', progress_info.get('total_batches', 1)),
                 'percentage': progress_info.get('progress_percent', 0),
                 'details': progress_info.get('current_task', status),
-                'elapsed_time': time.time() - start_time
+                'elapsed_time': time_module.time() - start_time
             }
     
             progress_callback(tracker_info)
@@ -1670,7 +1670,7 @@ class SteamChartsManager:
         total_chart_types = len(chart_types)
 
         for i, chart_type in enumerate(chart_types):
-            phase_start = time.time()
+            phase_start = time_module.time()
     
             # Progress für aktuelle Chart-Type
             base_percent = (i / total_chart_types) * 60  # Charts = 60% der Gesamt-Arbeit
@@ -1714,7 +1714,7 @@ class SteamChartsManager:
                         results['chart_types'][chart_type] = {
                             'success': True,
                             'items_count': len(chart_results),
-                            'duration': time.time() - phase_start
+                            'duration': time_module.time() - phase_start
                         }
                 
                         logger.info(f"✅ {chart_type}: {len(chart_results)} Items geladen")
@@ -1724,7 +1724,7 @@ class SteamChartsManager:
                         results['chart_types'][chart_type] = {
                             'success': False,
                             'items_count': 0,
-                            'duration': time.time() - phase_start,
+                            'duration': time_module.time() - phase_start,
                             'warning': 'Leere Ergebnisliste'
                         }
 
@@ -1735,7 +1735,7 @@ class SteamChartsManager:
                     results['chart_types'][chart_type] = {
                         'success': False,
                         'items_count': 0,
-                        'duration': time.time() - phase_start,
+                        'duration': time_module.time() - phase_start,
                         'warning': error_msg
                     }
                     results['total_errors'] += 1
@@ -1745,7 +1745,7 @@ class SteamChartsManager:
                 results['chart_types'][chart_type] = {
                     'success': False,
                     'error': str(e),
-                    'duration': time.time() - phase_start
+                    'duration': time_module.time() - phase_start
                 }
                 results['total_errors'] += 1
 
@@ -1969,7 +1969,7 @@ class SteamChartsManager:
                 results['total_errors'] += 1
 
         # Phase 5: Finale Statistiken
-        total_duration = time.time() - start_time
+        total_duration = time_module.time() - start_time
 
         results.update({
             'end_time': datetime.now().isoformat(),
@@ -2272,7 +2272,7 @@ class SteamChartsManager:
         """
         🚀 BATCH-VERSION für Charts-Preise Update - Nutzt Price Tracker Batch-Methoden
         """
-        start_time = time.time()
+        start_time = time_module.time()
     
         try:
             if not hasattr(self, 'price_tracker') or not self.price_tracker:
@@ -2280,7 +2280,7 @@ class SteamChartsManager:
                 return {
                     'success': False,
                     'error': 'Price Tracker nicht verfügbar',
-                    'duration': time.time() - start_time
+                    'duration': time_module.time() - start_time
                 }
         
             if chart_types is None:
@@ -2312,7 +2312,7 @@ class SteamChartsManager:
                 return {
                     'success': False,
                     'error': 'Keine Apps für Preis-Update gefunden',
-                    'duration': time.time() - start_time
+                    'duration': time_module.time() - start_time
                 }
         
             logger.info(f"🚀 BATCH Preis-Update für {len(app_ids_to_update)} Charts-Apps...")
@@ -2324,7 +2324,7 @@ class SteamChartsManager:
                 logger.warning("⚠️ batch_update_multiple_apps nicht verfügbar - Fallback")
                 batch_result = {'success': False, 'error': 'Batch-Methode nicht verfügbar'}
         
-            total_duration = time.time() - start_time
+            total_duration = time_module.time() - start_time
         
             result = {
                 'success': batch_result.get('success', False),
@@ -2350,7 +2350,7 @@ class SteamChartsManager:
             return {
                 'success': False,
                 'error': str(e),
-                'duration': time.time() - start_time
+                'duration': time_module.time() - start_time
             }
     
     def get_batch_performance_stats(self) -> Dict:
@@ -2694,14 +2694,14 @@ def test_batch_charts_performance(api_key: str = None) -> Dict:
         
         # Test 3: Mini-BATCH-Update (nur 1 Chart-Typ)
         import time
-        start_time = time.time()
+        start_time = time_module.time()
         
         if hasattr(charts_manager, 'update_specific_charts_batch'):
             result = charts_manager.update_specific_charts_batch(['most_played'], max_apps_per_chart=10)
         else:
             result = {'success': False, 'error': 'BATCH-Update nicht verfügbar'}
         
-        test_duration = time.time() - start_time
+        test_duration = time_module.time() - start_time
         
         test_results = {
             'timestamp': datetime.now().isoformat(),

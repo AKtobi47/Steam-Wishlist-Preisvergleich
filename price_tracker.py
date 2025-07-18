@@ -10,7 +10,7 @@ Behebt alle identifizierten API-Probleme:
 
 import logging
 import schedule
-import time
+import time as time_module
 import threading
 import requests
 from typing import List, Dict, Optional, Any, Tuple
@@ -681,7 +681,7 @@ class SteamPriceTracker:
         for attempt in range(max_retries + 1):
             try:
                 # Rate Limiting
-                current_time = time.time()
+                current_time = time_module.time()
                 time_since_last = current_time - self._cheapshark_last_request
             
                 if time_since_last < self._cheapshark_current_rate:
@@ -689,7 +689,7 @@ class SteamPriceTracker:
                     logger.debug(f"⏳ CheapShark Rate Limit: warte {wait_time:.1f}s")
                     time.sleep(wait_time)
             
-                self._cheapshark_last_request = time.time()
+                self._cheapshark_last_request = time_module.time()
             
                 # Request mit adaptivem Timeout
                 timeout = base_timeout + (attempt * 5)
@@ -844,7 +844,7 @@ class SteamPriceTracker:
         entry = {
             'steam_app_id': app_id,
             'game_title': price_data.get('game_title', ''),
-            'timestamp': time.time(),
+            'timestamp': time_module.time(),
         }
     
         # Alle Store-Felder dynamisch hinzufügen
@@ -890,7 +890,7 @@ class SteamPriceTracker:
         if not app_ids:
             return {'success': False, 'error': 'Keine App-IDs angegeben'}
     
-        start_time = time.time()
+        start_time = time_module.time()
         successful_updates = 0
         failed_updates = 0
         all_price_data = []
@@ -910,7 +910,7 @@ class SteamPriceTracker:
                 'total': progress_info.get('total_apps', len(app_ids)),
                 'percentage': progress_info.get('progress_percent', 0),
                 'details': progress_info.get('status', progress_info.get('current_task', '')),
-                'elapsed_time': time.time() - start_time
+                'elapsed_time': time_module.time() - start_time
             }
         
             progress_callback(tracker_info)
@@ -998,7 +998,7 @@ class SteamPriceTracker:
                 # KORREKTER Batch-Write für Preise
                 batch_result = batch_writer.batch_write_prices(all_price_data)
             
-                duration = time.time() - start_time
+                duration = time_module.time() - start_time
             
                 if batch_result.get('success'):
                     logger.info(f"✅ BATCH-WRITER erfolgreich: {batch_result.get('total_items', 0)} Preise geschrieben")
@@ -1045,7 +1045,7 @@ class SteamPriceTracker:
                 'error': 'Keine gültigen Preisdaten erhalten',
                 'successful_updates': 0,
                 'failed_updates': len(app_ids),
-                'duration': time.time() - start_time
+                'duration': time_module.time() - start_time
             }
         
     def _create_batch_price_entry_for_batch_writer(self, app_id: str, price_data: Dict) -> Dict:
@@ -1126,7 +1126,7 @@ class SteamPriceTracker:
             except Exception as e:
                 logger.debug(f"❌ Individual Write failed für {entry.get('steam_app_id')}: {e}")
     
-        duration = time.time() - start_time
+        duration = time_module.time() - start_time
     
         if progress_callback:
             progress_callback({
@@ -1172,7 +1172,7 @@ class SteamPriceTracker:
     
         Verarbeitet alle Apps die Updates benötigen mit maximaler Batch-Performance
         """
-        start_time = time.time()
+        start_time = time_module.time()
     
         logger.info(f"🚀 OPTIMIERTER BATCH-PROCESSOR gestartet (Threshold: {hours_threshold}h)")
     
@@ -1186,7 +1186,7 @@ class SteamPriceTracker:
                     'total_apps': 0,
                     'total_successful': 0,
                     'total_failed': 0,
-                    'total_duration': time.time() - start_time,
+                    'total_duration': time_module.time() - start_time,
                     'total_batches': 0,
                     'apps_per_second': 0,
                     'message': 'Keine Apps benötigen Updates'
@@ -1199,7 +1199,7 @@ class SteamPriceTracker:
             # 🚀 NUTZE BATCH-UPDATE METHODE!
             batch_result = self.batch_update_multiple_apps(app_ids, batch_size)
         
-            total_duration = time.time() - start_time
+            total_duration = time_module.time() - start_time
             total_batches = (len(app_ids) + batch_size - 1) // batch_size  # Ceiling division
         
             # Erweiterte Statistiken
@@ -1236,7 +1236,7 @@ class SteamPriceTracker:
             return result
         
         except Exception as e:
-            total_duration = time.time() - start_time
+            total_duration = time_module.time() - start_time
             logger.error(f"❌ Optimierter Batch-Processor Fehler: {e}")
             import traceback
             traceback.print_exc()
