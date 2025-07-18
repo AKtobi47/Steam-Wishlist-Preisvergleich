@@ -431,7 +431,7 @@ STEAM_RATE_LIMIT=1.0
 # ===================================================================
 
 # CheapShark API Rate Limiting (Sekunden zwischen Requests)
-CHEAPSHARK_RATE_LIMIT=1.5
+CHEAPSHARK_RATE_LIMIT=5.0
 
 # CheapShark Request Timeout (Sekunden)
 CHEAPSHARK_TIMEOUT=15

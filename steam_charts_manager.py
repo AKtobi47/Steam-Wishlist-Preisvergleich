@@ -1913,6 +1913,17 @@ class SteamChartsManager:
                         
                                 conn.commit()
                                 logger.info(f"✅ {successful_names} Namen in Datenbank aktualisiert")
+                                try:
+                                    if hasattr(self.db_manager, 'commit_transaction'):
+                                        self.db_manager.commit_transaction()
+                                        logger.info(f"💾 Database Commit: Namen persistent gespeichert")
+                                    elif hasattr(self.db_manager, 'conn'):
+                                        self.db_manager.conn.commit()
+                                        logger.info(f"💾 Direct Commit: Namen persistent gespeichert")
+                                    else:
+                                        logger.warning(f"⚠️ Kein Commit-Mechanismus gefunden")
+                                except Exception as commit_error:
+                                    logger.error(f"❌ Database Commit fehlgeschlagen: {commit_error}")
                         
                         except Exception as db_error:
                             logger.error(f"❌ Fehler beim Speichern der Namen: {db_error}")
@@ -2002,6 +2013,20 @@ class SteamChartsManager:
         else:
             logger.warning(f"⚠️ BATCH-Charts-Update mit {results['total_errors']} Fehlern in {total_duration:.1f}s")
 
+        # FINALE PROGRESS-MELDUNG SICHERSTELLEN
+        if progress_tracker_callback:
+            total_duration = time_module.time() - start_time
+            final_status = "completed" if results.get('total_errors', 0) == 0 else "completed_with_errors"
+            progress_tracker_callback({
+                'progress_percent': 100,  # ← KRITISCH: 100%!
+                'status': final_status,
+                'current_task': f"✅ Abgeschlossen: {len(all_charts_data)} Charts, {results.get('name_updates', {}).get('updated_count', 0)} Namen, {results.get('price_updates', {}).get('updated_count', 0)} Preise",
+                'phase': 'complete',
+                'total_time': total_duration,
+                'completed_batches': len(chart_types) if chart_types else 3,
+                'total_batches': len(chart_types) if chart_types else 3
+            })
+
         return results
     
     def safe_batch_update_charts_prices(self, app_ids: List[str], progress_callback=None) -> Dict:
@@ -2017,7 +2042,7 @@ class SteamChartsManager:
             Dictionary mit Update-Ergebnissen
         """
         logger = get_steam_charts_logger()
-    
+
         try:
             if not app_ids:
                 return {
@@ -2026,105 +2051,169 @@ class SteamChartsManager:
                     'updated_count': 0,
                     'message': 'Keine Apps für Preis-Update angegeben'
                 }
-        
+
             logger.info(f"🚀 BATCH Preis-Update für {len(app_ids)} Charts-Apps...")
-        
-            # Batch-Size berechnen mit korrektem Math-Import
+
+            # GEFIXT: Verwende math_module
             total_apps = len(app_ids)
             optimal_batch_size = max(10, min(50, math_module.ceil(total_apps / 4)))
-        
+
             updated_count = 0
             failed_count = 0
             batches_processed = 0
-        
-            # Prüfe ob Price Tracker verfügbar ist
+
+            # VERBESSERTE Price Tracker Initialisierung
             price_tracker = None
             try:
+                # Methode 1: Bestehender Price Tracker
                 if hasattr(self, 'price_tracker') and self.price_tracker:
                     price_tracker = self.price_tracker
+                    logger.info("📊 Verwende bestehenden Price Tracker")
+            
+                # Methode 2: Neuen Price Tracker erstellen
                 else:
-                    # Fallback: Versuche Price Tracker zu importieren
+                    logger.info("📊 Erstelle neuen Price Tracker...")
                     from price_tracker import create_price_tracker
                     price_tracker = create_price_tracker()
+                    logger.info("📊 Neuer Price Tracker erstellt")
+                
             except Exception as tracker_error:
-                logger.warning(f"⚠️ Price Tracker nicht verfügbar: {tracker_error}")
+                logger.error(f"❌ Price Tracker Initialisierung fehlgeschlagen: {tracker_error}")
                 return {
                     'success': False,
-                    'error': 'Price Tracker nicht verfügbar',
+                    'error': f'Price Tracker nicht verfügbar: {tracker_error}',
                     'apps_processed': total_apps,
                     'updated_count': 0
                 }
-        
-            # Apps in Batches verarbeiten
+
+            # DEBUGGING: Price Tracker Methoden prüfen
+            logger.info(f"🔍 Price Tracker Methoden:")
+            logger.info(f"   batch_update_multiple_apps: {hasattr(price_tracker, 'batch_update_multiple_apps')}")
+            logger.info(f"   process_all_pending_apps_optimized: {hasattr(price_tracker, 'process_all_pending_apps_optimized')}")
+            logger.info(f"   update_price: {hasattr(price_tracker, 'update_price')}")
+            logger.info(f"   track_app: {hasattr(price_tracker, 'track_app')}")
+
+            # BATCH-PROCESSING mit korrekten Methoden
             for i in range(0, total_apps, optimal_batch_size):
-                batch = app_ids[i:i + optimal_batch_size]
+                batch_apps = app_ids[i:i + optimal_batch_size]
                 batches_processed += 1
             
                 try:
-                    logger.info(f"📦 Batch {batches_processed}: Verarbeite {len(batch)} Apps...")
+                    logger.info(f"📦 Batch {batches_processed}: Verarbeite {len(batch_apps)} Apps...")
                 
-                    # Batch-Preis-Update durchführen
-                    if price_tracker and hasattr(price_tracker, 'batch_update_multiple_apps'):
-                        batch_result = price_tracker.batch_update_multiple_apps(batch)
-                    
-                        if batch_result.get('success', False):
-                            batch_updated = batch_result.get('successful_updates', 0)
-                            batch_failed = batch_result.get('failed_updates', 0)
-                        
-                            updated_count += batch_updated
-                            failed_count += batch_failed
-                        
-                            logger.info(f"✅ Batch {batches_processed}: {batch_updated} erfolgreich, {batch_failed} fehlgeschlagen")
-                        else:
-                            failed_count += len(batch)
-                            logger.warning(f"⚠️ Batch {batches_processed} komplett fehlgeschlagen")
+                    # Progress-Update
+                    if progress_callback:
+                        batch_percent = 85 + (i / total_apps) * 10  # 85-95% für Preis-Updates
+                        progress_callback({
+                            'progress_percent': batch_percent,
+                            'phase': 'prices',
+                            'status': f"💰 Preis-Batch {batches_processed}",
+                            'current_task': f"Verarbeite {len(batch_apps)} Apps"
+                        })
+                
+                    # VERWENDE DIE VERFÜGBAREN METHODEN
+                    batch_success = False
+                
+                    # Option 1: batch_update_multiple_apps
+                    if hasattr(price_tracker, 'batch_update_multiple_apps'):
+                        logger.info(f"🚀 Verwende batch_update_multiple_apps für Batch {batches_processed}")
+                        try:
+                            batch_result = price_tracker.batch_update_multiple_apps(batch_apps, progress_callback)
+                            updated_count += batch_result.get('successful_updates', 0)
+                            failed_count += batch_result.get('failed_updates', 0)
+                            batch_success = batch_result.get('success', False)
+                            logger.info(f"✅ batch_update_multiple_apps: {batch_result.get('successful_updates', 0)} erfolg, {batch_result.get('failed_updates', 0)} fehler")
+                        except Exception as e:
+                            logger.error(f"❌ batch_update_multiple_apps Fehler: {e}")
+                            batch_success = False
+                
+                    # Option 2: process_all_pending_apps_optimized (falls andere nicht funktioniert)
+                    elif hasattr(price_tracker, 'process_all_pending_apps_optimized'):
+                        logger.info(f"🚀 Verwende process_all_pending_apps_optimized für Batch {batches_processed}")
+                        try:
+                            # Erstelle temporäre Apps-Liste für diese Funktion
+                            temp_apps = [{'steam_app_id': app_id} for app_id in batch_apps]
+                            batch_result = price_tracker.process_all_pending_apps_optimized(app_list=temp_apps)
+                            updated_count += batch_result.get('total_successful', 0)
+                            failed_count += batch_result.get('total_failed', 0)
+                            batch_success = batch_result.get('success', False)
+                            logger.info(f"✅ process_all_pending_apps_optimized: {batch_result.get('total_successful', 0)} erfolg")
+                        except Exception as e:
+                            logger.error(f"❌ process_all_pending_apps_optimized Fehler: {e}")
+                            batch_success = False
+                
+                    # Option 3: Einzelne Updates als Fallback
                     else:
-                        # Fallback: Einzelne Updates
-                        for app_id in batch:
+                        logger.info(f"🔄 Fallback zu einzelnen Updates für Batch {batches_processed}")
+                        batch_updated = 0
+                        batch_failed = 0
+                    
+                        for app_id in batch_apps:
                             try:
-                                if price_tracker and hasattr(price_tracker, 'update_app_price'):
+                                # Verschiedene Einzelupdate-Methoden versuchen
+                                success = False
+                            
+                                if hasattr(price_tracker, 'update_price'):
+                                    success = price_tracker.update_price(app_id)
+                                elif hasattr(price_tracker, 'track_app'):
+                                    result = price_tracker.track_app(app_id)
+                                    success = result.get('success', False) if isinstance(result, dict) else bool(result)
+                                elif hasattr(price_tracker, 'update_app_price'):
                                     result = price_tracker.update_app_price(app_id)
-                                    if result.get('success', False):
-                                        updated_count += 1
-                                    else:
-                                        failed_count += 1
+                                    success = result.get('success', False) if isinstance(result, dict) else bool(result)
+                            
+                                if success:
+                                    batch_updated += 1
                                 else:
-                                    failed_count += 1
+                                    batch_failed += 1
+                                
                             except Exception as app_error:
-                                logger.debug(f"App {app_id} Update fehlgeschlagen: {app_error}")
-                                failed_count += 1
+                                logger.debug(f"⚠️ Einzelupdate fehlgeschlagen für {app_id}: {app_error}")
+                                batch_failed += 1
+                    
+                        updated_count += batch_updated
+                        failed_count += batch_failed
+                        batch_success = batch_updated > 0
+                        logger.info(f"✅ Einzelupdates: {batch_updated} erfolg, {batch_failed} fehler")
+                
+                    # Batch-Ergebnis loggen
+                    if batch_success:
+                        logger.info(f"✅ Batch {batches_processed} erfolgreich verarbeitet")
+                    else:
+                        logger.warning(f"⚠️ Batch {batches_processed} keine Erfolge")
                 
                     # Rate Limiting zwischen Batches
                     if batches_processed < math_module.ceil(total_apps / optimal_batch_size):
-                        time_module.sleep(1.0)  # 1 Sekunde Pause zwischen Batches
-                    
+                        time_module.sleep(1.0)
+                
                 except Exception as batch_error:
                     logger.error(f"❌ Batch {batches_processed} Fehler: {batch_error}")
-                    failed_count += len(batch)
-                    continue
-        
-            success_rate = (updated_count / total_apps * 100) if total_apps > 0 else 0
-        
-            result = {
+                    failed_count += len(batch_apps)
+
+            # ERFOLGS-BERICHT
+            success_rate = (updated_count / total_apps) * 100 if total_apps > 0 else 0
+            logger.info(f"✅ Preis-Update abgeschlossen: {updated_count}/{total_apps} Apps erfolgreich ({success_rate:.1f}%)")
+
+            return {
                 'success': True,
                 'apps_processed': total_apps,
                 'updated_count': updated_count,
                 'failed_count': failed_count,
                 'batches_processed': batches_processed,
-                'success_rate': f"{success_rate:.1f}%"
+                'success_rate': success_rate
             }
         
-            logger.info(f"✅ Preis-Update abgeschlossen: {updated_count}/{total_apps} Apps erfolgreich ({success_rate:.1f}%)")
-            return result
-        
         except Exception as e:
-            logger.error(f"❌ Preis-Update Fehler: {e}")
+            logger.error(f"❌ Kritischer Fehler im BATCH Preis-Update: {e}")
+            import traceback
+            traceback.print_exc()
             return {
-                'success': False, 
+                'success': False,
                 'error': str(e),
                 'apps_processed': len(app_ids) if app_ids else 0,
                 'updated_count': 0
             }
+
         
     def _fallback_individual_price_updates(self, app_ids: List[str], progress_callback=None) -> Dict:
         """Fallback für individuelle Preis-Updates"""
