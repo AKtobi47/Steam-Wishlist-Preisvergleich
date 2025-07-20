@@ -1041,77 +1041,102 @@ class DatabaseManager:
             logger.error(f"❌ Fehler beim Aktualisieren des App-Namens: {e}")
             return False
     
-    def update_price(self, steam_app_id: str, game_name: str = None, price_data: Dict = None) -> bool:
+    def update_price(self, steam_app_id: str, game_name: str = None, price_data: Dict = None, 
+                 store: str = None, timestamp = None) -> bool:
         """
         KRITISCHE METHODE: Aktualisiert Preise für eine App
-        Wird von batch_update_multiple_apps() aufgerufen
+    
+        🔧 PARAMETER-FIX: Unterstützt jetzt 2-5 Parameter!
     
         Args:
-            steam_app_id: Steam App ID
+            steam_app_id: Steam App ID (ERFORDERLICH)
             game_name: Name des Spiels (optional)
             price_data: Dictionary mit Preisdaten (optional)
-        
+            store: Store-Name (optional) - NEU!
+            timestamp: Zeitstempel (optional) - NEU!
+    
         Returns:
             bool: True wenn erfolgreich, False sonst
         """
         try:
-            # Fall 1: Vollständige Preisdaten verfügbar
-            if game_name and price_data:
+            from datetime import datetime
+        
+            # PARAMETER-KOMPATIBILITÄT: Verschiedene Aufrufarten unterstützen
+        
+            # Fall 1: Vollständige Preisdaten mit Store/Timestamp (5 Parameter)
+            if game_name and price_data and store:
+                logger.debug(f"📊 update_price: Vollständige Daten für {steam_app_id}")
                 return self.save_price_snapshot(steam_app_id, game_name, price_data)
         
-            # Fall 2: Nur steam_app_id - erstelle minimalen Eintrag
-            with self.lock:
-                with self.get_connection() as conn:
-                    cursor = conn.cursor()
+            # Fall 2: Nur Preisdaten (3 Parameter)
+            elif game_name and price_data:
+                logger.debug(f"📊 update_price: Standard-Aufruf für {steam_app_id}")
+                return self.save_price_snapshot(steam_app_id, game_name, price_data)
+        
+            # Fall 3: Nur steam_app_id (1 Parameter) - Minimaler Eintrag
+            else:
+                logger.debug(f"📊 update_price: Minimaler Eintrag für {steam_app_id}")
+            
+                with self.lock:
+                    with self.get_connection() as conn:
+                        cursor = conn.cursor()
                 
-                    # App-Namen holen falls nicht gegeben
-                    if not game_name:
-                        cursor.execute("SELECT name FROM tracked_apps WHERE steam_app_id = ?", (steam_app_id,))
-                        result = cursor.fetchone()
-                        game_name = result['name'] if result else f"Game {steam_app_id}"
+                        # App-Namen holen falls nicht gegeben
+                        if not game_name:
+                            cursor.execute("SELECT name FROM tracked_apps WHERE steam_app_id = ?", (steam_app_id,))
+                            result = cursor.fetchone()
+                            game_name = result['name'] if result else f"Game {steam_app_id}"
                 
-                    # Minimalen Price-Snapshot erstellen (falls keine Preisdaten)
-                    if not price_data:
+                        # Store standardisieren
+                        if not store:
+                            store = 'steam'
+                    
+                        # Timestamp standardisieren
+                        if not timestamp:
+                            timestamp = datetime.now()
+                
+                        # Minimalen Price-Snapshot erstellen
+                        if not price_data:
+                            cursor.execute("""
+                                INSERT INTO price_snapshots (
+                                    steam_app_id, game_title, timestamp, store
+                                ) VALUES (?, ?, ?, ?)
+                            """, (steam_app_id, game_name, timestamp, store))
+                        else:
+                            # Erweiterte Snapshot-Erstellung mit Preisdaten
+                            steam_data = price_data.get('steam', {}) if isinstance(price_data, dict) else {}
+                            cursor.execute("""
+                                INSERT INTO price_snapshots (
+                                    steam_app_id, game_title, timestamp,
+                                    steam_price, steam_original_price, steam_discount_percent, 
+                                    steam_available, store
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                steam_app_id, game_name, timestamp,
+                                steam_data.get('price', 0), steam_data.get('original_price', 0),
+                                steam_data.get('discount_percent', 0), steam_data.get('available', False),
+                                store
+                            ))
+                
+                        # Update tracked_apps
                         cursor.execute("""
-                            INSERT INTO price_snapshots (
-                                steam_app_id, game_title, timestamp, store
-                            ) VALUES (?, ?, ?, ?)
-                        """, (steam_app_id, game_name, datetime.now(), 'steam'))
-                    else:
-                        # Vollständigen Snapshot mit Preisdaten
-                        steam_data = price_data.get('steam', {})
-                        cursor.execute("""
-                            INSERT INTO price_snapshots (
-                                steam_app_id, game_title, timestamp,
-                                steam_price, steam_original_price, steam_discount_percent, 
-                                steam_available, store
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            steam_app_id, game_name, datetime.now(),
-                            steam_data.get('price'), steam_data.get('original_price'),
-                            steam_data.get('discount_percent', 0), steam_data.get('available', False),
-                            'steam'
-                        ))
+                            UPDATE tracked_apps 
+                            SET last_price_update = ? 
+                            WHERE steam_app_id = ?
+                        """, (timestamp if timestamp else datetime.now(), steam_app_id))
                 
-                    # Update tracked_apps
-                    cursor.execute("""
-                        UPDATE tracked_apps 
-                        SET last_price_update = ? 
-                        WHERE steam_app_id = ?
-                    """, (datetime.now(), steam_app_id))
-                
-                    conn.commit()
-                    logger.debug(f"✅ update_price erfolgreich für {steam_app_id}")
-                    return True
+                        conn.commit()
+                        logger.debug(f"✅ update_price erfolgreich für {steam_app_id}")
+                        return True
                 
         except Exception as e:
             logger.error(f"❌ update_price Fehler für {steam_app_id}: {e}")
+            logger.error(f"📋 Parameter: game_name={game_name}, price_data={type(price_data)}, store={store}, timestamp={timestamp}")
             return False
         
-    def add_price_update(self, steam_app_id: str, price_data: Dict) -> bool:
+    def add_price_update(self, steam_app_id: str, price_data: Dict = None, store: str = None, timestamp = None) -> bool:
         """
-        Alternative Methode für Preis-Updates
-        Kompatibel mit verschiedenen Aufrufarten
+        Alternative Methode für Preis-Updates - Vollständige Kompatibilität
         """
         try:
             # App-Name aus tracked_apps holen
@@ -1121,12 +1146,13 @@ class DatabaseManager:
                 result = cursor.fetchone()
                 game_name = result['name'] if result else f"Game {steam_app_id}"
         
-            return self.update_price(steam_app_id, game_name, price_data)
+            # Delegiere an update_price mit allen Parametern
+            return self.update_price(steam_app_id, game_name, price_data, store, timestamp)
         
         except Exception as e:
             logger.error(f"❌ add_price_update Fehler für {steam_app_id}: {e}")
             return False
-
+   
     def set_target_price(self, steam_app_id: str, target_price: float) -> bool:
         """Setzt einen Zielpreis für eine App"""
         try:
