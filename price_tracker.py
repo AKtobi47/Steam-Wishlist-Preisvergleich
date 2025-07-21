@@ -255,6 +255,54 @@ class SteamPriceTracker:
         except Exception as e:
             logger.error(f"❌ Fehler beim Preis-Update für {steam_app_id}: {e}")
             return False
+        
+    def update_price_for_charts(self, steam_app_id: str) -> bool:
+        """
+        Spezielle Charts-kompatible Preis-Update Methode
+        Robuste Fallback-Mechanismen für Charts-Updates
+
+        Args:
+            steam_app_id: Steam App ID
+
+        Returns:
+            bool: True bei Erfolg, False bei Fehler
+        """
+        try:
+            # Versuch 1: Vollständige Preisdaten
+            price_data = self._fetch_all_prices(steam_app_id)
+            if price_data:
+                return self.db_manager.save_price_snapshot(steam_app_id, price_data)
+        
+            # Versuch 2: Nur Steam-Preis
+            steam_price = self._get_steam_price_direct(steam_app_id)
+            if steam_price is not None:
+                minimal_data = {
+                    'steam_app_id': steam_app_id,
+                    'game_title': f"Game {steam_app_id}",
+                    'timestamp': datetime.now(),
+                    'steam': {
+                        'price': steam_price,
+                        'original_price': steam_price,
+                        'discount_percent': 0,
+                        'available': True
+                    }
+                }
+                return self.db_manager.save_price_snapshot(steam_app_id, minimal_data)
+        
+            # Versuch 3: Nur als "gecheckt" markieren
+            with self.db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE tracked_apps 
+                    SET last_price_update = ? 
+                    WHERE steam_app_id = ?
+                """, (datetime.now(), steam_app_id))
+                conn.commit()
+                return cursor.rowcount > 0
+            
+        except Exception as e:
+            logger.error(f"❌ Charts-Preis-Update für {steam_app_id} fehlgeschlagen: {e}")
+            return False
     
     def track_app_prices(self, app_ids: List[str]) -> Dict[str, bool]:
         """
@@ -610,6 +658,13 @@ class SteamPriceTracker:
             logger.debug(f"Fehler beim Abrufen des App-Namens für {steam_app_id}: {e}")
             return None
     
+    def _fetch_all_prices(self, steam_app_id: str, app_name: str = None) -> Optional[Dict]:
+        """
+        ALIAS für _fetch_prices_for_app - behebt Methodenname-Mismatch
+        Charts Manager ruft _fetch_all_prices auf, aber Methode heißt _fetch_prices_for_app
+        """
+        return self._fetch_prices_for_app(steam_app_id, app_name or f"Game {steam_app_id}")
+    
     def _fetch_prices_for_app(self, steam_app_id: str, app_name: str) -> Optional[Dict]:
         """Holt aktuelle Preise für eine App von allen Stores"""
         try:
@@ -791,23 +846,23 @@ class SteamPriceTracker:
         """
         Holt Preis direkt von Steam Store API (Fallback)
         """
-    
         try:
-            # Steam Store API Rate Limiting
+            # Rate Limiting (bestehend)
             if not hasattr(self, '_steam_last_request'):
                 self._steam_last_request = 0
-            
+        
             current_time = time_module.time()
             if current_time - self._steam_last_request < 1.2:
                 time_module.sleep(1.2 - (current_time - self._steam_last_request))
         
             self._steam_last_request = time_module.time()
         
+            # Steam API Call (bestehend)
             url = f"https://store.steampowered.com/api/appdetails"
             params = {
                 'appids': app_id,
                 'filters': 'price_overview',
-                'cc': 'de'  # Deutschland
+                'cc': 'de'
             }
         
             response = requests.get(url, params=params, timeout=15)
@@ -815,17 +870,32 @@ class SteamPriceTracker:
             if response.status_code == 200:
                 data = response.json()
             
-                if str(app_id) in data and data[str(app_id)]['success']:
-                    app_data = data[str(app_id)]['data']
-                
-                    if 'price_overview' in app_data:
-                        price_data = app_data['price_overview']
-                        # Steam gibt Preise in Cents zurück
-                        price_in_cents = price_data.get('final', 0)
-                        price_in_euros = price_in_cents / 100.0
-                        return price_in_euros
-                    elif app_data.get('is_free', False):
-                        return 0.0
+                # KRITISCHER FIX: Datentyp-Validierung
+                if not isinstance(data, dict):
+                    logger.debug(f"Steam API gab unerwartete Datenstruktur zurück: {type(data)}")
+                    return None
+            
+                app_data = data.get(str(app_id))
+                if not app_data or not isinstance(app_data, dict):
+                    logger.debug(f"Keine gültigen App-Daten für {app_id}")
+                    return None
+            
+                if not app_data.get('success'):
+                    logger.debug(f"Steam API success=False für {app_id}")
+                    return None
+            
+                # FIX: Sicherer Zugriff auf nested data
+                app_info = app_data.get('data', {})
+                if not isinstance(app_info, dict):
+                    logger.debug(f"App-Info ist kein Dictionary für {app_id}")
+                    return None
+            
+                price_overview = app_info.get('price_overview')
+                if price_overview and isinstance(price_overview, dict):
+                    final_price = price_overview.get('final', 0)
+                    return final_price / 100.0
+                elif app_info.get('is_free', False):
+                    return 0.0
         
             return None
         
