@@ -519,11 +519,11 @@ class ElasticsearchManager:
                             body={'mappings': mappings[key]}
                         )
                     created_count += 1
-                    print(f"✅ Index erstellt: {index_name}")
+                    print(f" Index erstellt: {index_name}")
                 else:
-                    print(f"ℹ️ Index existiert bereits: {index_name}")
+                    print(f"ℹ Index existiert bereits: {index_name}")
             except Exception as e:
-                print(f"❌ Fehler beim Erstellen von {index_name}: {e}")
+                print(f" Fehler beim Erstellen von {index_name}: {e}")
         
         return created_count
     
@@ -536,9 +536,9 @@ class ElasticsearchManager:
                 if self.es.indices.exists(index=index_name):
                     self.es.indices.delete(index=index_name)
                     deleted_count += 1
-                    print(f"🗑️ Index gelöscht: {index_name}")
+                    print(f" Index gelöscht: {index_name}")
             except Exception as e:
-                print(f"❌ Fehler beim Löschen von {index_name}: {e}")
+                print(f" Fehler beim Löschen von {index_name}: {e}")
         
         return deleted_count
     
@@ -611,10 +611,10 @@ class ElasticsearchManager:
                     
                     # Fortschritt anzeigen
                     progress = min(100, (i + len(batch)) / total_records * 100)
-                    print(f"  📊 Fortschritt: {progress:.1f}% ({i + len(batch)}/{total_records})")
+                    print(f"   Fortschritt: {progress:.1f}% ({i + len(batch)}/{total_records})")
                     
                 except Exception as e:
-                    print(f"❌ Fehler beim Bulk-Export: {e}")
+                    print(f" Fehler beim Bulk-Export: {e}")
                     # Fallback: Einzelne Datensätze versuchen
                     for record in batch:
                         try:
@@ -622,61 +622,61 @@ class ElasticsearchManager:
                             self.es.index(index=index_name, document=prepared_record)
                             exported_count += 1
                         except Exception as e2:
-                            print(f"❌ Fehler beim Exportieren: {e2}")
+                            print(f" Fehler beim Exportieren: {e2}")
             
             return exported_count
         
         try:
             # Price Snapshots exportieren
-            print("📊 Exportiere Price Snapshots...")
+            print(" Exportiere Price Snapshots...")
             price_data = db_manager.get_all_price_snapshots()
             stats['price_snapshots'] = bulk_export_data(price_data, self.indices['price_snapshots'])
             
             # Tracked Apps exportieren
-            print("📱 Exportiere Tracked Apps...")
+            print(" Exportiere Tracked Apps...")
             tracked_data = db_manager.get_all_tracked_apps()
             stats['tracked_apps'] = bulk_export_data(tracked_data, self.indices['tracked_apps'])
             
             # Name History exportieren
-            print("🔤 Exportiere Name History...")
+            print(" Exportiere Name History...")
             name_data = db_manager.get_all_name_history()
             stats['name_history'] = bulk_export_data(name_data, self.indices['name_history'])
             
             # Charts Snapshots exportieren
-            print("📈 Exportiere Charts Snapshots...")
+            print(" Exportiere Charts Snapshots...")
             charts_data = db_manager.get_all_charts_tracking()
             stats['charts_snapshots'] = bulk_export_data(charts_data, self.indices['charts_snapshots'])
             
             # Charts Prices exportieren
-            print("💰 Exportiere Charts Prices...")
+            print(" Exportiere Charts Prices...")
             charts_prices_data = db_manager.get_all_charts_prices()
             stats['charts_prices'] = bulk_export_data(charts_prices_data, self.indices['charts_prices'])
             
             # Statistics exportieren
-            print("📊 Exportiere Statistics...")
+            print(" Exportiere Statistics...")
             stats_data = db_manager.get_all_statistics()
             stats['statistics'] = bulk_export_data(stats_data, self.indices['statistics'])
             
             # Tracked Apps Price History exportieren
-            print("📈 Exportiere Tracked Apps Price History...")
+            print(" Exportiere Tracked Apps Price History...")
             price_history_data = db_manager.get_all_tracked_apps_price_history()
             stats['tracked_apps_price_history'] = bulk_export_data(price_history_data, self.indices['tracked_apps_price_history'])
             
             # Tracked Apps Latest Prices exportieren
-            print("📈 Exportiere Tracked Apps Latest Prices...")
+            print(" Exportiere Tracked Apps Latest Prices...")
             latest_prices_data = db_manager.get_all_tracked_apps_latest_prices()
             stats['tracked_apps_latest_prices'] = bulk_export_data(latest_prices_data, self.indices['tracked_apps_latest_prices'])
             
             # Refresh alle Indizes
-            print("🔄 Refreshe Indizes...")
+            print(" Refreshe Indizes...")
             for index_name in self.indices.values():
                 try:
                     self.es.indices.refresh(index=index_name)
                 except Exception as e:
-                    print(f"❌ Fehler beim Refreshen von {index_name}: {e}")
+                    print(f" Fehler beim Refreshen von {index_name}: {e}")
             
         except Exception as e:
-            print(f"❌ Export-Fehler: {e}")
+            print(f" Export-Fehler: {e}")
         
         stats['total_exported'] = sum(v for k, v in stats.items() if k != 'total_exported')
         return stats
@@ -687,10 +687,10 @@ def create_elasticsearch_manager(host='localhost', port=9200, username=None, pas
     try:
         return ElasticsearchManager(host, port, username, password)
     except ImportError as e:
-        print(f"❌ Elasticsearch nicht verfügbar: {e}")
+        print(f" Elasticsearch nicht verfügbar: {e}")
         return None
     except Exception as e:
-        print(f"❌ Fehler beim Erstellen des Elasticsearch Managers: {e}")
+        print(f" Fehler beim Erstellen des Elasticsearch Managers: {e}")
         return None
 
 
@@ -699,10 +699,10 @@ def create_docker_manager(container_name='elasticsearch-steam-tracker') -> Optio
     try:
         return DockerElasticsearchManager(container_name)
     except ImportError as e:
-        print(f"❌ Docker nicht verfügbar: {e}")
+        print(f" Docker nicht verfügbar: {e}")
         return None
     except Exception as e:
-        print(f"❌ Fehler beim Erstellen des Docker Managers: {e}")
+        print(f" Fehler beim Erstellen des Docker Managers: {e}")
         return None
 
 
@@ -734,49 +734,49 @@ def setup_elasticsearch_for_steam_tracker(db_manager, host='localhost', port=920
 
 def cmd_create_indices(args):
     """Erstellt alle Indizes"""
-    print("🏗️  Erstelle Elasticsearch-Indizes...")
+    print("  Erstelle Elasticsearch-Indizes...")
     
     es_manager = create_elasticsearch_manager(args.host, args.port, args.username, args.password)
     if not es_manager:
         return
     
     created_count = es_manager.create_indices_and_mappings()
-    print(f"✅ {created_count} Indizes erstellt")
+    print(f" {created_count} Indizes erstellt")
 
 
 def cmd_delete_indices(args):
     """Löscht alle Indizes"""
     if not args.confirm:
-        print("⚠️  WARNUNG: Dies wird alle Steam Price Tracker Indizes löschen!")
+        print("  WARNUNG: Dies wird alle Steam Price Tracker Indizes löschen!")
         confirm = input("Fortfahren? (ja/nein): ")
         if confirm.lower() not in ['ja', 'j', 'yes', 'y']:
-            print("❌ Abgebrochen")
+            print(" Abgebrochen")
             return
     
-    print("🗑️  Lösche Elasticsearch-Indizes...")
+    print("  Lösche Elasticsearch-Indizes...")
     
     es_manager = create_elasticsearch_manager(args.host, args.port, args.username, args.password)
     if not es_manager:
         return
     
     deleted_count = es_manager.delete_all_indices()
-    print(f"✅ {deleted_count} Indizes gelöscht")
+    print(f" {deleted_count} Indizes gelöscht")
 
 
 def cmd_export_data(args):
     """Exportiert Daten aus SQLite zu Elasticsearch"""
-    print("📤 Exportiere Daten von SQLite zu Elasticsearch...")
+    print(" Exportiere Daten von SQLite zu Elasticsearch...")
     
     # Database Manager erstellen
     db_manager = DatabaseManager(args.database)
     db_info = db_manager.get_database_info()
     
     if not db_info['database_exists']:
-        print(f"❌ Datenbank nicht gefunden: {args.database}")
+        print(f" Datenbank nicht gefunden: {args.database}")
         return
     
-    print(f"📊 Datenbank: {args.database}")
-    print(f"📄 Gesamt-Datensätze: {db_info['total_records']}")
+    print(f" Datenbank: {args.database}")
+    print(f" Gesamt-Datensätze: {db_info['total_records']}")
     
     # Elasticsearch Manager erstellen
     es_manager = create_elasticsearch_manager(args.host, args.port, args.username, args.password)
@@ -786,17 +786,17 @@ def cmd_export_data(args):
     # Export durchführen
     stats = es_manager.export_sqlite_to_elasticsearch(db_manager)
     
-    print("\n📊 Export-Statistiken:")
+    print("\n Export-Statistiken:")
     for key, count in stats.items():
         if key != 'total_exported':
             print(f"  {key}: {count} Datensätze")
     
-    print(f"\n✅ Gesamt exportiert: {stats['total_exported']} Datensätze")
+    print(f"\n Gesamt exportiert: {stats['total_exported']} Datensätze")
 
 
 def cmd_setup(args):
     """Vollständiges Setup"""
-    print("🚀 Vollständiges Elasticsearch-Setup...")
+    print(" Vollständiges Elasticsearch-Setup...")
     
     # Database Manager erstellen
     db_manager = DatabaseManager(args.database)
@@ -807,14 +807,14 @@ def cmd_setup(args):
     )
     
     if result['success']:
-        print(f"✅ Setup erfolgreich! {result['indices_created']} Indizes erstellt")
+        print(f" Setup erfolgreich! {result['indices_created']} Indizes erstellt")
     else:
-        print(f"❌ Setup fehlgeschlagen: {result['error']}")
+        print(f" Setup fehlgeschlagen: {result['error']}")
 
 
 def cmd_docker_setup(args):
     """Vollständiges Docker-Setup: Container starten + Elasticsearch konfigurieren"""
-    print("🚀 Vollständiges Docker-Setup...")
+    print(" Vollständiges Docker-Setup...")
     
     # Docker Manager erstellen
     docker_manager = create_docker_manager(args.container_name)
@@ -822,17 +822,17 @@ def cmd_docker_setup(args):
         return
     
     # Container starten
-    print("🐳 Starte Elasticsearch Container...")
+    print(" Starte Elasticsearch Container...")
     start_result = docker_manager.start_container(args.memory, args.heap_size)
     
     if not start_result['success']:
-        print(f"❌ Container-Start fehlgeschlagen: {start_result['message']}")
+        print(f" Container-Start fehlgeschlagen: {start_result['message']}")
         return
     
-    print(f"✅ {start_result['message']}")
+    print(f" {start_result['message']}")
     
     # Kurz warten für vollständige Initialisierung
-    print("⏳ Warte auf vollständige Elasticsearch-Initialisierung...")
+    print(" Warte auf vollständige Elasticsearch-Initialisierung...")
     time.sleep(5)
     
     # Database Manager erstellen
@@ -844,16 +844,16 @@ def cmd_docker_setup(args):
     )
     
     if result['success']:
-        print(f"✅ Setup erfolgreich! {result['indices_created']} Indizes erstellt")
-        print(f"🌐 Elasticsearch verfügbar unter: http://localhost:{args.port}")
+        print(f" Setup erfolgreich! {result['indices_created']} Indizes erstellt")
+        print(f" Elasticsearch verfügbar unter: http://localhost:{args.port}")
     else:
-        print(f"❌ Setup fehlgeschlagen: {result['error']}")
+        print(f" Setup fehlgeschlagen: {result['error']}")
 
 
 # Docker CLI-Funktionen
 def cmd_docker_start(args):
     """Startet Elasticsearch Docker-Container"""
-    print("🐳 Starte Elasticsearch Docker-Container...")
+    print(" Starte Elasticsearch Docker-Container...")
     
     docker_manager = create_docker_manager(args.container_name)
     if not docker_manager:
@@ -862,17 +862,17 @@ def cmd_docker_start(args):
     result = docker_manager.start_container(args.memory, args.heap_size)
     
     if result['success']:
-        print(f"✅ {result['message']}")
+        print(f" {result['message']}")
         if 'container_id' in result:
-            print(f"🆔 Container ID: {result['container_id'][:12]}")
-        print(f"🌐 Elasticsearch verfügbar unter: http://localhost:{docker_manager.host_port}")
+            print(f" Container ID: {result['container_id'][:12]}")
+        print(f" Elasticsearch verfügbar unter: http://localhost:{docker_manager.host_port}")
     else:
-        print(f"❌ {result['message']}")
+        print(f" {result['message']}")
 
 
 def cmd_docker_stop(args):
     """Stoppt Elasticsearch Docker-Container"""
-    print("🛑 Stoppe Elasticsearch Docker-Container...")
+    print(" Stoppe Elasticsearch Docker-Container...")
     
     docker_manager = create_docker_manager(args.container_name)
     if not docker_manager:
@@ -881,21 +881,21 @@ def cmd_docker_stop(args):
     result = docker_manager.stop_container()
     
     if result['success']:
-        print(f"✅ {result['message']}")
+        print(f" {result['message']}")
     else:
-        print(f"❌ {result['message']}")
+        print(f" {result['message']}")
 
 
 def cmd_docker_remove(args):
     """Entfernt Elasticsearch Docker-Container"""
     if not args.confirm:
-        print("⚠️  WARNUNG: Dies wird den Elasticsearch-Container entfernen!")
+        print("  WARNUNG: Dies wird den Elasticsearch-Container entfernen!")
         confirm = input("Fortfahren? (ja/nein): ")
         if confirm.lower() not in ['ja', 'j', 'yes', 'y']:
-            print("❌ Abgebrochen")
+            print(" Abgebrochen")
             return
     
-    print("🗑️  Entferne Elasticsearch Docker-Container...")
+    print("  Entferne Elasticsearch Docker-Container...")
     
     docker_manager = create_docker_manager(args.container_name)
     if not docker_manager:
@@ -904,14 +904,14 @@ def cmd_docker_remove(args):
     result = docker_manager.remove_container()
     
     if result['success']:
-        print(f"✅ {result['message']}")
+        print(f" {result['message']}")
     else:
-        print(f"❌ {result['message']}")
+        print(f" {result['message']}")
 
 
 def cmd_docker_status(args):
     """Zeigt Docker-Container-Status"""
-    print("📊 Docker-Container-Status...")
+    print(" Docker-Container-Status...")
     
     docker_manager = create_docker_manager(args.container_name)
     if not docker_manager:
@@ -920,21 +920,21 @@ def cmd_docker_status(args):
     status = docker_manager.get_container_status()
     
     if status['exists']:
-        print(f"✅ Container existiert: {args.container_name}")
-        print(f"📊 Status: {status['status']}")
-        print(f"🖼️  Image: {status.get('image', 'unknown')}")
-        print(f"📅 Erstellt: {status.get('created', 'unknown')}")
+        print(f" Container existiert: {args.container_name}")
+        print(f" Status: {status['status']}")
+        print(f"  Image: {status.get('image', 'unknown')}")
+        print(f" Erstellt: {status.get('created', 'unknown')}")
         if 'ports' in status:
-            print(f"🌐 Ports: {status['ports']}")
+            print(f" Ports: {status['ports']}")
     else:
-        print(f"❌ Container existiert nicht: {args.container_name}")
+        print(f" Container existiert nicht: {args.container_name}")
         if 'error' in status:
-            print(f"❌ Fehler: {status['error']}")
+            print(f" Fehler: {status['error']}")
 
 
 def cmd_docker_logs(args):
     """Zeigt Container-Logs"""
-    print(f"📜 Container-Logs ({args.tail} Zeilen)...")
+    print(f" Container-Logs ({args.tail} Zeilen)...")
     
     docker_manager = create_docker_manager(args.container_name)
     if not docker_manager:
@@ -946,7 +946,7 @@ def cmd_docker_logs(args):
 
 def cmd_docker_restart(args):
     """Startet Container neu"""
-    print("🔄 Starte Container neu...")
+    print(" Starte Container neu...")
     
     docker_manager = create_docker_manager(args.container_name)
     if not docker_manager:
@@ -955,24 +955,24 @@ def cmd_docker_restart(args):
     # Stoppen
     stop_result = docker_manager.stop_container()
     if stop_result['success']:
-        print("✅ Container gestoppt")
+        print(" Container gestoppt")
     else:
-        print(f"⚠️  {stop_result['message']}")
+        print(f"  {stop_result['message']}")
     
     # Starten
     time.sleep(2)
     start_result = docker_manager.start_container(args.memory, args.heap_size)
     
     if start_result['success']:
-        print(f"✅ {start_result['message']}")
+        print(f" {start_result['message']}")
     else:
-        print(f"❌ {start_result['message']}")
+        print(f" {start_result['message']}")
 
 
 # Bestehende CLI-Funktionen
 def cmd_health_check(args):
     """Führt einen Gesundheitscheck durch"""
-    print("🔍 Elasticsearch Gesundheitscheck...")
+    print(" Elasticsearch Gesundheitscheck...")
     
     es_manager = create_elasticsearch_manager(args.host, args.port, args.username, args.password)
     if not es_manager:
@@ -981,21 +981,21 @@ def cmd_health_check(args):
     health = es_manager.health_check()
     
     if health['connection_ok']:
-        print("✅ Elasticsearch-Verbindung erfolgreich!")
-        print(f"🏷️  Cluster: {health['cluster_name']}")
-        print(f"📊 Status: {health['cluster_status']}")
-        print(f"🖥️  Nodes: {health['number_of_nodes']}")
-        print(f"🔄 Active Shards: {health['active_shards']}")
-        print(f"📄 Total Documents: {health['total_documents']}")
+        print(" Elasticsearch-Verbindung erfolgreich!")
+        print(f"  Cluster: {health['cluster_name']}")
+        print(f" Status: {health['cluster_status']}")
+        print(f"  Nodes: {health['number_of_nodes']}")
+        print(f" Active Shards: {health['active_shards']}")
+        print(f" Total Documents: {health['total_documents']}")
         
-        print("\n📋 Index-Status:")
+        print("\n Index-Status:")
         for key, stats in health['indices'].items():
             if stats['exists']:
-                print(f"  ✅ {key}: {stats['document_count']} Dokumente")
+                print(f"   {key}: {stats['document_count']} Dokumente")
             else:
-                print(f"  ❌ {key}: Index existiert nicht")
+                print(f"   {key}: Index existiert nicht")
     else:
-        print(f"❌ Verbindung fehlgeschlagen: {health['error']}")
+        print(f" Verbindung fehlgeschlagen: {health['error']}")
 
 
 def main():

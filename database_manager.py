@@ -55,10 +55,10 @@ class DatabaseManager:
             return [dict(row) for row in rows]
             
         except sqlite3.Error as e:
-            print(f"❌ Datenbankfehler bei price_snapshots: {e}")
+            print(f" Datenbankfehler bei price_snapshots: {e}")
             return []
         except Exception as e:
-            print(f"❌ Unerwarteter Fehler: {e}")
+            print(f" Unerwarteter Fehler: {e}")
             return []
     
     def get_all_tracked_apps(self) -> List[Dict[str, Any]]:
@@ -82,10 +82,10 @@ class DatabaseManager:
             return [dict(row) for row in rows]
             
         except sqlite3.Error as e:
-            print(f"❌ Datenbankfehler bei tracked_apps: {e}")
+            print(f" Datenbankfehler bei tracked_apps: {e}")
             return []
         except Exception as e:
-            print(f"❌ Unerwarteter Fehler: {e}")
+            print(f" Unerwarteter Fehler: {e}")
             return []
     
     def get_all_name_history(self) -> List[Dict[str, Any]]:
@@ -117,10 +117,10 @@ class DatabaseManager:
             return changes
             
         except sqlite3.Error as e:
-            print(f"❌ Datenbankfehler bei name_history: {e}")
+            print(f" Datenbankfehler bei name_history: {e}")
             return []
         except Exception as e:
-            print(f"❌ Unerwarteter Fehler: {e}")
+            print(f" Unerwarteter Fehler: {e}")
             return []
     
     def get_all_charts_tracking(self) -> List[Dict[str, Any]]:
@@ -148,10 +148,10 @@ class DatabaseManager:
             return [dict(row) for row in rows]
             
         except sqlite3.Error as e:
-            print(f"❌ Datenbankfehler bei charts_price_snapshots: {e}")
+            print(f" Datenbankfehler bei charts_price_snapshots: {e}")
             return []
         except Exception as e:
-            print(f"❌ Unerwarteter Fehler: {e}")
+            print(f" Unerwarteter Fehler: {e}")
             return []
     
     def get_all_charts_prices(self) -> List[Dict[str, Any]]:
@@ -175,10 +175,10 @@ class DatabaseManager:
             return [dict(row) for row in rows]
             
         except sqlite3.Error as e:
-            print(f"❌ Datenbankfehler bei charts_prices: {e}")
+            print(f" Datenbankfehler bei charts_prices: {e}")
             return []
         except Exception as e:
-            print(f"❌ Unerwarteter Fehler: {e}")
+            print(f" Unerwarteter Fehler: {e}")
             return []
     
     def get_all_statistics(self) -> List[Dict[str, Any]]:
@@ -219,10 +219,10 @@ class DatabaseManager:
             return [dict(row) for row in rows]
             
         except sqlite3.Error as e:
-            print(f"❌ Datenbankfehler bei statistics: {e}")
+            print(f" Datenbankfehler bei statistics: {e}")
             return []
         except Exception as e:
-            print(f"❌ Unerwarteter Fehler: {e}")
+            print(f" Unerwarteter Fehler: {e}")
             return []
     
     def get_all_tracked_apps_price_history(self) -> List[Dict[str, Any]]:
@@ -241,10 +241,10 @@ class DatabaseManager:
             conn.close()
             return [dict(row) for row in rows]
         except sqlite3.Error as e:
-            print(f"❌ Datenbankfehler bei tracked_apps_price_history: {e}")
+            print(f" Datenbankfehler bei tracked_apps_price_history: {e}")
             return []
         except Exception as e:
-            print(f"❌ Unerwarteter Fehler: {e}")
+            print(f" Unerwarteter Fehler: {e}")
             return []
     
     def get_all_tracked_apps_latest_prices(self) -> List[Dict[str, Any]]:
@@ -267,10 +267,10 @@ class DatabaseManager:
             conn.close()
             return [dict(row) for row in rows]
         except sqlite3.Error as e:
-            print(f"❌ Datenbankfehler bei tracked_apps_latest_prices: {e}")
+            print(f" Datenbankfehler bei tracked_apps_latest_prices: {e}")
             return []
         except Exception as e:
-            print(f"❌ Unerwarteter Fehler: {e}")
+            print(f" Unerwarteter Fehler: {e}")
             return []
     
     def get_database_info(self) -> Dict[str, Any]:

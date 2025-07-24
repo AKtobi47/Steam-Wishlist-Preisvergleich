@@ -28,7 +28,7 @@ class KibanaDashboardSetup:
     
     def wait_for_kibana(self, max_retries=30, retry_interval=10):
         """Wartet bis Kibana verfügbar ist"""
-        logger.info("🔄 Warte auf Kibana...")
+        logger.info(" Warte auf Kibana...")
         
         for attempt in range(max_retries):
             try:
@@ -42,15 +42,15 @@ class KibanaDashboardSetup:
             logger.info(f"⏳ Versuch {attempt + 1}/{max_retries} - warte {retry_interval}s...")
             time.sleep(retry_interval)
         
-        logger.error("❌ Kibana nicht verfügbar nach maximaler Wartezeit")
+        logger.error(" Kibana nicht verfügbar nach maximaler Wartezeit")
         return False
     
     def import_ndjson_to_kibana(self, ndjson_path):
         """Importiert NDJSON-Datei nach Kibana"""
-        logger.info(f"📤 Importiere NDJSON-Datei: {ndjson_path}")
+        logger.info(f" Importiere NDJSON-Datei: {ndjson_path}")
         
         if not Path(ndjson_path).exists():
-            logger.error(f"❌ NDJSON-Datei nicht gefunden: {ndjson_path}")
+            logger.error(f" NDJSON-Datei nicht gefunden: {ndjson_path}")
             return False
         
         try:
@@ -66,7 +66,7 @@ class KibanaDashboardSetup:
             if response.status_code == 200:
                 result = response.json()
                 success_count = result.get('successCount', 0)
-                logger.info(f"✅ NDJSON erfolgreich importiert! {success_count} Objekte importiert")
+                logger.info(f" NDJSON erfolgreich importiert! {success_count} Objekte importiert")
                 
                 # Zeige Details zu importierten Objekten
                 if 'successResults' in result:
@@ -77,16 +77,16 @@ class KibanaDashboardSetup:
                 
                 return True
             else:
-                logger.error(f"❌ Fehler beim Import: {response.text}")
+                logger.error(f" Fehler beim Import: {response.text}")
                 return False
                 
         except Exception as e:
-            logger.error(f"❌ Import-Fehler: {e}")
+            logger.error(f" Import-Fehler: {e}")
             return False
     
     def refresh_index_patterns(self):
         """Aktualisiert alle Index Patterns"""
-        logger.info("🔄 Aktualisiere Index Patterns...")
+        logger.info(" Aktualisiere Index Patterns...")
         
         try:
             # Hole alle Index Patterns
@@ -111,20 +111,20 @@ class KibanaDashboardSetup:
                     if refresh_response.status_code == 200:
                         logger.info(f"  ✓ Index Pattern '{pattern_title}' aktualisiert")
                     else:
-                        logger.warning(f"  ⚠️ Fehler beim Aktualisieren von '{pattern_title}'")
+                        logger.warning(f"   Fehler beim Aktualisieren von '{pattern_title}'")
                 
                 return True
             else:
-                logger.error(f"❌ Fehler beim Abrufen der Index Patterns: {response.text}")
+                logger.error(f" Fehler beim Abrufen der Index Patterns: {response.text}")
                 return False
                 
         except Exception as e:
-            logger.error(f"❌ Fehler beim Aktualisieren der Index Patterns: {e}")
+            logger.error(f" Fehler beim Aktualisieren der Index Patterns: {e}")
             return False
     
     def list_dashboards(self):
         """Listet alle verfügbaren Dashboards auf"""
-        logger.info("📊 Verfügbare Dashboards:")
+        logger.info(" Verfügbare Dashboards:")
         
         try:
             response = requests.get(
@@ -142,18 +142,18 @@ class KibanaDashboardSetup:
                 for dashboard in dashboards:
                     title = dashboard['attributes'].get('title', 'Untitled')
                     dashboard_id = dashboard['id']
-                    logger.info(f"  📊 {title} (ID: {dashboard_id})")
+                    logger.info(f"   {title} (ID: {dashboard_id})")
                     logger.info(f"     URL: {self.kibana_url}/app/dashboards#/view/{dashboard_id}")
                 
             else:
-                logger.error(f"❌ Fehler beim Abrufen der Dashboards: {response.text}")
+                logger.error(f" Fehler beim Abrufen der Dashboards: {response.text}")
                 
         except Exception as e:
-            logger.error(f"❌ Fehler beim Auflisten der Dashboards: {e}")
+            logger.error(f" Fehler beim Auflisten der Dashboards: {e}")
     
     def export_dashboards(self, output_dir="kibana/dashboards"):
         """Exportiert alle Dashboards als JSON"""
-        logger.info("📤 Exportiere Dashboards...")
+        logger.info(" Exportiere Dashboards...")
         
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
@@ -188,15 +188,15 @@ class KibanaDashboardSetup:
                         with open(export_file, 'w', encoding='utf-8') as f:
                             json.dump(dashboard_data, f, indent=2)
                         
-                        logger.info(f"✅ Dashboard exportiert: {export_file}")
+                        logger.info(f" Dashboard exportiert: {export_file}")
                     else:
-                        logger.error(f"❌ Fehler beim Exportieren von '{title}': {export_response.text}")
+                        logger.error(f" Fehler beim Exportieren von '{title}': {export_response.text}")
                 
             else:
-                logger.error(f"❌ Fehler beim Abrufen der Dashboards: {response.text}")
+                logger.error(f" Fehler beim Abrufen der Dashboards: {response.text}")
                 
         except Exception as e:
-            logger.error(f"❌ Export-Fehler: {e}")
+            logger.error(f" Export-Fehler: {e}")
 
 def start_kibana_container(container_name='kibana-steam-tracker', elasticsearch_url='http://host.docker.internal:9200', kibana_port=5601):
     """Startet Kibana Docker Container"""
@@ -208,7 +208,7 @@ def start_kibana_container(container_name='kibana-steam-tracker', elasticsearch_
             logger.info(f"Kibana-Container '{container_name}' gestartet.")
         else:
             logger.info(f"Kibana-Container '{container_name}' läuft bereits.")
-        logger.info(f"🌐 Kibana Dashboard erreichbar unter: http://localhost:{kibana_port}")
+        logger.info(f" Kibana Dashboard erreichbar unter: http://localhost:{kibana_port}")
     except docker.errors.NotFound:
         logger.info(f"Erstelle und starte Kibana-Container '{container_name}'...")
         client.containers.run(
@@ -224,7 +224,7 @@ def start_kibana_container(container_name='kibana-steam-tracker', elasticsearch_
             remove=False
         )
         logger.info(f"Kibana-Container '{container_name}' wurde erstellt und gestartet.")
-        logger.info(f"🌐 Kibana Dashboard erreichbar unter: http://localhost:{kibana_port}")
+        logger.info(f" Kibana Dashboard erreichbar unter: http://localhost:{kibana_port}")
 
 def main():
     """Hauptfunktion"""
@@ -253,12 +253,12 @@ def main():
         # 2. Immer auf Kibana warten
         print("Warte auf Kibana, bis es bereit ist...")
         if not setup.wait_for_kibana():
-            logger.error("❌ Kibana nicht verfügbar - Setup abgebrochen")
+            logger.error(" Kibana nicht verfügbar - Setup abgebrochen")
             sys.exit(1)
         
         # 3. NDJSON importieren
         if not setup.import_ndjson_to_kibana(args.ndjson):
-            logger.error("❌ NDJSON-Import fehlgeschlagen")
+            logger.error(" NDJSON-Import fehlgeschlagen")
             sys.exit(1)
         
         # 4. Index Patterns aktualisieren
@@ -273,14 +273,14 @@ def main():
         if args.export:
             setup.export_dashboards()
         
-        logger.info("🎉 Setup erfolgreich abgeschlossen!")
-        logger.info(f"🌐 Kibana Dashboard: {args.kibana_url}/app/dashboards")
+        logger.info(" Setup erfolgreich abgeschlossen!")
+        logger.info(f" Kibana Dashboard: {args.kibana_url}/app/dashboards")
         
     except KeyboardInterrupt:
-        logger.info("\n⏹️ Setup abgebrochen durch Benutzer")
+        logger.info("\n Setup abgebrochen durch Benutzer")
         sys.exit(1)
     except Exception as e:
-        logger.error(f"❌ Unerwarteter Fehler: {e}")
+        logger.error(f" Unerwarteter Fehler: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
