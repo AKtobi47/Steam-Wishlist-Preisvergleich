@@ -1729,7 +1729,7 @@ class DatabaseBatchWriter:
                 'message': 'Keine Charts-Daten zum Schreiben'
             }
     
-        start_time = time.time()
+        start_time = time_module.time()
     
         try:
             # Tabelle über ensure-Methode sicherstellen
@@ -1739,7 +1739,7 @@ class DatabaseBatchWriter:
                     'success': False,
                     'error': 'Charts-Tracking-Tabelle nicht verfügbar',
                     'total_items': len(charts_data),
-                    'total_duration': time.time() - start_time
+                    'total_duration': time_module.time() - start_time
                 }
         
             with self.get_connection() as conn:
@@ -1770,7 +1770,7 @@ class DatabaseBatchWriter:
             
                 conn.commit()
             
-                duration = time.time() - start_time
+                duration = time_module.time() - start_time
             
                 return {
                     'success': True,
@@ -1786,7 +1786,7 @@ class DatabaseBatchWriter:
                 'success': False,
                 'error': str(e),
                 'total_items': len(charts_data),
-                'total_duration': time.time() - start_time
+                'total_duration': time_module.time() - start_time
             }
     
     def batch_write_prices(self, price_data: List[Dict]) -> Dict:
@@ -1815,7 +1815,7 @@ class DatabaseBatchWriter:
                 'message': 'Keine Preis-Daten zum Schreiben'
             }
     
-        start_time = time.time()
+        start_time = time_module.time()
     
         try:
             # Tabelle über ensure-Methode sicherstellen
@@ -1825,12 +1825,12 @@ class DatabaseBatchWriter:
                     'success': False,
                     'error': 'Price-Snapshots-Tabelle nicht verfügbar',
                     'total_items': len(price_data),
-                    'total_duration': time.time() - start_time
+                    'total_duration': time_module.time() - start_time
                 }
         
             logger.info(f"💰 Price Batch Write: {len(price_data)} Items")
         
-            temp_table_name = f"temp_prices_batch_{int(time.time() * 1000000)}"
+            temp_table_name = f"temp_prices_batch_{int(time_module.time() * 1000000)}"
         
             with self.get_connection() as conn:
                 # Foreign Key Constraints temporär deaktivieren für Batch-Operation
@@ -1921,7 +1921,7 @@ class DatabaseBatchWriter:
                 # Foreign Key Constraints wieder aktivieren
                 conn.execute("PRAGMA foreign_keys = ON")
             
-                total_duration = time.time() - start_time
+                total_duration = time_module.time() - start_time
                 items_per_second = len(price_data) / total_duration if total_duration > 0 else 0
             
                 result = {
@@ -1941,7 +1941,7 @@ class DatabaseBatchWriter:
                 'success': False,
                 'error': str(e),
                 'total_items': len(price_data),
-                'total_duration': time.time() - start_time
+                'total_duration': time_module.time() - start_time
             }
     
     

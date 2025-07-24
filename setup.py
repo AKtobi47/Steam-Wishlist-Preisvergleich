@@ -1468,14 +1468,14 @@ format=%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(func
             
             # Test 8: Time-Module Check (GEFIXT)
             time_usage = [
-                "time.time()",
-                "time.sleep(",
+                "time_module.time()",
+                "time_module.sleep(",
                 "time_module.time()",
                 "time_module.sleep("
             ]
             
             safe_time_usage = main_content.count("time_module.time()") + main_content.count("time_module.sleep(")
-            unsafe_time_usage = main_content.count("time.time()") + main_content.count("time.sleep(")
+            unsafe_time_usage = main_content.count("time_module.time()") + main_content.count("time_module.sleep(")
             
             compatibility_tests.append(("safe_time_usage", safe_time_usage > 0 or unsafe_time_usage == 0))
             
