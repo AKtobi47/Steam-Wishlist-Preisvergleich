@@ -275,7 +275,8 @@ class ElasticsearchManager:
             'charts_snapshots': 'steam-charts-snapshots',
             'charts_prices': 'steam-charts-prices',
             'statistics': 'steam-statistics',
-            'tracked_apps_price_history': 'steam-tracked-apps-price-history'
+            'tracked_apps_price_history': 'steam-tracked-apps-price-history',
+            'tracked_apps_latest_prices': 'steam-tracked-apps-latest-prices'
         }
     
     def health_check(self) -> Dict[str, Any]:
@@ -462,6 +463,42 @@ class ElasticsearchManager:
                     'fanatical_price':      {'type': 'float'},
                     'gamesplanet_price':    {'type': 'float'}
                 }
+            },
+            'tracked_apps_latest_prices': {
+                'properties': {
+                    'steam_app_id': {'type': 'keyword'},
+                    'name': {'type': 'text', 'analyzer': 'standard'},
+                    'app_active': {'type': 'boolean'},
+                    'target_price': {'type': 'float'},
+                    'app_source': {'type': 'keyword'},
+                    'notes': {'type': 'text', 'analyzer': 'standard'},
+                    'game_title': {'type': 'text', 'analyzer': 'standard'},
+                    'price_timestamp': {'type': 'date'},
+                    'steam_price': {'type': 'float'},
+                    'steam_original_price': {'type': 'float'},
+                    'steam_discount_percent': {'type': 'integer'},
+                    'steam_available': {'type': 'boolean'},
+                    'greenmangaming_price': {'type': 'float'},
+                    'greenmangaming_original_price': {'type': 'float'},
+                    'greenmangaming_discount_percent': {'type': 'integer'},
+                    'greenmangaming_available': {'type': 'boolean'},
+                    'gog_price': {'type': 'float'},
+                    'gog_original_price': {'type': 'float'},
+                    'gog_discount_percent': {'type': 'integer'},
+                    'gog_available': {'type': 'boolean'},
+                    'humblestore_price': {'type': 'float'},
+                    'humblestore_original_price': {'type': 'float'},
+                    'humblestore_discount_percent': {'type': 'integer'},
+                    'humblestore_available': {'type': 'boolean'},
+                    'fanatical_price': {'type': 'float'},
+                    'fanatical_original_price': {'type': 'float'},
+                    'fanatical_discount_percent': {'type': 'integer'},
+                    'fanatical_available': {'type': 'boolean'},
+                    'gamesplanet_price': {'type': 'float'},
+                    'gamesplanet_original_price': {'type': 'float'},
+                    'gamesplanet_discount_percent': {'type': 'integer'},
+                    'gamesplanet_available': {'type': 'boolean'}
+                }
             }
         }
         
@@ -515,6 +552,7 @@ class ElasticsearchManager:
             'charts_prices': 0,
             'statistics': 0,
             'tracked_apps_price_history': 0,
+            'tracked_apps_latest_prices': 0,
             'total_exported': 0
         }
         
@@ -623,6 +661,11 @@ class ElasticsearchManager:
             print("📈 Exportiere Tracked Apps Price History...")
             price_history_data = db_manager.get_all_tracked_apps_price_history()
             stats['tracked_apps_price_history'] = bulk_export_data(price_history_data, self.indices['tracked_apps_price_history'])
+            
+            # Tracked Apps Latest Prices exportieren
+            print("📈 Exportiere Tracked Apps Latest Prices...")
+            latest_prices_data = db_manager.get_all_tracked_apps_latest_prices()
+            stats['tracked_apps_latest_prices'] = bulk_export_data(latest_prices_data, self.indices['tracked_apps_latest_prices'])
             
             # Refresh alle Indizes
             print("🔄 Refreshe Indizes...")

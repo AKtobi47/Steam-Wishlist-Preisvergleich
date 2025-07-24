@@ -247,6 +247,32 @@ class DatabaseManager:
             print(f"❌ Unerwarteter Fehler: {e}")
             return []
     
+    def get_all_tracked_apps_latest_prices(self) -> List[Dict[str, Any]]:
+        """Gibt alle aktuellen Preise der getrackten Apps zurück"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT steam_app_id, name, app_active, target_price, app_source, notes, game_title, price_timestamp,
+                       steam_price, steam_original_price, steam_discount_percent, steam_available,
+                       greenmangaming_price, greenmangaming_original_price, greenmangaming_discount_percent, greenmangaming_available,
+                       gog_price, gog_original_price, gog_discount_percent, gog_available,
+                       humblestore_price, humblestore_original_price, humblestore_discount_percent, humblestore_available,
+                       fanatical_price, fanatical_original_price, fanatical_discount_percent, fanatical_available,
+                       gamesplanet_price, gamesplanet_original_price, gamesplanet_discount_percent, gamesplanet_available
+                FROM tracked_apps_latest_prices
+                ORDER BY price_timestamp DESC
+            """)
+            rows = cursor.fetchall()
+            conn.close()
+            return [dict(row) for row in rows]
+        except sqlite3.Error as e:
+            print(f"❌ Datenbankfehler bei tracked_apps_latest_prices: {e}")
+            return []
+        except Exception as e:
+            print(f"❌ Unerwarteter Fehler: {e}")
+            return []
+    
     def get_database_info(self) -> Dict[str, Any]:
         """Gibt Informationen über die Datenbank zurück"""
         try:
