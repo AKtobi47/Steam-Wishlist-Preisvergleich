@@ -302,7 +302,7 @@ class SteamChartsManager:
             games = []
             collected_appids = []
     
-            # KORRIGIERT: Extrahiere appids aus item_ids Arrays
+            # Extrahiere appids aus item_ids Arrays
             if 'response' in data and 'pages' in data['response']:
                 for page in data['response']['pages']:
                     if 'item_ids' in page:  # NICHT 'items' - es sind 'item_ids'!
@@ -406,7 +406,7 @@ class SteamChartsManager:
                             logger.info(f"📊 Verwende Response-Feld '{key}' für Most Concurrent Players")
                             break
             
-                # App-IDs sammeln (vermutlich ohne Namen)
+                # App-IDs sammeln
                 for game in games_data:
                     app_id = str(game.get('appid', ''))
                     if app_id and len(collected_appids) < count:
@@ -1164,7 +1164,7 @@ class SteamChartsManager:
                             'appid': str(app_id),
                             'name': release.get('name', f"Release {app_id}"),
                             'rank': i,
-                            'players': 0,  # Nicht verfügbar in diesem API
+                            'players': 0,
                             'peak_players': 0,
                             'api_source': 'steam_store_fallback'
                         })
@@ -1538,7 +1538,7 @@ class SteamChartsManager:
             with self.db_manager.get_connection() as conn:
                 cursor = conn.cursor()
             
-            # NUTZE NEUE charts_best_deals VIEW (Multi-Store)
+            # NUTZE charts_best_deals VIEW (Multi-Store)
                 query = """
                     SELECT 
                         steam_app_id,
@@ -1570,18 +1570,18 @@ class SteamChartsManager:
                     deal = {
                         'steam_app_id': row[0],
                         'chart_type': row[1],
-                        'game_title': row[2],          # UPGRADE: bessere Namen
+                        'game_title': row[2],
                         'name': row[2],                # KOMPATIBILITÄT: alte 'name' Feld
-                        'best_price': row[3],          # NEU: bester Preis aller Stores
+                        'best_price': row[3],          # bester Preis aller Stores
                         'current_price': row[3],       # KOMPATIBILITÄT: alte API
-                        'best_store': row[4],          # NEU: Store mit bestem Preis
+                        'best_store': row[4],          # Store mit bestem Preis
                         'store': row[4],               # KOMPATIBILITÄT: alte 'store' Feld
-                        'available_stores_count': row[5],  # NEU: Anzahl verfügbare Stores
-                        'max_discount_percent': row[6],    # NEU: höchster Rabatt aller Stores
+                        'available_stores_count': row[5],  # Anzahl verfügbare Stores
+                        'max_discount_percent': row[6],    # höchster Rabatt aller Stores
                         'discount_percent': row[6],    # KOMPATIBILITÄT: alte API
                         'timestamp': row[7],
-                        'is_charts_deal': True,        # NEU: Charts-Deal-Flag
-                        'multistore_supported': True   # NEU: Multi-Store-Flag
+                        'is_charts_deal': True,        # Charts-Deal-Flag
+                        'multistore_supported': True   # Multi-Store-Flag
                     }
                     deals.append(deal)
             
@@ -1630,7 +1630,7 @@ class SteamChartsManager:
         if hasattr(self, 'price_tracker') and self.price_tracker:
             schedule.every(price_update_hours).hours.do(self._scheduled_charts_price_update)
         
-        # FIXED: Scheduler-Thread sicher starten
+        # Scheduler-Thread sicher starten
         if self.charts_scheduler_thread is not None and self.charts_scheduler_thread.is_alive():
             logger.info("📊 Charts-Scheduler-Thread läuft bereits")
         else:
@@ -1659,7 +1659,7 @@ class SteamChartsManager:
         for job in charts_jobs:
             schedule.cancel_job(job)
         
-        # FIXED: Auf Thread-Ende warten mit Timeout
+        # Auf Thread-Ende warten mit Timeout
         if self.charts_scheduler_thread is not None and self.charts_scheduler_thread.is_alive():
             self.charts_scheduler_thread.join(timeout=5)
         
@@ -1823,7 +1823,7 @@ class SteamChartsManager:
             return False
     
     # =====================================================================
-    # 🚀 NEUE BATCH-METHODEN
+    # BATCH-METHODEN
     # =====================================================================
 
     def update_all_charts_batch(self, chart_types=None, include_names=True, include_prices=True, progress_callback=None) -> Dict:
@@ -2179,7 +2179,7 @@ class SteamChartsManager:
             except Exception as e:
                 logger.debug(f"Bestehender Manager Fehler: {e}")
     
-        # Methode 2: Neuen Manager erstellen (KORRIGIERT!)
+        # Methode 2: Neuen Manager erstellen
         try:
             logger.info("🆕 Erstelle neuen Steam Wishlist Manager...")
         
@@ -2191,7 +2191,7 @@ class SteamChartsManager:
         
             if api_key:
                 from steam_wishlist_manager import SteamWishlistManager
-                # KRITISCHER FIX: Ohne db_manager Parameter!
+                # Ohne db_manager Parameter!
                 temp_manager = SteamWishlistManager(api_key)
             
                 app_names = temp_manager.get_multiple_app_names(app_ids)
@@ -2303,7 +2303,7 @@ class SteamChartsManager:
                 if response.status_code == 200:
                     data = response.json()
                 
-                    # KRITISCHE VALIDIERUNG (wie in den anderen Fixes)
+                    # KRITISCHE VALIDIERUNG
                     if isinstance(data, dict) and str(app_id) in data:
                         app_data = data[str(app_id)]
                     
@@ -3292,7 +3292,7 @@ class SteamChartsManager:
         try:
             import requests
         
-            # CheapShark API (bewährt und zuverlässig für Charts)
+            # CheapShark API
             url = f"https://www.cheapshark.com/api/1.0/games"
             params = {'steamAppID': app_id}
         

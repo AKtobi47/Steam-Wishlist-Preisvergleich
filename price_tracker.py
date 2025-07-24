@@ -352,8 +352,8 @@ class SteamPriceTracker:
         if not app_ids:
             app_ids = [app['steam_app_id'] for app in self.get_tracked_apps()]
     
-        # 🚀 INTELLIGENTE BATCH-ERKENNUNG!
-        if len(app_ids) > 5:  # Bei mehr als 5 Apps: BATCH-POWER!
+        # INTELLIGENTE BATCH-ERKENNUNG!
+        if len(app_ids) > 5:  # Bei mehr als 5 Apps -> BATCH-Prozessierung
             logger.info(f"📦 {len(app_ids)} Apps → Automatische BATCH-VERARBEITUNG aktiviert!")
         
             batch_result = self.batch_update_multiple_apps(app_ids)
@@ -742,7 +742,7 @@ class SteamPriceTracker:
         
             data = response.json()
         
-            # KRITISCHER FIX: Validiere Response-Typ
+            # Validiere Response-Typ
             if not isinstance(data, dict):
                 logger.debug(f"Steam API gab unerwarteten Datentyp zurück: {type(data)} für App {steam_app_id}")
                 return None
@@ -750,7 +750,7 @@ class SteamPriceTracker:
             # App-spezifische Daten extrahieren
             app_data = data.get(str(steam_app_id))
         
-            # KRITISCHER FIX: Weitere Validierung
+            # Weitere Validierung
             if not app_data:
                 logger.debug(f"Keine App-Daten für {steam_app_id} in Response")
                 return None
@@ -814,7 +814,7 @@ class SteamPriceTracker:
     
     def _fetch_cheapshark_prices(self, steam_app_id: str) -> Optional[Dict]:
         """
-        GEFIXT: Holt Preise von CheapShark API für eine App mit Steam-Only Fallback bei Überlastung
+        Holt Preise von CheapShark API für eine App mit Steam-Only Fallback bei Überlastung
         """
     
         try:
@@ -963,7 +963,7 @@ class SteamPriceTracker:
             if response.status_code == 200:
                 data = response.json()
         
-                # KRITISCHER FIX: Umfassende Datentyp-Validierung
+                # Umfassende Datentyp-Validierung
                 if not isinstance(data, dict):
                     logger.debug(f"Steam API gab unerwartete Datenstruktur zurück: {type(data)}")
                     return None
@@ -1531,7 +1531,7 @@ class SteamPriceTracker:
 
     def get_apps_needing_update(self, hours_threshold: int = 6) -> List[Dict]:
         """
-        🚀 OPTIMIERTE Methode zum Abrufen von Apps die Updates benötigen
+        Methode zum Abrufen von Apps die Updates benötigen
         """
         try:
             with self.db_manager.get_connection() as conn:
@@ -1633,7 +1633,7 @@ def create_tracker_with_fallback_safe():
     
     # Timeout-Schutz
     import time
-    start_time = time.time()
+    start_time = time_module.time()
     timeout = 10  # 10 Sekunden Maximum
     
     try:
@@ -1647,7 +1647,7 @@ def create_tracker_with_fallback_safe():
         # Charts Manager separat hinzufügen (falls gewünscht)
         charts_manager = None
         try:
-            if time.time() - start_time < timeout:
+            if time_module.time() - start_time < timeout:
                 print("📊 Versuche Charts Manager hinzuzufügen...")
                 if hasattr(tracker, '_init_components'):
                     tracker.enable_charts = True
@@ -1656,20 +1656,10 @@ def create_tracker_with_fallback_safe():
         except Exception as e:
             print(f"⚠️ Charts Manager konnte nicht hinzugefügt werden: {e}")
         
-        # Elasticsearch Manager
-        es_manager = None
-        try:
-            from elasticsearch_manager import ElasticsearchManager
-            es_manager = ElasticsearchManager()
-            if not es_manager.test_connection():
-                es_manager = None
-        except:
-            pass
-        
-        duration = time.time() - start_time
+        duration = time_module.time() - start_time
         print(f"✅ Tracker erfolgreich erstellt in {duration:.1f}s")
         
-        return tracker, charts_manager, es_manager
+        return tracker, charts_manager, None
     
     except Exception as e:
         print(f"❌ Kritischer Fehler: {e}")
@@ -1739,7 +1729,7 @@ def setup_full_automation(db_path: str = "steam_price_tracker.db",
 # COMPATIBILITY ALIASES (FÜR ÄLTERE VERSIONEN)
 # =====================================================================
 
-# Für Rückwärtskompatibilität
+# Fuer Rueckwaertskompatibilitaet
 def get_statistics(tracker: SteamPriceTracker) -> Dict:
     """Legacy-Alias für get_database_stats"""
     return tracker.get_database_stats()
@@ -1749,7 +1739,7 @@ def get_database_statistics(tracker: SteamPriceTracker) -> Dict:
     return tracker.get_database_stats()
 
 if __name__ == "__main__":
-    # Test der Price Tracker Funktionalität
+    # Test der Price Tracker Funktionalitaet
     print("🧪 TESTING PRICE TRACKER")
     print("=" * 30)
     
