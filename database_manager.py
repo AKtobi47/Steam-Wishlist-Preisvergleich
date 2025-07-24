@@ -824,31 +824,503 @@ class DatabaseManager:
     # CHARTS-SPEZIFISCHE METHODEN (KORRIGIERT)
     # =====================================================================
     
-    def init_charts_tables(self) -> bool:
-        """Initialisiert Charts-Tabellen - verwendet steam_charts_tracking"""
+    def init_charts_tables(self):
+        """
+        Charts-Tabellen-Initialisierung mit ensure-Pattern
+    
+        Zentrale Methode die ALLE Charts-Tabellen und Funktionen sicherstellt:
+        - Kern-Tabellen über ensure-Pattern
+        - Hilfs-Tabellen: charts_history, steam_charts_rank_history, steam_charts_statistics, steam_charts_config
+        - Views für Single-Store-Abfragen
+        - Performance-Indizes
+
+        Verhindert Konsistenzprobleme durch einmaligen Aufruf aller ensure-Methoden.
+    
+        Ruft auf:
+        - ensure_charts_tracking_table() ← erstellt steam_charts_tracking
+        - ensure_charts_prices_table() ← erstellt steam_charts_prices
+        - ensure_price_snapshots_table() ← erstellt price_snapshots
+
+
+        Returns:
+            bool: True wenn alle Tabellen bereit sind, False bei Fehler        
+        """
         try:
-            # Schema ist bereits in _init_database() korrekt erstellt
+            from logging_config import get_database_logger
+            logger = get_database_logger()
+        except ImportError:
+            import logging
+            logger = logging.getLogger(__name__)
+    
+        logger.info("🏗️ Initialisiere vollständige Charts-Infrastruktur...")
+    
+        success_count = 0
+        total_tables = 0
+    
+        try:
+            # ===================================================
+            # SCHRITT 1: Kern-Tabellen über ensure-Pattern
+            # ===================================================
+        
+            core_tables = [
+                ("Charts Tracking", self.ensure_charts_tracking_table),
+                ("Charts Prices", self.ensure_charts_prices_table),
+                ("Price Snapshots", self.ensure_price_snapshots_table)
+            ]
+        
+            for table_name, ensure_func in core_tables:
+                total_tables += 1
+                try:
+                    if ensure_func():
+                        logger.debug(f"✅ {table_name} Tabelle sichergestellt")
+                        success_count += 1
+                    else:
+                        logger.error(f"❌ {table_name} Tabelle konnte nicht sichergestellt werden")
+                except Exception as table_error:
+                    logger.error(f"❌ {table_name} Tabelle Fehler: {table_error}")
+        
+            # ===================================================
+            # SCHRITT 2: Charts-Hilfs-Tabellen
+            # ===================================================
+        
             with self.get_connection() as conn:
                 cursor = conn.cursor()
+            
+                # charts_history - Rang-Historie über Zeit
+                try:
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS charts_history (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            steam_app_id TEXT NOT NULL REFERENCES steam_charts_tracking(steam_app_id),
+                            chart_type TEXT NOT NULL,
+                            rank_position INTEGER NOT NULL,
+                            snapshot_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            additional_data TEXT
+                        )
+                    ''')
+                    total_tables += 1
+                    success_count += 1
+                    logger.debug("✅ charts_history Tabelle sichergestellt")
+                except Exception as e:
+                    logger.error(f"❌ charts_history Tabelle Fehler: {e}")
+                    total_tables += 1
+            
+                # steam_charts_rank_history - Detaillierte Rang-Historie
+                try:
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS steam_charts_rank_history (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            steam_app_id TEXT NOT NULL,
+                            chart_type TEXT NOT NULL,
+                            rank_position INTEGER NOT NULL,
+                            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (steam_app_id, chart_type) REFERENCES steam_charts_tracking(steam_app_id, chart_type)
+                        )
+                    ''')
+                    total_tables += 1
+                    success_count += 1
+                    logger.debug("✅ steam_charts_rank_history Tabelle sichergestellt")
+                except Exception as e:
+                    logger.error(f"❌ steam_charts_rank_history Tabelle Fehler: {e}")
+                    total_tables += 1
+            
+                # steam_charts_statistics - Update-Statistiken
+                try:
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS steam_charts_statistics (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            chart_type TEXT NOT NULL,
+                            total_games INTEGER DEFAULT 0,
+                            new_games INTEGER DEFAULT 0,
+                            updated_games INTEGER DEFAULT 0,
+                            update_duration REAL DEFAULT 0.0,
+                            api_calls INTEGER DEFAULT 0,
+                            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    ''')
+                    total_tables += 1
+                    success_count += 1
+                    logger.debug("✅ steam_charts_statistics Tabelle sichergestellt")
+                except Exception as e:
+                    logger.error(f"❌ steam_charts_statistics Tabelle Fehler: {e}")
+                    total_tables += 1
+            
+                # steam_charts_config - Charts-Konfiguration
+                try:
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS steam_charts_config (
+                            key TEXT PRIMARY KEY,
+                            value TEXT NOT NULL,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    ''')
+                    total_tables += 1
+                    success_count += 1
+                    logger.debug("✅ steam_charts_config Tabelle sichergestellt")
+                except Exception as e:
+                    logger.error(f"❌ steam_charts_config Tabelle Fehler: {e}")
+                    total_tables += 1
+            
+                conn.commit()
+        
+            # ===================================================
+            # SCHRITT 3: Charts-Views erstellen
+            # ===================================================
+            try:
+                if hasattr(self, '_create_charts_views'):
+                    self._create_charts_views()
+                    logger.debug("✅ Charts-Views erstellt")
+            except Exception as views_error:
+                logger.warning(f"⚠️ Charts-Views teilweise: {views_error}")
+        
+            # ===================================================
+            # SCHRITT 4: Performance-Indizes für ALLE Tabellen
+            # ===================================================
+            try:
+                with self.get_connection() as conn:
+                    cursor = conn.cursor()
                 
-                # Prüfe dass steam_charts_tracking mit days_in_charts existiert
-                cursor.execute("PRAGMA table_info(steam_charts_tracking)")
-                columns = {row[1] for row in cursor.fetchall()}
+                    # Alle Charts-Indizes
+                    all_charts_indices = [
+                        # Kern-Tabellen (bereits in ensure-Methoden)
+                        "CREATE INDEX IF NOT EXISTS idx_charts_tracking_app_id ON steam_charts_tracking(steam_app_id)",
+                        "CREATE INDEX IF NOT EXISTS idx_charts_tracking_app_type ON steam_charts_tracking(steam_app_id, chart_type)",
+                        "CREATE INDEX IF NOT EXISTS idx_charts_prices_app_chart ON steam_charts_prices(steam_app_id, chart_type)",
+                        "CREATE INDEX IF NOT EXISTS idx_price_snapshots_app_id ON price_snapshots(steam_app_id)",
+                    
+                        "CREATE INDEX IF NOT EXISTS idx_charts_history_app_id ON charts_history(steam_app_id)",
+                        "CREATE INDEX IF NOT EXISTS idx_charts_history_timestamp ON charts_history(snapshot_timestamp)",
+                        "CREATE INDEX IF NOT EXISTS idx_charts_history_type ON charts_history(chart_type)",
+                    
+                        "CREATE INDEX IF NOT EXISTS idx_charts_rank_history_app_type ON steam_charts_rank_history(steam_app_id, chart_type)",
+                        "CREATE INDEX IF NOT EXISTS idx_charts_rank_history_timestamp ON steam_charts_rank_history(timestamp)",
+                    
+                        "CREATE INDEX IF NOT EXISTS idx_charts_statistics_type ON steam_charts_statistics(chart_type)",
+                        "CREATE INDEX IF NOT EXISTS idx_charts_statistics_timestamp ON steam_charts_statistics(timestamp)"
+                    ]
                 
-                required_columns = {'steam_app_id', 'chart_type', 'days_in_charts', 'current_rank'}
-                missing = required_columns - columns
+                    for index_sql in all_charts_indices:
+                        try:
+                            cursor.execute(index_sql)
+                        except Exception as index_error:
+                            logger.debug(f"Index bereits vorhanden oder Fehler: {index_error}")
                 
-                if missing:
-                    logger.error(f"❌ Fehlende Spalten in steam_charts_tracking: {missing}")
-                    return False
+                    conn.commit()
+                    logger.debug("✅ Vollständige Charts-Indizes erstellt")
                 
-                logger.info("✅ Charts-Tabellen korrekt initialisiert")
-                return True
-                
+            except Exception as indices_error:
+                logger.warning(f"⚠️ Charts-Indizes teilweise: {indices_error}")
+        
+            # ===================================================
+            # ERGEBNIS
+            # ===================================================
+        
+            all_tables_ready = success_count == total_tables
+        
+            if all_tables_ready:
+                logger.info("✅ Vollständige Charts-Infrastruktur bereit")
+                logger.info(f"   📊 {success_count}/{total_tables} Tabellen sichergestellt")
+                logger.info("   🏗️ Kern-Tabellen: steam_charts_tracking, steam_charts_prices, price_snapshots")
+                logger.info("   📋 Hilfs-Tabellen: charts_history, steam_charts_rank_history, steam_charts_statistics, steam_charts_config")
+                logger.info("   🎯 Views und Indizes aktiviert")
+            else:
+                logger.warning(f"⚠️ Charts-Infrastruktur teilweise bereit: {success_count}/{total_tables}")
+                logger.warning("   ❌ Manche Tabellen konnten nicht erstellt werden - prüfe Logs")
+        
+            return all_tables_ready
+        
         except Exception as e:
-            logger.error(f"❌ Fehler bei Charts-Tabellen-Initialisierung: {e}")
+            logger.error(f"❌ Charts-Infrastruktur-Initialisierung fehlgeschlagen: {e}")
             return False
+
+
+    def _create_charts_views(self):
+        """
+        Erstellt Views für dynamische Single-Store-Abfragen
+        """
+        try:
+            from logging_config import get_database_logger
+            logger = get_database_logger()
+        except ImportError:
+            import logging
+            logger = logging.getLogger(__name__)
     
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+            
+                # ===================================================
+                # VIEW 1: charts_best_prices - Automatische Auswahl des besten Preises
+                # ===================================================
+                cursor.execute('''
+                    CREATE VIEW IF NOT EXISTS charts_best_prices AS
+                    SELECT 
+                        steam_app_id,
+                        chart_type,
+                        game_title,
+                        timestamp,
+                    
+                        -- Dynamische Auswahl des besten Preises
+                        CASE 
+                            WHEN steam_available AND steam_price > 0 AND (
+                                steam_price <= COALESCE(NULLIF(greenmangaming_price, 0), 999999) AND
+                                steam_price <= COALESCE(NULLIF(gog_price, 0), 999999) AND
+                                steam_price <= COALESCE(NULLIF(humblestore_price, 0), 999999) AND
+                                steam_price <= COALESCE(NULLIF(fanatical_price, 0), 999999) AND
+                                steam_price <= COALESCE(NULLIF(gamesplanet_price, 0), 999999)
+                            ) THEN steam_price
+                        
+                            WHEN greenmangaming_available AND greenmangaming_price > 0 AND (
+                                greenmangaming_price <= COALESCE(NULLIF(gog_price, 0), 999999) AND
+                                greenmangaming_price <= COALESCE(NULLIF(humblestore_price, 0), 999999) AND
+                                greenmangaming_price <= COALESCE(NULLIF(fanatical_price, 0), 999999) AND
+                                greenmangaming_price <= COALESCE(NULLIF(gamesplanet_price, 0), 999999)
+                            ) THEN greenmangaming_price
+                        
+                            WHEN gog_available AND gog_price > 0 AND (
+                                gog_price <= COALESCE(NULLIF(humblestore_price, 0), 999999) AND
+                                gog_price <= COALESCE(NULLIF(fanatical_price, 0), 999999) AND
+                                gog_price <= COALESCE(NULLIF(gamesplanet_price, 0), 999999)
+                            ) THEN gog_price
+                        
+                            WHEN humblestore_available AND humblestore_price > 0 AND (
+                                humblestore_price <= COALESCE(NULLIF(fanatical_price, 0), 999999) AND
+                                humblestore_price <= COALESCE(NULLIF(gamesplanet_price, 0), 999999)
+                            ) THEN humblestore_price
+                        
+                            WHEN fanatical_available AND fanatical_price > 0 AND
+                                fanatical_price <= COALESCE(NULLIF(gamesplanet_price, 0), 999999)
+                            THEN fanatical_price
+                        
+                            WHEN gamesplanet_available AND gamesplanet_price > 0 
+                            THEN gamesplanet_price
+                        
+                            ELSE NULL
+                        END as best_price,
+                    
+                        -- Bester Store ermitteln
+                        CASE 
+                            WHEN steam_available AND steam_price > 0 AND (
+                                steam_price <= COALESCE(NULLIF(greenmangaming_price, 0), 999999) AND
+                                steam_price <= COALESCE(NULLIF(gog_price, 0), 999999) AND
+                                steam_price <= COALESCE(NULLIF(humblestore_price, 0), 999999) AND
+                                steam_price <= COALESCE(NULLIF(fanatical_price, 0), 999999) AND
+                                steam_price <= COALESCE(NULLIF(gamesplanet_price, 0), 999999)
+                            ) THEN 'Steam'
+                        
+                            WHEN greenmangaming_available AND greenmangaming_price > 0 AND (
+                                greenmangaming_price <= COALESCE(NULLIF(gog_price, 0), 999999) AND
+                                greenmangaming_price <= COALESCE(NULLIF(humblestore_price, 0), 999999) AND
+                                greenmangaming_price <= COALESCE(NULLIF(fanatical_price, 0), 999999) AND
+                                greenmangaming_price <= COALESCE(NULLIF(gamesplanet_price, 0), 999999)
+                            ) THEN 'GreenManGaming'
+                        
+                            WHEN gog_available AND gog_price > 0 AND (
+                                gog_price <= COALESCE(NULLIF(humblestore_price, 0), 999999) AND
+                                gog_price <= COALESCE(NULLIF(fanatical_price, 0), 999999) AND
+                                gog_price <= COALESCE(NULLIF(gamesplanet_price, 0), 999999)
+                            ) THEN 'GOG'
+                        
+                            WHEN humblestore_available AND humblestore_price > 0 AND (
+                                humblestore_price <= COALESCE(NULLIF(fanatical_price, 0), 999999) AND
+                                humblestore_price <= COALESCE(NULLIF(gamesplanet_price, 0), 999999)
+                            ) THEN 'HumbleStore'
+                        
+                            WHEN fanatical_available AND fanatical_price > 0 AND
+                                fanatical_price <= COALESCE(NULLIF(gamesplanet_price, 0), 999999)
+                            THEN 'Fanatical'
+                        
+                            WHEN gamesplanet_available AND gamesplanet_price > 0 
+                            THEN 'GamesPlanet'
+                        
+                            ELSE 'Unknown'
+                        END as best_store,
+                    
+                        -- Store-Anzahl
+                        (CAST(steam_available as INTEGER) + 
+                         CAST(greenmangaming_available as INTEGER) + 
+                         CAST(gog_available as INTEGER) + 
+                         CAST(humblestore_available as INTEGER) + 
+                         CAST(fanatical_available as INTEGER) + 
+                         CAST(gamesplanet_available as INTEGER)) as available_stores_count
+                     
+                    FROM steam_charts_prices
+                    WHERE (steam_available OR greenmangaming_available OR gog_available OR 
+                           humblestore_available OR fanatical_available OR gamesplanet_available)
+                ''')
+            
+                # ===================================================
+                # VIEW 2: charts_steam_prices - Steam-only für Kompatibilität
+                # ===================================================
+                cursor.execute('''
+                    CREATE VIEW IF NOT EXISTS charts_steam_prices AS
+                    SELECT 
+                        steam_app_id,
+                        chart_type,
+                        game_title,
+                        steam_price as current_price,
+                        steam_original_price as original_price,
+                        steam_discount_percent as discount_percent,
+                        'Steam' as store,
+                        '' as deal_url,
+                        timestamp
+                    FROM steam_charts_prices
+                    WHERE steam_available = 1 AND steam_price > 0
+                ''')
+            
+                # ===================================================
+                # VIEW 3: charts_best_deals - Automatische Deal-Erkennung
+                # ===================================================
+                cursor.execute('''
+                    CREATE VIEW IF NOT EXISTS charts_best_deals AS
+                    SELECT 
+                        cbp.steam_app_id,
+                        cbp.chart_type,
+                        cbp.game_title,
+                        cbp.best_price,
+                        cbp.best_store,
+                        cbp.available_stores_count,
+                        cbp.timestamp,
+                    
+                        -- Hoechster Rabatt aller Stores
+                        GREATEST(
+                            COALESCE(scp.steam_discount_percent, 0),
+                            COALESCE(scp.greenmangaming_discount_percent, 0),
+                            COALESCE(scp.gog_discount_percent, 0),
+                            COALESCE(scp.humblestore_discount_percent, 0),
+                            COALESCE(scp.fanatical_discount_percent, 0),
+                            COALESCE(scp.gamesplanet_discount_percent, 0)
+                        ) as max_discount_percent
+                    
+                    FROM charts_best_prices cbp
+                    JOIN steam_charts_prices scp ON 
+                        cbp.steam_app_id = scp.steam_app_id AND 
+                        cbp.chart_type = scp.chart_type AND
+                        cbp.timestamp = scp.timestamp
+                    WHERE cbp.best_price > 0
+                ''')
+            
+                # ==================================================
+                # VIEW 4: charts_store_comparison - Store-Vergleichs-View
+                # ===================================================
+                cursor.execute('''
+                    CREATE VIEW IF NOT EXISTS charts_store_comparison AS
+                    SELECT 
+                        steam_app_id,
+                        chart_type,
+                        game_title,
+                        timestamp,
+                    
+                        -- Verfügbare Stores mit Preisen
+                        CASE WHEN steam_available AND steam_price > 0 
+                             THEN json_object('store', 'Steam', 'price', steam_price, 'discount', steam_discount_percent)
+                             ELSE NULL END as steam_data,
+                         
+                        CASE WHEN greenmangaming_available AND greenmangaming_price > 0 
+                             THEN json_object('store', 'GreenManGaming', 'price', greenmangaming_price, 'discount', greenmangaming_discount_percent)
+                             ELSE NULL END as gmg_data,
+                         
+                        CASE WHEN gog_available AND gog_price > 0 
+                             THEN json_object('store', 'GOG', 'price', gog_price, 'discount', gog_discount_percent)
+                             ELSE NULL END as gog_data,
+                         
+                        CASE WHEN humblestore_available AND humblestore_price > 0 
+                             THEN json_object('store', 'HumbleStore', 'price', humblestore_price, 'discount', humblestore_discount_percent)
+                             ELSE NULL END as humble_data,
+                         
+                        CASE WHEN fanatical_available AND fanatical_price > 0 
+                             THEN json_object('store', 'Fanatical', 'price', fanatical_price, 'discount', fanatical_discount_percent)
+                             ELSE NULL END as fanatical_data,
+                         
+                        CASE WHEN gamesplanet_available AND gamesplanet_price > 0 
+                             THEN json_object('store', 'GamesPlanet', 'price', gamesplanet_price, 'discount', gamesplanet_discount_percent)
+                             ELSE NULL END as gamesplanet_data
+                         
+                    FROM steam_charts_prices
+                ''')
+            
+                conn.commit()
+                logger.info("✅ Charts-Views erstellt: charts_best_prices, charts_steam_prices, charts_best_deals, charts_store_comparison")
+            
+        except Exception as e:
+            logger.error(f"❌ Charts-Views-Erstellung fehlgeschlagen: {e}")
+    
+    def _create_charts_indices(self):
+        """
+        Erstellt Performance-Indizes für Multi-Store Charts-Tabellen
+        """
+        try:
+            from logging_config import get_database_logger
+            logger = get_database_logger()
+        except ImportError:
+            import logging
+            logger = logging.getLogger(__name__)
+    
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+            
+                # ===================================================
+                # STEAM CHARTS PRICES INDIZES
+                # ===================================================
+                indices = [
+                    # Basis-Indizes
+                    "CREATE INDEX IF NOT EXISTS idx_charts_prices_app_chart ON steam_charts_prices(steam_app_id, chart_type)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_prices_timestamp ON steam_charts_prices(timestamp)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_prices_game_title ON steam_charts_prices(game_title)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_prices_chart_type ON steam_charts_prices(chart_type)",
+                
+                    # Store-spezifische Indizes für Performance
+                    "CREATE INDEX IF NOT EXISTS idx_charts_prices_steam ON steam_charts_prices(steam_available, steam_price)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_prices_gmg ON steam_charts_prices(greenmangaming_available, greenmangaming_price)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_prices_gog ON steam_charts_prices(gog_available, gog_price)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_prices_humble ON steam_charts_prices(humblestore_available, humblestore_price)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_prices_fanatical ON steam_charts_prices(fanatical_available, fanatical_price)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_prices_gamesplanet ON steam_charts_prices(gamesplanet_available, gamesplanet_price)",
+                
+                    # Composite-Indizes für häufige Abfragen
+                    "CREATE INDEX IF NOT EXISTS idx_charts_prices_type_time ON steam_charts_prices(chart_type, timestamp DESC)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_prices_app_time ON steam_charts_prices(steam_app_id, timestamp DESC)",
+                
+                    # ===================================================
+                    # STEAM CHARTS TRACKING INDIZES (erweitert)
+                    # ===================================================
+                    "CREATE INDEX IF NOT EXISTS idx_charts_tracking_app_id ON steam_charts_tracking(steam_app_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_tracking_app_type ON steam_charts_tracking(steam_app_id, chart_type)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_tracking_chart_type ON steam_charts_tracking(chart_type)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_tracking_active ON steam_charts_tracking(active)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_tracking_last_seen ON steam_charts_tracking(last_seen)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_tracking_rank ON steam_charts_tracking(current_rank)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_tracking_type_rank ON steam_charts_tracking(chart_type, current_rank)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_tracking_name ON steam_charts_tracking(name)",
+                
+                    # ===================================================
+                    # ANDERE CHARTS-TABELLEN INDIZES
+                    # ===================================================
+                    "CREATE INDEX IF NOT EXISTS idx_charts_history_app_id ON charts_history(steam_app_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_history_timestamp ON charts_history(snapshot_timestamp)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_history_type ON charts_history(chart_type)",
+                
+                    "CREATE INDEX IF NOT EXISTS idx_charts_rank_history_app_type ON steam_charts_rank_history(steam_app_id, chart_type)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_rank_history_timestamp ON steam_charts_rank_history(timestamp)",
+                
+                    "CREATE INDEX IF NOT EXISTS idx_charts_statistics_type ON steam_charts_statistics(chart_type)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_statistics_timestamp ON steam_charts_statistics(timestamp)"
+                ]
+            
+                for index_sql in indices:
+                    try:
+                        cursor.execute(index_sql)
+                    except Exception as e:
+                        logger.debug(f"Index bereits vorhanden oder Fehler: {e}")
+            
+                conn.commit()
+                logger.info("✅ Charts-Performance-Indizes erstellt")
+            
+        except Exception as e:
+            logger.error(f"❌ Charts-Indizes-Erstellung fehlgeschlagen: {e}")
+
+
     def add_chart_game(self, steam_app_id: str, chart_type: str, rank_position: int, 
                       current_players: int = None, game_name: str = None) -> bool:
         """Fügt ein Spiel zu steam_charts_tracking hinzu"""
@@ -1248,7 +1720,7 @@ def retry_on_database_lock(max_retries: int = 3, base_delay: float = 0.1):
                         if attempt < max_retries:
                             delay = base_delay * (2 ** attempt)
                             logger.warning(f"🔒 Database locked (Versuch {attempt + 1}), warte {delay:.2f}s...")
-                            time.sleep(delay)
+                            time_module.sleep(delay)
                         continue
                     else:
                         raise
@@ -1312,104 +1784,202 @@ class DatabaseBatchWriter:
         Returns:
             Dict: Ergebnis der Batch-Operation mit Metriken.
         """
-        start_time = time_module.time()
-        logger = get_database_logger()
-    
-        logger.info(f"🚀 Charts Batch Write: {len(charts_data)} Items")
+        try:
+            from logging_config import get_database_logger
+            logger = get_database_logger()
+        except ImportError:
+            import logging
+            logger = logging.getLogger(__name__)
     
         if not charts_data:
+            return {
+                'success': True,
+                'written_count': 0,
+                'message': 'Keine Charts-Daten zum Schreiben'
+            }
+    
+        start_time = time.time()
+    
+        try:
+            # Tabelle über ensure-Methode sicherstellen
+            if not self.ensure_charts_tracking_table():
+                logger.error("❌ Charts-Tracking-Tabelle konnte nicht sichergestellt werden")
+                return {
+                    'success': False,
+                    'error': 'Charts-Tracking-Tabelle nicht verfügbar',
+                    'total_items': len(charts_data),
+                    'total_duration': time.time() - start_time
+                }
+        
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+            
+                # Batch-Insert mit UPSERT-Logik (unverändert)
+                written_count = 0
+            
+                for chart in charts_data:
+                    try:
+                        cursor.execute("""
+                            INSERT OR REPLACE INTO steam_charts_tracking 
+                            (steam_app_id, name, chart_type, current_rank, current_players, 
+                             peak_players, last_seen, updated_at, active)
+                            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1)
+                        """, (
+                            str(chart.get('steam_app_id', '')),
+                            chart.get('name', ''),
+                            chart.get('chart_type', 'unknown'),
+                            int(chart.get('current_rank', chart.get('rank', 999))),
+                            int(chart.get('current_players', 0)),
+                            int(chart.get('peak_players', 0))
+                        ))
+                        written_count += 1
+                    except Exception as row_error:
+                        logger.debug(f"Row-Fehler: {row_error}")
+                        continue
+            
+                conn.commit()
+            
+                duration = time.time() - start_time
+            
+                return {
+                    'success': True,
+                    'written_count': written_count,
+                    'duration': duration,
+                    'performance_multiplier': f"{written_count/duration:.1f}/s",
+                    'table_used': 'steam_charts_tracking'
+                }
+            
+        except Exception as e:
+            logger.error(f"❌ Charts Batch Write fehlgeschlagen: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'total_items': len(charts_data),
+                'total_duration': time.time() - start_time
+            }
+    
+    def batch_write_prices(self, price_data: List[Dict]) -> Dict:
+        """
+        Price Batch Writer - Nutzt ensure-Pattern
+
+        Args:
+            price_data (List[Dict]): Liste von Preis-Daten, die geschrieben werden sollen.
+        
+        Returns:
+            Dict: Ergebnis der Batch-Schreibung.
+        """
+        try:
+            from logging_config import get_database_logger
+            logger = get_database_logger()
+        except ImportError:
+            import logging
+            logger = logging.getLogger(__name__)
+    
+        if not price_data:
             return {
                 'success': True,
                 'total_items': 0,
                 'total_duration': 0.0,
                 'items_per_second': 0,
-                'message': 'Keine Charts-Daten zum Schreiben'
+                'message': 'Keine Preis-Daten zum Schreiben'
             }
     
-        temp_table_name = f"temp_charts_batch_{int(time_module.time() * 1000000)}"
+        start_time = time.time()
     
         try:
+            # Tabelle über ensure-Methode sicherstellen
+            if not self.ensure_price_snapshots_table():
+                logger.error("❌ Price-Snapshots-Tabelle konnte nicht sichergestellt werden")
+                return {
+                    'success': False,
+                    'error': 'Price-Snapshots-Tabelle nicht verfügbar',
+                    'total_items': len(price_data),
+                    'total_duration': time.time() - start_time
+                }
+        
+            logger.info(f"💰 Price Batch Write: {len(price_data)} Items")
+        
+            temp_table_name = f"temp_prices_batch_{int(time.time() * 1000000)}"
+        
             with self.get_connection() as conn:
                 # Foreign Key Constraints temporär deaktivieren für Batch-Operation
                 conn.execute("PRAGMA foreign_keys = OFF")
                 cursor = conn.cursor()
             
-                # Schema-Kompatibilität sicherstellen
-                try:
-                    self._ensure_charts_schema_compatibility()
-                except Exception as schema_error:
-                    logger.warning(f"⚠️ Schema-Check fehlgeschlagen, verwende Fallback: {schema_error}")
-                    # Fallback: Delegiere an DatabaseManager
-                    try:
-                        self.db_manager._ensure_charts_schema_compatibility()
-                    except Exception as fallback_error:
-                        logger.error(f"❌ Auch Fallback-Schema-Check fehlgeschlagen: {fallback_error}")
-            
-                # Temp-Table erstellen
+                # Temporäre Tabelle erstellen
                 cursor.execute(f"""
                     CREATE TEMP TABLE {temp_table_name} (
                         steam_app_id TEXT,
-                        name TEXT,
-                        chart_type TEXT,
-                        current_rank INTEGER,
-                        best_rank INTEGER,
-                        total_appearances INTEGER DEFAULT 1,
-                        days_in_charts INTEGER DEFAULT 1,
-                        peak_players INTEGER,
-                        current_players INTEGER,
-                        metadata TEXT DEFAULT '{{}}'
+                        game_title TEXT,
+                        steam_price REAL,
+                        steam_original_price REAL,
+                        steam_discount_percent INTEGER DEFAULT 0,
+                        steam_available BOOLEAN DEFAULT 0,
+                        greenmangaming_price REAL,
+                        greenmangaming_original_price REAL,
+                        greenmangaming_discount_percent INTEGER DEFAULT 0,
+                        greenmangaming_available BOOLEAN DEFAULT 0,
+                        gog_price REAL,
+                        gog_original_price REAL,
+                        gog_discount_percent INTEGER DEFAULT 0,
+                        gog_available BOOLEAN DEFAULT 0,
+                        humblestore_price REAL,
+                        humblestore_original_price REAL,
+                        humblestore_discount_percent INTEGER DEFAULT 0,
+                        humblestore_available BOOLEAN DEFAULT 0,
+                        fanatical_price REAL,
+                        fanatical_original_price REAL,
+                        fanatical_discount_percent INTEGER DEFAULT 0,
+                        fanatical_available BOOLEAN DEFAULT 0,
+                        gamesplanet_price REAL,
+                        gamesplanet_original_price REAL,
+                        gamesplanet_discount_percent INTEGER DEFAULT 0,
+                        gamesplanet_available BOOLEAN DEFAULT 0
                     )
                 """)
             
-                # Batch-Insert in Temp-Table
+                # Daten vorbereiten
                 insert_data = []
-                for chart in charts_data:
-                    # Sichere Datenextraktion mit Fallbacks
-                    steam_app_id = str(chart.get('steam_app_id', ''))
-                    if not steam_app_id or steam_app_id == 'None':
-                        continue  # Überspringe ungültige App IDs
-                
+                for price in price_data:
                     insert_data.append((
-                        steam_app_id,
-                        chart.get('name', ''),
-                        chart.get('chart_type', 'unknown'),
-                        chart.get('current_rank', 0),
-                        chart.get('best_rank', chart.get('current_rank', 999999)),
-                        chart.get('total_appearances', 1),
-                        chart.get('days_in_charts', 1),
-                        chart.get('peak_players'),
-                        chart.get('current_players'),
-                        json.dumps(chart.get('metadata', {}))
+                        price.get('steam_app_id', ''),
+                        price.get('game_title', ''),
+                        price.get('steam_price', 0.0),
+                        price.get('steam_original_price', 0.0),
+                        price.get('steam_discount_percent', 0),
+                        price.get('steam_available', False),
+                        price.get('greenmangaming_price', 0.0),
+                        price.get('greenmangaming_original_price', 0.0),
+                        price.get('greenmangaming_discount_percent', 0),
+                        price.get('greenmangaming_available', False),
+                        price.get('gog_price', 0.0),
+                        price.get('gog_original_price', 0.0),
+                        price.get('gog_discount_percent', 0),
+                        price.get('gog_available', False),
+                        price.get('humblestore_price', 0.0),
+                        price.get('humblestore_original_price', 0.0),
+                        price.get('humblestore_discount_percent', 0),
+                        price.get('humblestore_available', False),
+                        price.get('fanatical_price', 0.0),
+                        price.get('fanatical_original_price', 0.0),
+                        price.get('fanatical_discount_percent', 0),
+                        price.get('fanatical_available', False),
+                        price.get('gamesplanet_price', 0.0),
+                        price.get('gamesplanet_original_price', 0.0),
+                        price.get('gamesplanet_discount_percent', 0),
+                        price.get('gamesplanet_available', False)
                     ))
             
-                if not insert_data:
-                    logger.warning("⚠️ Keine gültigen Charts-Daten für Batch-Insert")
-                    return {
-                        'success': True,
-                        'total_items': 0,
-                        'total_duration': time_module.time() - start_time,
-                        'items_per_second': 0,
-                        'message': 'Keine gültigen Charts-Daten'
-                    }
-            
+                # Batch-Insert in temporäre Tabelle
                 cursor.executemany(f"""
                     INSERT INTO {temp_table_name} 
-                    (steam_app_id, name, chart_type, current_rank, best_rank, 
-                     total_appearances, days_in_charts, peak_players, current_players, metadata)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, insert_data)
             
-                # Direkte Übertragung mit INSERT OR REPLACE
+                # Direkte Übertragung zu price_snapshots
                 cursor.execute(f"""
-                    INSERT OR REPLACE INTO steam_charts_tracking (
-                        steam_app_id, name, chart_type, current_rank, best_rank,
-                        total_appearances, days_in_charts, peak_players, current_players,
-                        metadata, last_seen, updated_at
-                    )
-                    SELECT 
-                        steam_app_id, name, chart_type, current_rank, best_rank,
-                        total_appearances, days_in_charts, peak_players, current_players,
-                        metadata, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    INSERT OR REPLACE INTO price_snapshots 
+                    SELECT NULL as id, *, CURRENT_TIMESTAMP as timestamp
                     FROM {temp_table_name}
                 """)
             
@@ -1420,292 +1990,317 @@ class DatabaseBatchWriter:
                 # Foreign Key Constraints wieder aktivieren
                 conn.execute("PRAGMA foreign_keys = ON")
             
-                total_duration = time_module.time() - start_time
-                items_per_second = len(insert_data) / total_duration if total_duration > 0 else 0
+                total_duration = time.time() - start_time
+                items_per_second = len(price_data) / total_duration if total_duration > 0 else 0
             
-                result = {
-                    'success': True,
-                    'total_items': len(insert_data),
-                    'total_duration': total_duration,
-                    'items_per_second': items_per_second,
-                    'performance_multiplier': f"{items_per_second:.1f}x"
-                }
-            
-                logger.info(f"✅ Charts Batch Write: {len(insert_data)} Items in {total_duration:.2f}s ({items_per_second:.1f}x faster)")
-                return result
-            
-        except Exception as e:
-            logger.error(f"❌ Charts Batch Write fehlgeschlagen: {e}")
-            return {
-                'success': False, 
-                'error': str(e),
-                'total_items': len(charts_data),
-                'total_duration': time_module.time() - start_time
-            }
-    
-    def batch_write_prices(self, price_data: List[Dict]) -> Dict:
-        """🚀 Revolutionärer Price Batch Writer - 5-12x faster!"""
-        start_time = time_module.time()
-        logger.info(f"💰 Price Batch Write: {len(price_data)} Items")
-        
-        temp_table_name = f"temp_prices_batch_{int(time_module.time() * 1000000)}"
-        
-        try:
-            with self.db_manager.get_connection() as conn:
-                # Foreign Key Constraints temporär deaktivieren für Batch-Operation
-                conn.execute("PRAGMA foreign_keys = OFF")
-                cursor = conn.cursor()
-                
-                # Schema-Kompatibilität sicherstellen
-                self._ensure_charts_schema_compatibility(conn)
-                
-                cursor.execute(f"""
-                    CREATE TEMP TABLE {temp_table_name} (
-                        steam_app_id TEXT,
-                        current_price REAL,
-                        original_price REAL,
-                        discount_percent INTEGER DEFAULT 0,
-                        currency TEXT DEFAULT 'EUR',
-                        store TEXT DEFAULT 'Steam',
-                        available BOOLEAN DEFAULT 1
-                    )
-                """)
-                
-                insert_data = []
-                for price in price_data:
-                    insert_data.append((
-                        price.get('steam_app_id', ''),
-                        price.get('current_price', 0.0),
-                        price.get('original_price', 0.0),
-                        price.get('discount_percent', 0),
-                        price.get('currency', 'EUR'),
-                        price.get('store', 'Steam'),
-                        price.get('available', True)
-                    ))
-                
-                cursor.executemany(f"""
-                    INSERT INTO {temp_table_name} 
-                    (steam_app_id, current_price, original_price, discount_percent, currency, store, available)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, insert_data)
-                
-                # Direkte Übertragung (EINFACH UND FUNKTIONAL!)
-                cursor.execute(f"""
-                    INSERT OR IGNORE INTO price_history (
-                        steam_app_id, current_price, original_price, discount_percent,
-                        currency, store, available, timestamp
-                    )
-                    SELECT 
-                        steam_app_id, current_price, original_price, discount_percent,
-                        currency, store, available, CURRENT_TIMESTAMP
-                    FROM {temp_table_name}
-                """)
-                
-                cursor.execute(f"""
-                    UPDATE tracked_apps 
-                    SET last_price_update = CURRENT_TIMESTAMP
-                    WHERE steam_app_id IN (SELECT DISTINCT steam_app_id FROM {temp_table_name})
-                """)
-                
-                cursor.execute(f"DROP TABLE {temp_table_name}")
-                conn.commit()
-                # Foreign Key Constraints wieder aktivieren
-                conn.execute("PRAGMA foreign_keys = ON")
-                # Foreign Key Constraints wieder aktivieren
-                conn.execute("PRAGMA foreign_keys = ON")
-                
-                total_duration = time_module.time() - start_time
-                
                 result = {
                     'success': True,
                     'total_items': len(price_data),
                     'total_duration': total_duration,
-                    'items_per_second': len(price_data) / total_duration
+                    'items_per_second': items_per_second,
+                    'table_used': 'price_snapshots'
                 }
-                
-                logger.info(f"✅ Price Batch Write: {len(price_data)} Items in {total_duration:.2f}s")
+            
+                logger.info(f"✅ Price Batch Write: {len(price_data)} Items in {total_duration:.2f}s ({items_per_second:.1f}/s)")
                 return result
-                
+            
         except Exception as e:
             logger.error(f"❌ Price Batch Write fehlgeschlagen: {e}")
-            return {'success': False, 'error': str(e)}
+            return {
+                'success': False,
+                'error': str(e),
+                'total_items': len(price_data),
+                'total_duration': time.time() - start_time
+            }
     
     
     def _ensure_charts_schema_compatibility(self):
         """
+        🔄 DEPRECATED: Legacy-Wrapper für ensure_charts_tracking_table()
+    
+        Diese Methode wurde durch das saubere ensure-Pattern ersetzt.
+        Leitet automatisch zur neuen ensure_charts_tracking_table() weiter
+        für Rückwärts-Kompatibilität.
+    
+        ⚠️  Diese Methode wird in Zukunft entfernt.
+        Nutze stattdessen ensure_charts_tracking_table() direkt.
+
         Stellt sicher dass steam_charts_tracking alle erforderlichen Spalten hat
         Batch-Writer spezifische Implementation
         """
+        import warnings
+        warnings.warn(
+            "_ensure_charts_schema_compatibility() ist veraltet. "
+            "Nutze ensure_charts_tracking_table() für saubere Architektur.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+    
+        # WEITERLEITUNG zur neuen ensure-Methode
+        return self.ensure_charts_tracking_table()
+   
+    def ensure_charts_tracking_table(self):
+        """
+        Stellt sicher dass steam_charts_tracking Tabelle mit vollständiger Struktur existiert
+    
+        Wird von batch_write_charts() aufgerufen um Konsistenz zu gewährleisten.
+        Ersetzt das hardcoded CREATE TABLE in batch_write_charts().
+    
+        Returns:
+            bool: True wenn Tabelle bereit ist, False bei Fehler
+        """
+        try:
+            from logging_config import get_database_logger
+            logger = get_database_logger()
+        except ImportError:
+            import logging
+            logger = logging.getLogger(__name__)
+    
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
             
-                # =============================================================
-                # TEIL 1: steam_charts_tracking
-                # =============================================================
+                # ===================================================
+                # STEAM CHARTS TRACKING - Vollständige Struktur
+                # ===================================================
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS steam_charts_tracking (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        steam_app_id TEXT NOT NULL,
+                        name TEXT,
+                        chart_type TEXT NOT NULL,
+                        current_rank INTEGER,
+                        best_rank INTEGER,
+                        total_appearances INTEGER DEFAULT 1,
+                        days_in_charts INTEGER DEFAULT 1,
+                        peak_players INTEGER DEFAULT 0,
+                        current_players INTEGER DEFAULT 0,
+                        metadata TEXT,
+                        first_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        active INTEGER DEFAULT 1,
+                        UNIQUE(steam_app_id, chart_type)
+                    )
+                ''')
             
-                # Prüfe aktuelle steam_charts_tracking Spalten
-                cursor.execute("PRAGMA table_info(steam_charts_tracking)")
-                existing_charts_columns = {row[1] for row in cursor.fetchall()}
-    
-                # Erforderliche steam_charts_tracking Spalten definieren
-                required_charts_columns = {
-                    'peak_players': 'INTEGER',
-                    'current_players': 'INTEGER', 
-                    'updated_at': 'TIMESTAMP DEFAULT NULL',
-                    'rank_trend': 'TEXT DEFAULT "new"',
-                    'days_in_charts': 'INTEGER DEFAULT 1'  # Hinzugefügt für Vollständigkeit
-                }
-    
-                # Fehlende steam_charts_tracking Spalten hinzufügen
-                for column, column_type in required_charts_columns.items():
-                    if column not in existing_charts_columns:
-                        cursor.execute(f"ALTER TABLE steam_charts_tracking ADD COLUMN {column} {column_type}")
-                        logger.info(f"✅ steam_charts_tracking: {column} Spalte hinzugefügt")
+                # ===================================================
+                # PERFORMANCE-INDIZES für steam_charts_tracking
+                # ===================================================
+                indices = [
+                    "CREATE INDEX IF NOT EXISTS idx_charts_tracking_app_id ON steam_charts_tracking(steam_app_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_tracking_app_type ON steam_charts_tracking(steam_app_id, chart_type)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_tracking_chart_type ON steam_charts_tracking(chart_type)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_tracking_active ON steam_charts_tracking(active)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_tracking_rank ON steam_charts_tracking(current_rank)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_tracking_last_seen ON steam_charts_tracking(last_seen)"
+                ]
             
-                # =============================================================
-                # TEIL 2: price_snapshots Charts-Kompatibilität
-                # =============================================================
+                for index_sql in indices:
+                    try:
+                        cursor.execute(index_sql)
+                    except Exception as index_error:
+                        logger.debug(f"Index bereits vorhanden oder Fehler: {index_error}")
             
-                # Prüfe aktuelle price_snapshots Spalten
-                cursor.execute("PRAGMA table_info(price_snapshots)")
-                existing_price_columns = {row[1] for row in cursor.fetchall()}
+                conn.commit()
+                logger.debug("✅ steam_charts_tracking Tabelle und Indizes sichergestellt")
+                return True
             
-                # Erforderliche price_snapshots Spalten für Charts-Preisdaten
-                required_price_columns = {
-                    # Steam Store Preise (kritisch für Charts)
-                    'steam_price': 'REAL',
-                    'steam_original_price': 'REAL', 
-                    'steam_discount_percent': 'INTEGER DEFAULT 0',
-                    'steam_available': 'BOOLEAN DEFAULT 0',
-                
-                    # Weitere Stores (optional, aber hilfreich)
-                    'greenmangaming_price': 'REAL',
-                    'greenmangaming_original_price': 'REAL',
-                    'greenmangaming_discount_percent': 'INTEGER DEFAULT 0', 
-                    'greenmangaming_available': 'BOOLEAN DEFAULT 0',
-                
-                    'gog_price': 'REAL',
-                    'gog_original_price': 'REAL',
-                    'gog_discount_percent': 'INTEGER DEFAULT 0',
-                    'gog_available': 'BOOLEAN DEFAULT 0',
+        except Exception as e:
+            logger.error(f"❌ steam_charts_tracking Tabellen-Sicherstellung fehlgeschlagen: {e}")
+            return False
 
-                    'humblestore_price': 'REAL',
-                    'humblestore_original_price': 'REAL', 
-                    'humblestore_discount_percent': 'INTEGER DEFAULT 0',
-                    'humblestore_available': 'BOOLEAN DEFAULT 0',
-                
-                    'fanatical_price': 'REAL',
-                    'fanatical_original_price': 'REAL',
-                    'fanatical_discount_percent': 'INTEGER DEFAULT 0',
-                    'fanatical_available': 'BOOLEAN DEFAULT 0',
-                
-                    'gamesplanet_price': 'REAL',
-                    'gamesplanet_original_price': 'REAL',
-                    'gamesplanet_discount_percent': 'INTEGER DEFAULT 0',
-                    'gamesplanet_available': 'BOOLEAN DEFAULT 0'
-                }
+
+    def ensure_charts_prices_table(self):
+        """
+        Stellt sicher dass steam_charts_prices Tabelle mit Multi-Store-Struktur existiert
+    
+        Wird von safe_batch_update_charts_prices() aufgerufen um Konsistenz zu gewährleisten.
+        Gleiche Architektur wie die bestehenden ensure_*_tables Methoden.
+    
+        Returns:
+            bool: True wenn Tabelle bereit ist, False bei Fehler
+        """
+        try:
+            from logging_config import get_database_logger
+            logger = get_database_logger()
+        except ImportError:
+            import logging
+            logger = logging.getLogger(__name__)
+    
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
             
-                # Fehlende price_snapshots Spalten hinzufügen
-                added_price_columns = []
-                for column, column_type in required_price_columns.items():
-                    if column not in existing_price_columns:
-                        try:
-                            cursor.execute(f"ALTER TABLE price_snapshots ADD COLUMN {column} {column_type}")
-                            added_price_columns.append(column)
-                            logger.info(f"✅ price_snapshots: {column} Spalte hinzugefügt")
-                        except sqlite3.Error as e:
-                            logger.debug(f"Spalte {column} bereits vorhanden oder Fehler: {e}")
-            
-                # =============================================================
-                # TEIL 3: Zusätzliche Charts-Support Tabellen
-                # =============================================================
-            
-                # Erstelle steam_charts_prices Tabelle falls nicht vorhanden
-                cursor.execute("""
+                # ===================================================
+                # STEAM CHARTS PRICES - Multi-Store-Struktur
+                # ===================================================
+                cursor.execute('''
                     CREATE TABLE IF NOT EXISTS steam_charts_prices (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         steam_app_id TEXT NOT NULL,
                         chart_type TEXT NOT NULL,
-                        price REAL,
-                        original_price REAL,
-                        discount_percent INTEGER DEFAULT 0,
-                        available BOOLEAN DEFAULT 0,
-                        store TEXT DEFAULT 'steam',
+                        game_title TEXT,
                         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (steam_app_id) REFERENCES tracked_apps(steam_app_id)
+                    
+                        -- Steam Store
+                        steam_price REAL,
+                        steam_original_price REAL,
+                        steam_discount_percent INTEGER DEFAULT 0,
+                        steam_available BOOLEAN DEFAULT 0,
+                    
+                        -- GreenManGaming Store  
+                        greenmangaming_price REAL,
+                        greenmangaming_original_price REAL,
+                        greenmangaming_discount_percent INTEGER DEFAULT 0,
+                        greenmangaming_available BOOLEAN DEFAULT 0,
+                    
+                        -- GOG Store
+                        gog_price REAL,
+                        gog_original_price REAL,
+                        gog_discount_percent INTEGER DEFAULT 0,
+                        gog_available BOOLEAN DEFAULT 0,
+                    
+                        -- HumbleStore
+                        humblestore_price REAL,
+                        humblestore_original_price REAL,
+                        humblestore_discount_percent INTEGER DEFAULT 0,
+                        humblestore_available BOOLEAN DEFAULT 0,
+                    
+                        -- Fanatical Store
+                        fanatical_price REAL,
+                        fanatical_original_price REAL,
+                        fanatical_discount_percent INTEGER DEFAULT 0,
+                        fanatical_available BOOLEAN DEFAULT 0,
+                    
+                        -- GamesPlanet Store
+                        gamesplanet_price REAL,
+                        gamesplanet_original_price REAL,
+                        gamesplanet_discount_percent INTEGER DEFAULT 0,
+                        gamesplanet_available BOOLEAN DEFAULT 0,
+                    
+                        -- Charts-Integration beibehalten
+                        FOREIGN KEY (steam_app_id, chart_type) REFERENCES steam_charts_tracking(steam_app_id, chart_type)
                     )
-                """)
+                ''')
             
-                # Erstelle Indizes für bessere Performance
-                performance_indices = [
-                    "CREATE INDEX IF NOT EXISTS idx_price_snapshots_steam_data ON price_snapshots(steam_app_id, steam_price, timestamp)",
-                    "CREATE INDEX IF NOT EXISTS idx_price_snapshots_charts_lookup ON price_snapshots(steam_app_id, steam_available, timestamp DESC)",
-                    "CREATE INDEX IF NOT EXISTS idx_steam_charts_prices_lookup ON steam_charts_prices(steam_app_id, chart_type, timestamp DESC)",
-                    "CREATE INDEX IF NOT EXISTS idx_steam_charts_tracking_active ON steam_charts_tracking(steam_app_id, active, current_rank)"
+                # ===================================================
+                # PERFORMANCE-INDIZES für steam_charts_prices
+                # ===================================================
+                indices = [
+                    "CREATE INDEX IF NOT EXISTS idx_charts_prices_app_chart ON steam_charts_prices(steam_app_id, chart_type)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_prices_timestamp ON steam_charts_prices(timestamp)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_prices_game_title ON steam_charts_prices(game_title)",
+                    "CREATE INDEX IF NOT EXISTS idx_charts_prices_chart_type ON steam_charts_prices(chart_type)"
                 ]
             
-                for index_sql in performance_indices:
+                for index_sql in indices:
                     try:
                         cursor.execute(index_sql)
-                    except sqlite3.Error as e:
-                        logger.debug(f"Index bereits vorhanden: {e}")
-            
-                # =============================================================
-                # TEIL 4: Datenbank-Integrität prüfen
-                # =============================================================
-            
-                # Repariere NULL-Werte in kritischen Spalten
-                if 'steam_price' in added_price_columns or 'steam_available' in added_price_columns:
-                    cursor.execute("""
-                        UPDATE price_snapshots 
-                        SET steam_price = 0, steam_available = 0 
-                        WHERE steam_price IS NULL
-                    """)
-                
-                    cursor.execute("""
-                        UPDATE price_snapshots 
-                        SET steam_original_price = steam_price 
-                        WHERE steam_original_price IS NULL AND steam_price IS NOT NULL
-                    """)
+                    except Exception as index_error:
+                        logger.debug(f"Index bereits vorhanden oder Fehler: {index_error}")
             
                 conn.commit()
+                logger.debug("✅ steam_charts_prices Tabelle und Indizes sichergestellt")
+                return True
             
-                # =============================================================
-                # TEIL 5: Erfolgs-Logging
-                # =============================================================
-            
-                if added_price_columns:
-                    logger.info(f"✅ Charts-Schema erweitert: {len(added_price_columns)} price_snapshots Spalten hinzugefügt")
-            
-                logger.info("✅ Charts-Schema vollständig aktualisiert (Charts + Preise)")
-    
         except Exception as e:
-            logger.error(f"❌ Erweiterte Charts-Schema-Check fehlgeschlagen: {e}")
-            # Fallback: Versuche zumindest die kritischen Spalten hinzuzufügen
-            try:
-                with self.get_connection() as conn:
-                    cursor = conn.cursor()
-                
-                    # Minimale kritische Spalten für Charts-Funktionalität
-                    critical_columns = [
-                        "ALTER TABLE price_snapshots ADD COLUMN steam_price REAL",
-                        "ALTER TABLE price_snapshots ADD COLUMN steam_available BOOLEAN DEFAULT 0"
-                    ]
-                
-                    for sql in critical_columns:
-                        try:
-                            cursor.execute(sql)
-                            logger.info("✅ Kritische Spalte hinzugefügt (Fallback)")
-                        except sqlite3.Error:
-                            pass  # Spalte bereits vorhanden
-                
-                    conn.commit()
-                    logger.info("✅ Fallback-Schema erfolgreich")
-                
-            except Exception as fallback_error:
-                logger.error(f"❌ Auch Fallback-Schema fehlgeschlagen: {fallback_error}")
+            logger.error(f"❌ steam_charts_prices Tabellen-Sicherstellung fehlgeschlagen: {e}")
+            return False
     
+    def ensure_price_snapshots_table(self):
+        """
+        Stellt sicher dass price_snapshots Tabelle mit Multi-Store-Struktur existiert
+    
+        Wird von batch_write_prices() aufgerufen um Konsistenz zu gewährleisten.
+        Ersetzt _ensure_charts_schema_compatibility() für saubere Architektur.
+    
+        Returns:
+            bool: True wenn Tabelle bereit ist, False bei Fehler
+        """
+        try:
+            from logging_config import get_database_logger
+            logger = get_database_logger()
+        except ImportError:
+            import logging
+            logger = logging.getLogger(__name__)
+    
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+            
+                # ===================================================
+                # PRICE SNAPSHOTS - Multi-Store-Struktur
+                # ===================================================
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS price_snapshots (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        steam_app_id TEXT NOT NULL,
+                        game_title TEXT,
+                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    
+                        -- Steam Store
+                        steam_price REAL,
+                        steam_original_price REAL,
+                        steam_discount_percent INTEGER DEFAULT 0,
+                        steam_available BOOLEAN DEFAULT 0,
+                    
+                        -- GreenManGaming Store
+                        greenmangaming_price REAL,
+                        greenmangaming_original_price REAL,
+                        greenmangaming_discount_percent INTEGER DEFAULT 0,
+                        greenmangaming_available BOOLEAN DEFAULT 0,
+                    
+                        -- GOG Store
+                        gog_price REAL,
+                        gog_original_price REAL,
+                        gog_discount_percent INTEGER DEFAULT 0,
+                        gog_available BOOLEAN DEFAULT 0,
+                    
+                        -- HumbleStore
+                        humblestore_price REAL,
+                        humblestore_original_price REAL,
+                        humblestore_discount_percent INTEGER DEFAULT 0,
+                        humblestore_available BOOLEAN DEFAULT 0,
+                    
+                        -- Fanatical Store
+                        fanatical_price REAL,
+                        fanatical_original_price REAL,
+                        fanatical_discount_percent INTEGER DEFAULT 0,
+                        fanatical_available BOOLEAN DEFAULT 0,
+                    
+                        -- GamesPlanet Store
+                        gamesplanet_price REAL,
+                        gamesplanet_original_price REAL,
+                        gamesplanet_discount_percent INTEGER DEFAULT 0,
+                        gamesplanet_available BOOLEAN DEFAULT 0
+                    )
+                ''')
+            
+                # ===================================================
+                # PERFORMANCE-INDIZES für price_snapshots
+                # ===================================================
+                indices = [
+                    "CREATE INDEX IF NOT EXISTS idx_price_snapshots_app_id ON price_snapshots(steam_app_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_price_snapshots_timestamp ON price_snapshots(timestamp)",
+                    "CREATE INDEX IF NOT EXISTS idx_price_snapshots_app_timestamp ON price_snapshots(steam_app_id, timestamp)",
+                    "CREATE INDEX IF NOT EXISTS idx_price_snapshots_game_title ON price_snapshots(game_title)"
+                ]
+            
+                for index_sql in indices:
+                    try:
+                        cursor.execute(index_sql)
+                    except Exception as index_error:
+                        logger.debug(f"Index bereits vorhanden oder Fehler: {index_error}")
+            
+                conn.commit()
+                logger.debug("✅ price_snapshots Tabelle und Indizes sichergestellt")
+                return True
+            
+        except Exception as e:
+            logger.error(f"❌ price_snapshots Tabellen-Sicherstellung fehlgeschlagen: {e}")
+            return False
+
     def get_schema_version(self) -> Dict[str, Any]:
         """
         Gibt aktuelle Schema-Version und Kompatibilität zurück
