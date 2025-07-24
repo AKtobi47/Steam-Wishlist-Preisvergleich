@@ -85,24 +85,30 @@ def safe_input(prompt, default=""):
         return default
 
 def create_tracker_with_fallback():
-    """Erstellt Tracker mit Fallback-Strategien"""
+    """
+    Erstellt Tracker ohne Elasticsearch (wie gewünscht)
+    """
+    print("🚀 Steam Price Tracker wird initialisiert...")
+    
     try:
         tracker = create_price_tracker(enable_charts=True)
+        
+        if not tracker:
+            print("❌ Tracker konnte nicht erstellt werden")
+            return None, None, None
+        
+        print("✅ Tracker erfolgreich erstellt")
         
         # Charts Manager
         charts_manager = None
         if hasattr(tracker, 'charts_manager') and tracker.charts_manager:
             charts_manager = tracker.charts_manager
+            print("✅ Charts Manager verfügbar")
+        else:
+            print("ℹ️ Charts Manager nicht verfügbar")
         
-        # Elasticsearch Manager
+        # ENTFERNT: Elasticsearch wird nicht mehr über main.py verwaltet
         es_manager = None
-        try:
-            from elasticsearch_manager import ElasticsearchManager
-            es_manager = ElasticsearchManager()
-            if not es_manager.test_connection():
-                es_manager = None
-        except ImportError:
-            pass
         
         return tracker, charts_manager, es_manager
     

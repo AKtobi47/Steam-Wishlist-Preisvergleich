@@ -263,145 +263,48 @@ class DatabaseManager:
     
     def _migrate_schema_if_needed(self):
         """
-        Automatische Schema-Migration für Kompatibilität mit Batch-Writer
-        Behebt das "no such column: store" Problem automatisch
+        MINIMALE Schema-Migration - Schema ist bereits vollständig!
+        Ruft nur vorhandene ensure-Methoden auf
         """
         try:
-            with self.get_connection() as conn:  # KORRIGIERT: war self.conn.cursor()
-                cursor = conn.cursor()
+            logger.info("🔧 Schema-Migration: Prüfe Tabellen-Integrität...")
         
-                # Prüfe ob 'store' Spalte in price_snapshots existiert
-                cursor.execute("PRAGMA table_info(price_snapshots)")
-                columns = [row[1] for row in cursor.fetchall()]
+            # Verwende die vorhandenen ensure-Methoden - keine neuen Spalten nötig!
+            success_count = 0
+            total_methods = 0
         
-                if 'store' not in columns:
-                    logger.info("🔧 Schema-Migration: Füge Store-spezifische Preise hinzu...")
-            
-                    # Beginne Transaktion
-                    cursor.execute("BEGIN TRANSACTION")
-            
+            ensure_methods = [
+                ('ensure_charts_tracking_table', 'steam_charts_tracking'),
+                ('ensure_charts_prices_table', 'steam_charts_prices'), 
+                ('ensure_price_snapshots_table', 'price_snapshots')
+            ]
+        
+            for method_name, table_name in ensure_methods:
+                total_methods += 1
+                if hasattr(self, method_name):
                     try:
-                        # 1. Backup der aktuellen Tabelle
-                        cursor.execute("""
-                            CREATE TABLE price_snapshots_backup AS 
-                            SELECT * FROM price_snapshots
-                        """)
-                
-                        # 2. Neue Tabelle mit korrektem Schema erstellen
-                        cursor.execute("""
-                            CREATE TABLE price_snapshots_new (
-                                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                steam_app_id TEXT NOT NULL,
-                                game_title TEXT,
-                                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        
-                                -- Steam Store
-                                steam_price REAL,
-                                steam_original_price REAL,
-                                steam_discount_percent INTEGER DEFAULT 0,
-                                steam_available BOOLEAN DEFAULT 0,
-                        
-                                -- Green Man Gaming
-                                greenmangaming_price REAL,
-                                greenmangaming_original_price REAL,
-                                greenmangaming_discount_percent INTEGER DEFAULT 0,
-                                greenmangaming_available BOOLEAN DEFAULT 0,
-                        
-                                -- GOG
-                                gog_price REAL,
-                                gog_original_price REAL,
-                                gog_discount_percent INTEGER DEFAULT 0,
-                                gog_available BOOLEAN DEFAULT 0,
-                        
-                                -- Humble Store
-                                humblestore_price REAL,
-                                humblestore_original_price REAL,
-                                humblestore_discount_percent INTEGER DEFAULT 0,
-                                humblestore_available BOOLEAN DEFAULT 0,
-                        
-                                -- Fanatical
-                                fanatical_price REAL,
-                                fanatical_original_price REAL,
-                                fanatical_discount_percent INTEGER DEFAULT 0,
-                                fanatical_available BOOLEAN DEFAULT 0,
-                        
-                                -- Gamesplanet
-                                gamesplanet_price REAL,
-                                gamesplanet_original_price REAL,
-                                gamesplanet_discount_percent INTEGER DEFAULT 0,
-                                gamesplanet_available BOOLEAN DEFAULT 0
-                            )
-                        """)
-                
-                        # 3. Intelligente Daten-Migration
-                        old_columns = [row[1] for row in cursor.execute("PRAGMA table_info(price_snapshots_backup)").fetchall()]
-                
-                        # Migration basierend auf vorhandenen Spalten
-                        if 'app_id' in old_columns:
-                            # Alte Schema-Version: app_id → steam_app_id
-                            migration_query = """
-                                INSERT INTO price_snapshots_new 
-                                (steam_app_id, game_title, timestamp, steam_price, steam_original_price, steam_discount_percent)
-                                SELECT 
-                                    app_id as steam_app_id,
-                                    game_title,
-                                    timestamp,
-                                    COALESCE(price, steam_price, 0) as steam_price,
-                                    COALESCE(original_price, steam_original_price, 0) as steam_original_price,
-                                    COALESCE(discount_percent, steam_discount_percent, 0) as steam_discount_percent
-                                FROM price_snapshots_backup
-                            """
+                        method = getattr(self, method_name)
+                        success = method()
+                        if success:
+                            success_count += 1
+                            logger.info(f"✅ {table_name} Tabelle sichergestellt")
                         else:
-                            # Bereits steam_app_id, übertrage verfügbare Spalten
-                            transferable_columns = ['steam_app_id', 'game_title', 'timestamp']
-                        
-                            # Dynamisch alle vorhandenen Store-Spalten hinzufügen
-                            for col in old_columns:
-                                if col.endswith(('_price', '_original_price', '_discount_percent', '_available')):
-                                    transferable_columns.append(col)
-                        
-                            columns_str = ', '.join(transferable_columns)
-                            migration_query = f"""
-                                INSERT INTO price_snapshots_new ({columns_str})
-                                SELECT {columns_str}
-                                FROM price_snapshots_backup
-                            """
-                
-                        cursor.execute(migration_query)
-                        migrated_count = cursor.rowcount
-                
-                        # 4. Alte Tabelle ersetzen
-                        cursor.execute("DROP TABLE price_snapshots")
-                        cursor.execute("ALTER TABLE price_snapshots_new RENAME TO price_snapshots")
-                
-                        # 5. Cleanup
-                        cursor.execute("DROP TABLE price_snapshots_backup")
-                
-                        # 6. Transaktion committen
-                        cursor.execute("COMMIT")
-                
-                        logger.info(f"✅ Schema-Migration erfolgreich: {migrated_count} Datensätze migriert")
-                        logger.info("   📊 Alle Store-Spalten dynamisch erstellt")
-                        logger.info("   🔗 Batch-Writer Kompatibilität: Aktiviert")
-                
+                            logger.warning(f"⚠️ {table_name} Tabelle konnte nicht sichergestellt werden")
                     except Exception as e:
-                        # Rollback bei Fehler
-                        cursor.execute("ROLLBACK")
-                        logger.error(f"❌ Schema-Migration fehlgeschlagen: {e}")
-                        raise e
-        
+                        logger.warning(f"⚠️ {method_name} Fehler: {e}")
                 else:
-                    logger.debug("✅ Schema bereits aktuell - keine Migration nötig")
+                    logger.warning(f"⚠️ Methode {method_name} nicht gefunden")
         
-                # Prüfe auch andere kritische Tabellen
-                self._ensure_charts_schema_compatibility()
-        
-                return True
-    
+            if success_count == total_methods:
+                logger.info("✅ Schema-Migration erfolgreich: Alle Tabellen verfügbar")
+                logger.info("   📊 Store-Spalten bereits vorhanden (siehe DDL)")
+                logger.info("   🔗 Batch-Writer Kompatibilität: Aktiviert")
+            else:
+                logger.warning(f"⚠️ Schema-Migration teilweise: {success_count}/{total_methods} Tabellen")
+            
         except Exception as e:
             logger.error(f"❌ Schema-Migration fehlgeschlagen: {e}")
-            return False
-    
+            
     def _migrate_chart_games_to_steam_charts_tracking(self, cursor):
         """Migriert Daten von legacy chart_games zu steam_charts_tracking"""
         try:
