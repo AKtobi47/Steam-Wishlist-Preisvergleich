@@ -225,6 +225,28 @@ class DatabaseManager:
             print(f"❌ Unerwarteter Fehler: {e}")
             return []
     
+    def get_all_tracked_apps_price_history(self) -> List[Dict[str, Any]]:
+        """Gibt alle Preis-Historien der getrackten Apps zurück"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT steam_app_id, name, target_price, timestamp,
+                       steam_price, greenmangaming_price, gog_price,
+                       humblestore_price, fanatical_price, gamesplanet_price
+                FROM tracked_apps_price_history
+                ORDER BY timestamp DESC
+            """)
+            rows = cursor.fetchall()
+            conn.close()
+            return [dict(row) for row in rows]
+        except sqlite3.Error as e:
+            print(f"❌ Datenbankfehler bei tracked_apps_price_history: {e}")
+            return []
+        except Exception as e:
+            print(f"❌ Unerwarteter Fehler: {e}")
+            return []
+    
     def get_database_info(self) -> Dict[str, Any]:
         """Gibt Informationen über die Datenbank zurück"""
         try:

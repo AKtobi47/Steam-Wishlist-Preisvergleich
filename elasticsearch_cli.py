@@ -274,7 +274,8 @@ class ElasticsearchManager:
             'name_history': 'steam-name-history',
             'charts_snapshots': 'steam-charts-snapshots',
             'charts_prices': 'steam-charts-prices',
-            'statistics': 'steam-statistics'
+            'statistics': 'steam-statistics',
+            'tracked_apps_price_history': 'steam-tracked-apps-price-history'
         }
     
     def health_check(self) -> Dict[str, Any]:
@@ -447,6 +448,20 @@ class ElasticsearchManager:
                     'steam_app_id': {'type': 'keyword'},
                     'category': {'type': 'keyword'}
                 }
+            },
+            'tracked_apps_price_history': {
+                'properties': {
+                    'steam_app_id':         {'type': 'keyword'},
+                    'name':                 {'type': 'text', 'analyzer': 'standard'},
+                    'target_price':         {'type': 'float'},
+                    'timestamp':            {'type': 'date'},
+                    'steam_price':          {'type': 'float'},
+                    'greenmangaming_price': {'type': 'float'},
+                    'gog_price':            {'type': 'float'},
+                    'humblestore_price':    {'type': 'float'},
+                    'fanatical_price':      {'type': 'float'},
+                    'gamesplanet_price':    {'type': 'float'}
+                }
             }
         }
         
@@ -499,6 +514,7 @@ class ElasticsearchManager:
             'charts_snapshots': 0,
             'charts_prices': 0,
             'statistics': 0,
+            'tracked_apps_price_history': 0,
             'total_exported': 0
         }
         
@@ -520,7 +536,7 @@ class ElasticsearchManager:
             
             return record
         
-        def bulk_export_data(data, index_name, batch_size=1000):
+        def bulk_export_data(data, index_name, batch_size=10000):
             """Exportiert Daten in Batches mit Bulk-API"""
             exported_count = 0
             total_records = len(data)
@@ -602,6 +618,11 @@ class ElasticsearchManager:
             print("📊 Exportiere Statistics...")
             stats_data = db_manager.get_all_statistics()
             stats['statistics'] = bulk_export_data(stats_data, self.indices['statistics'])
+            
+            # Tracked Apps Price History exportieren
+            print("📈 Exportiere Tracked Apps Price History...")
+            price_history_data = db_manager.get_all_tracked_apps_price_history()
+            stats['tracked_apps_price_history'] = bulk_export_data(price_history_data, self.indices['tracked_apps_price_history'])
             
             # Refresh alle Indizes
             print("🔄 Refreshe Indizes...")
