@@ -261,50 +261,76 @@ class DatabaseManager:
                 conn.commit()
                 logger.info("✅ Datenbank-Schema (PRODUCTION) initialisiert")
     
+
     def _migrate_schema_if_needed(self):
         """
-        MINIMALE Schema-Migration - Schema ist bereits vollständig!
-        Ruft nur vorhandene ensure-Methoden auf
+        Schema-Migration - verwendet DatabaseBatchWriter für ensure-Methoden
         """
         try:
             logger.info("🔧 Schema-Migration: Prüfe Tabellen-Integrität...")
         
-            # Verwende die vorhandenen ensure-Methoden - keine neuen Spalten nötig!
-            success_count = 0
-            total_methods = 0
-        
-            ensure_methods = [
-                ('ensure_charts_tracking_table', 'steam_charts_tracking'),
-                ('ensure_charts_prices_table', 'steam_charts_prices'), 
-                ('ensure_price_snapshots_table', 'price_snapshots')
-            ]
-        
-            for method_name, table_name in ensure_methods:
-                total_methods += 1
-                if hasattr(self, method_name):
-                    try:
-                        method = getattr(self, method_name)
-                        success = method()
-                        if success:
-                            success_count += 1
-                            logger.info(f"✅ {table_name} Tabelle sichergestellt")
-                        else:
-                            logger.warning(f"⚠️ {table_name} Tabelle konnte nicht sichergestellt werden")
-                    except Exception as e:
-                        logger.warning(f"⚠️ {method_name} Fehler: {e}")
+            # Verwende DatabaseBatchWriter für ensure-Methoden
+            try:
+                # DatabaseBatchWriter erstellen um auf ensure-Methoden zuzugreifen
+                batch_writer = DatabaseBatchWriter(self)
+            
+                success_count = 0
+                total_methods = 3
+            
+                # ensure-Methoden über batch_writer aufrufen
+                ensure_methods = [
+                    ('ensure_charts_tracking_table', 'steam_charts_tracking'),
+                    ('ensure_charts_prices_table', 'steam_charts_prices'), 
+                    ('ensure_price_snapshots_table', 'price_snapshots')
+                ]
+            
+                for method_name, table_name in ensure_methods:
+                    if hasattr(batch_writer, method_name):
+                        try:
+                            method = getattr(batch_writer, method_name)
+                            success = method()
+                            if success:
+                                success_count += 1
+                                logger.info(f"✅ {table_name} Tabelle sichergestellt")
+                            else:
+                                logger.warning(f"⚠️ {table_name} Tabelle konnte nicht sichergestellt werden")
+                        except Exception as e:
+                            logger.warning(f"⚠️ {method_name} Fehler: {e}")
+                    else:
+                        logger.warning(f"⚠️ Methode {method_name} nicht im DatabaseBatchWriter gefunden")
+            
+                if success_count == total_methods:
+                    logger.info("✅ Schema-Migration erfolgreich: Alle Tabellen verfügbar")
+                    logger.info("   📊 Multi-Store-Schema aktiv (kein store-Feld nötig)")
+                    logger.info("   🔗 Batch-Writer Kompatibilität: Aktiviert")
                 else:
-                    logger.warning(f"⚠️ Methode {method_name} nicht gefunden")
-        
-            if success_count == total_methods:
-                logger.info("✅ Schema-Migration erfolgreich: Alle Tabellen verfügbar")
-                logger.info("   📊 Store-Spalten bereits vorhanden (siehe DDL)")
-                logger.info("   🔗 Batch-Writer Kompatibilität: Aktiviert")
-            else:
-                logger.warning(f"⚠️ Schema-Migration teilweise: {success_count}/{total_methods} Tabellen")
+                    logger.warning(f"⚠️ Schema-Migration teilweise: {success_count}/{total_methods} Tabellen")
+                
+            except Exception as batch_error:
+                logger.warning(f"⚠️ DatabaseBatchWriter-Zugriff fehlgeschlagen: {batch_error}")
+            
+                # Fallback: Direkte Tabellen-Prüfung
+                logger.info("🔄 Verwende Fallback-Schema-Prüfung...")
+            
+                with self.get_connection() as conn:
+                    cursor = conn.cursor()
+                
+                    # Prüfe Kern-Tabellen
+                    required_tables = ['tracked_apps', 'price_snapshots', 'steam_charts_tracking', 'steam_charts_prices']
+                    existing_tables = []
+                
+                    for table_name in required_tables:
+                        cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'")
+                        if cursor.fetchone():
+                            existing_tables.append(table_name)
+                
+                    logger.info(f"✅ Fallback-Schema-Prüfung: {len(existing_tables)}/{len(required_tables)} Tabellen vorhanden")
+                    logger.info(f"   📊 Vorhandene Tabellen: {existing_tables}")
             
         except Exception as e:
             logger.error(f"❌ Schema-Migration fehlgeschlagen: {e}")
-            
+            # Nicht kritisch - Programm kann trotzdem weiterlaufen
+
     def _migrate_chart_games_to_steam_charts_tracking(self, cursor):
         """Migriert Daten von legacy chart_games zu steam_charts_tracking"""
         try:

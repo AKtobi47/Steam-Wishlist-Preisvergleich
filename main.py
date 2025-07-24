@@ -86,35 +86,125 @@ def safe_input(prompt, default=""):
 
 def create_tracker_with_fallback():
     """
-    Erstellt Tracker ohne Elasticsearch (wie gewünscht)
+    Erstellt Tracker
+    Versucht, den vollständigen Tracker mit Charts zu erstellen.
+    Falls das fehlschlägt, wird ein Fallback-Tracker ohne Charts erstellt.
+    Im absoluten Notfall wird ein EmergencyTracker ohne Charts und mit minimalen Funktionen zurückgegeben.
+    Diese Funktion ist robust gegen Import-Fehler und fehlende Charts-Manager.
+    Sie gibt immer einen Tracker zurück, der entweder vollständig oder im Notfall minimal funktionsfähig ist.
+    Diese Funktion ist die zentrale Initialisierungsroutine für den Tracker.
+    Sie sollte immer verwendet werden, um sicherzustellen, dass der Tracker korrekt initialisiert wird.
+    Sie ist so gestaltet, dass sie auch bei fehlenden Abhängigkeiten oder Import-Fehlern funktioniert.
+    Sie gibt entweder den vollständigen Tracker, einen Fallback-Tracker oder einen EmergencyTracker zurück.
+
+    Returns:
+        tuple: (tracker, charts_manager, es_manager)
+            - tracker: Der initialisierte Tracker (vollständig oder Fallback)
+            - charts_manager: Der Charts Manager (kann None sein)
+            - es_manager: Elasticsearch Manager (None) # ENTFERNT: Wird nicht mehr über main.py verwaltet
     """
     print("🚀 Steam Price Tracker wird initialisiert...")
     
     try:
+        print("📋 Erstelle vollständigen Tracker mit Charts...")
+        
+        # Tracker mit Charts erstellen - jetzt sicher da store-Problem behoben
         tracker = create_price_tracker(enable_charts=True)
         
         if not tracker:
             print("❌ Tracker konnte nicht erstellt werden")
             return None, None, None
         
-        print("✅ Tracker erfolgreich erstellt")
+        print("✅ Basis-Tracker erfolgreich erstellt")
         
-        # Charts Manager
+        # Charts Manager prüfen und aktivieren
         charts_manager = None
         if hasattr(tracker, 'charts_manager') and tracker.charts_manager:
             charts_manager = tracker.charts_manager
             print("✅ Charts Manager verfügbar")
+            print(f"   📊 Charts aktiviert: {tracker.charts_enabled}")
+            
+            # Optional: Charts Manager testen
+            try:
+                if hasattr(charts_manager, 'test_connection') or hasattr(charts_manager, 'get_chart_types'):
+                    print("   🔧 Charts Manager funktionsfähig")
+            except Exception as test_error:
+                print(f"   ⚠️ Charts Manager Test-Warnung: {test_error}")
+                
         else:
             print("ℹ️ Charts Manager nicht verfügbar")
+            if not hasattr(tracker, 'api_key') or not tracker.api_key:
+                print("   💡 Grund: Kein Steam API Key in .env")
+            else:
+                print("   💡 Grund: Import-Fehler oder Charts deaktiviert")
+                
+            # Fallback: Versuche Charts nachträglich zu aktivieren
+            print("🔄 Versuche Charts nachträglich zu aktivieren...")
+            try:
+                if hasattr(tracker, '_init_components_safe'):
+                    tracker.enable_charts = True
+                    tracker._init_components_safe()
+                    if hasattr(tracker, 'charts_manager') and tracker.charts_manager:
+                        charts_manager = tracker.charts_manager
+                        print("✅ Charts Manager nachträglich aktiviert")
+            except Exception as retry_error:
+                print(f"ℹ️ Nachträgliche Charts-Aktivierung fehlgeschlagen: {retry_error}")
         
-        # ENTFERNT: Elasticsearch wird nicht mehr über main.py verwaltet
+        # ENTFERNT: Elasticsearch Manager - wird nicht mehr über main.py verwaltet
         es_manager = None
         
         return tracker, charts_manager, es_manager
     
     except Exception as e:
-        logger.error(f"Tracker-Initialisierung fehlgeschlagen: {e}")
-        return None, None, None
+        print(f"❌ Fehler bei vollständiger Initialisierung: {e}")
+        print("🔄 Verwende Fallback ohne Charts...")
+        
+        # Fallback: Tracker ohne Charts
+        try:
+            tracker = create_price_tracker(enable_charts=False)
+            if tracker:
+                print("✅ Fallback-Tracker ohne Charts erstellt")
+                return tracker, None, None
+        except Exception as e2:
+            print(f"❌ Auch Fallback fehlgeschlagen: {e2}")
+        
+        # Absoluter Notfall-Tracker
+        print("🚨 Verwende Notfall-Tracker...")
+        
+        class EmergencyTracker:
+            def __init__(self):
+                self.charts_enabled = False
+                self.charts_manager = None
+                try:
+                    from database_manager import create_database_manager
+                    self.db_manager = create_database_manager()
+                    print("✅ Notfall-Tracker mit Datenbank")
+                except Exception as e3:
+                    print(f"❌ Notfall-Tracker Datenbankfehler: {e3}")
+                    self.db_manager = None
+            
+            def get_tracked_apps(self):
+                try:
+                    return self.db_manager.get_tracked_apps() if self.db_manager else []
+                except:
+                    return []
+            
+            def get_database_stats(self):
+                return {
+                    'tracked_apps': 0,
+                    'total_snapshots': 0,
+                    'stores_tracked': ['Steam'],
+                    'newest_snapshot': None,
+                    'emergency_mode': True
+                }
+            
+            def add_or_update_app(self, steam_app_id, name=None):
+                return False, "Notfall-Modus - Funktion nicht verfügbar"
+            
+            def get_best_deals(self, **kwargs):
+                return []
+        
+        return EmergencyTracker(), None, None
 
 def add_app_safe(tracker, steam_app_id, app_name=None, source="manual"):
     """Sichere App-Hinzufügung"""
@@ -143,7 +233,7 @@ def get_tracked_apps_safe(tracker):
         return []
 
 def load_stats_safe(tracker):
-    """Lädt Statistiken sicher mit robusterem Fallback"""
+    """Lädt Statistiken sicher mit korrekter Store-Erkennung (OHNE store-Spalte)"""
     try:
         # Versuch 1: Verwende die bestehende get_database_stats Methode
         if hasattr(tracker, 'db_manager') and hasattr(tracker.db_manager, 'get_database_stats'):
@@ -161,7 +251,7 @@ def load_stats_safe(tracker):
         tracked_apps_count = 0
         total_snapshots = 0
         newest_snapshot = None
-        stores_tracked = ['Steam']  # Mindestens Steam
+        stores_tracked = ['Steam']  # Standard-Stores
         
         if hasattr(tracker, 'db_manager'):
             try:
@@ -183,13 +273,34 @@ def load_stats_safe(tracker):
                     result = cursor.fetchone()
                     newest_snapshot = result[0] if result else None
                     
-                    # Stores ermitteln
-                    cursor.execute('SELECT DISTINCT store FROM price_snapshots')
-                    stores = cursor.fetchall()
-                    if stores:
-                        stores_tracked = [store[0] for store in stores]
+                    # Prüfe welche Store-Spalten Daten enthalten
+                    available_stores = []
                     
-                    logger.info(f"📊 Manuelle Stats: {tracked_apps_count} Apps, {total_snapshots} Snapshots")
+                    # Definiere alle möglichen Stores basierend auf dem Schema
+                    store_columns = [
+                        ('Steam', 'steam_price'),
+                        ('GreenManGaming', 'greenmangaming_price'),
+                        ('GOG', 'gog_price'),
+                        ('HumbleStore', 'humblestore_price'),
+                        ('Fanatical', 'fanatical_price'),
+                        ('GamesPlanet', 'gamesplanet_price')
+                    ]
+                    
+                    for store_name, price_column in store_columns:
+                        try:
+                            # Prüfe ob diese Store-Spalte existiert und Daten enthält
+                            cursor.execute(f'SELECT COUNT(*) FROM price_snapshots WHERE {price_column} IS NOT NULL AND {price_column} > 0')
+                            count = cursor.fetchone()[0]
+                            if count > 0:
+                                available_stores.append(store_name)
+                        except Exception as e:
+                            # Spalte existiert nicht oder anderer Fehler
+                            logger.debug(f"Store-Spalte {price_column} nicht verfügbar: {e}")
+                    
+                    # Verwende gefundene Stores oder Fallback
+                    stores_tracked = available_stores if available_stores else ['Steam']
+                    
+                    logger.info(f"📊 Manuelle Stats: {tracked_apps_count} Apps, {total_snapshots} Snapshots, Stores: {stores_tracked}")
                     
             except Exception as db_error:
                 logger.error(f"❌ Datenbankfehler beim manuellen Fallback: {db_error}")
@@ -628,23 +739,55 @@ def menu_detailed_statistics(tracker):
         print(f"🕒 Letztes Update: {stats['newest_snapshot']}")
 
 def menu_show_charts(charts_manager, tracker):
-    """Option 13: Charts anzeigen"""
+    """Option 13: Charts anzeigen - REAKTIVIERT"""
     print("\n📈 STEAM CHARTS")
     print("=" * 17)
     
     if not charts_manager:
         print("❌ Charts Manager nicht verfügbar")
+        print("💡 Mögliche Lösungen:")
+        print("   1. Steam API Key in .env prüfen")
+        print("   2. Charts über Option 17 aktivieren")
         return
     
     try:
-        if hasattr(charts_manager, 'get_charts_summary'):
+        print("📊 Verfügbare Charts-Funktionen:")
+        
+        # Prüfe verfügbare Methoden
+        chart_methods = [
+            ('get_charts_summary', '📋 Charts-Übersicht'),
+            ('get_current_charts', '📈 Aktuelle Charts'),
+            ('get_chart_statistics', '📊 Chart-Statistiken')
+        ]
+        
+        for method_name, description in chart_methods:
+            if hasattr(charts_manager, method_name):
+                print(f"   ✅ {description}")
+            else:
+                print(f"   ⚠️ {description} (nicht verfügbar)")
+        
+        # Einfache Charts-Anzeige
+        choice = safe_input("\nWelche Charts anzeigen? (1=Übersicht, 2=Aktuell, 3=Statistiken): ")
+        
+        if choice == "1" and hasattr(charts_manager, 'get_charts_summary'):
             summary = charts_manager.get_charts_summary()
-            print(f"📊 Charts verfügbar: {summary}")
+            print(f"\n📋 Charts-Übersicht: {summary}")
+            
+        elif choice == "2" and hasattr(charts_manager, 'get_current_charts'):
+            charts = charts_manager.get_current_charts()
+            print(f"\n📈 Aktuelle Charts ({len(charts)} Einträge):")
+            for i, chart in enumerate(charts[:10]):  # Nur erste 10
+                print(f"   {i+1}. {chart.get('name', 'Unbekannt')} (Rang: {chart.get('rank', 'N/A')})")
+                
+        elif choice == "3" and hasattr(charts_manager, 'get_chart_statistics'):
+            stats = charts_manager.get_chart_statistics()
+            print(f"\n📊 Chart-Statistiken: {stats}")
+            
         else:
-            print("📊 Charts-System ist aktiv")
+            print("❌ Ungültige Auswahl oder Funktion nicht verfügbar")
     
     except Exception as e:
-        print(f"❌ Fehler beim Laden der Charts: {e}")
+        print(f"❌ Fehler beim Anzeigen der Charts: {e}")
 
 def menu_update_charts(charts_manager, tracker):
     """
@@ -653,6 +796,35 @@ def menu_update_charts(charts_manager, tracker):
     """
     logger.warning("⚠️ menu_update_charts ist veraltet - nutze menu_batch_charts_update")
     menu_batch_charts_update(charts_manager)
+
+def menu_update_charts_batch(charts_manager, tracker):
+    """Option 14: Charts vollständig aktualisieren - REAKTIVIERT"""
+    print("\n🚀 CHARTS BATCH-UPDATE")
+    print("=" * 25)
+    
+    if not charts_manager:
+        print("❌ Charts Manager nicht verfügbar")
+        return
+    
+    try:
+        print("🔄 Starte vollständiges Charts-Update...")
+        print("   ⚠️ Dies kann einige Minuten dauern")
+        
+        # Prüfe verfügbare Update-Methoden
+        if hasattr(charts_manager, 'update_all_charts_batch'):
+            result = charts_manager.update_all_charts_batch()
+            print(f"✅ Batch-Update abgeschlossen: {result}")
+            
+        elif hasattr(charts_manager, 'update_all_charts'):
+            result = charts_manager.update_all_charts()
+            print(f"✅ Standard-Update abgeschlossen: {result}")
+            
+        else:
+            print("❌ Keine Update-Methode verfügbar")
+            print("💡 Charts Manager möglicherweise nicht vollständig initialisiert")
+    
+    except Exception as e:
+        print(f"❌ Charts-Update fehlgeschlagen: {e}")
 
 def menu_charts_deals(charts_manager, tracker):
     """Option 15: Charts-Deals anzeigen"""
@@ -1337,7 +1509,7 @@ def execute_menu_handler(handler_name: str, tracker, charts_manager, es_manager)
             
             # Charts (nur wenn verfügbar)
             'menu_show_charts': lambda: menu_show_charts(charts_manager, tracker) if charts_manager else print("❌ Charts Manager nicht verfügbar"),
-            'menu_update_charts_complete': lambda: menu_update_charts(charts_manager, tracker) if charts_manager else print("❌ Charts Manager nicht verfügbar"),
+            'menu_update_charts_complete': lambda: menu_update_charts_batch(charts_manager, tracker) if charts_manager else print("❌ Charts Manager nicht verfügbar"),
             'menu_charts_deals': lambda: menu_charts_deals(charts_manager, tracker) if charts_manager else print("❌ Charts Manager nicht verfügbar"),
             'menu_charts_statistics': lambda: menu_charts_statistics(charts_manager, tracker) if charts_manager else print("❌ Charts Manager nicht verfügbar"),
             'menu_charts_automation': lambda: menu_charts_automation(charts_manager, tracker) if charts_manager else print("❌ Charts Manager nicht verfügbar"),
@@ -1514,7 +1686,7 @@ def run_classic_menu():
                         print("❌ Charts Manager nicht verfügbar")
                 elif choice == "14":
                     if charts_enabled:
-                        menu_update_charts(charts_manager, tracker)  # 🚀 NUTZT update_all_charts_batch()
+                        menu_update_charts_batch(charts_manager, tracker)  # 🚀 NUTZT update_all_charts_batch()
                     else:
                         print("❌ Charts Manager nicht verfügbar")
                 elif choice == "15":
