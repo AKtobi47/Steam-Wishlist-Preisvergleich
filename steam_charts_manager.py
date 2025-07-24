@@ -1847,7 +1847,7 @@ class SteamChartsManager:
         current_phase = 'charts'
         last_phase = None
 
-        def progress_callback(progress_info):
+        def progress_tracker_wrapper(progress_info):
             """ProgressTracker-kompatible Progress-Updates"""
             nonlocal current_phase, last_phase
 
@@ -1908,7 +1908,7 @@ class SteamChartsManager:
 
         # Progress: Start
         if progress_callback:
-            progress_callback({
+            progress_tracker_wrapper({
                 'progress_percent': 0,
                 'status': 'Initialisierung',
                 'current_task': 'Starte Charts-Update',
@@ -1927,7 +1927,7 @@ class SteamChartsManager:
             base_percent = (i / total_chart_types) * 60  # Charts = 60% der Gesamt-Arbeit
 
             if progress_callback:
-                progress_callback({
+                progress_tracker_wrapper({
                     'progress_percent': base_percent,
                     'status': f'📊 Sammle {chart_type} Charts',
                     'current_task': f'Chart-Typ {i+1}/{total_chart_types}',
@@ -1980,7 +1980,7 @@ class SteamChartsManager:
         # Phase 2: Charts in Datenbank schreiben (60-70%)
         if all_charts_data:
             if progress_callback:
-                progress_callback({
+                progress_tracker_wrapper({
                     'progress_percent': 60,
                     'status': '💾 Schreibe Charts in Datenbank',
                     'current_task': f'{len(all_charts_data)} Charts verarbeiten'
@@ -2015,7 +2015,7 @@ class SteamChartsManager:
         # Phase 3: Namen aktualisieren (70-85%) - KORRIGIERT
         if include_names and all_charts_data:
             if progress_callback:
-                progress_callback({
+                progress_tracker_wrapper({
                     'progress_percent': 70,
                     'status': '📝 Namen aktualisieren',
                     'current_task': 'Steam API Namen abrufen'
@@ -2130,7 +2130,7 @@ class SteamChartsManager:
         # Finale Progress-Meldung
         if progress_callback:
             final_status = "completed" if overall_success else "completed_with_errors"
-            progress_callback({
+            progress_tracker_wrapper({
                 'progress_percent': 100,
                 'status': final_status,
                 'current_task': f"✅ Abgeschlossen: {len(all_charts_data)} Charts, {results['name_updates'].get('updated_count', 0)} Namen, {results['price_updates'].get('updated_count', 0)} Preise",

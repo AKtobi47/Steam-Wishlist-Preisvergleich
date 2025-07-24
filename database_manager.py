@@ -54,10 +54,28 @@ class DatabaseManager:
     
     def _init_database(self):
         """Initialisiert alle erforderlichen Tabellen mit KORREKTEM Schema"""
+        try:
+            from logging_config import get_database_logger
+            logger = get_database_logger()
+        except ImportError:
+            logging.basicConfig(level=logging.INFO)
+            logger = logging.getLogger(__name__)
+
+
         with self.lock:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                
+
+
+                # ===================================================
+                # Kern-Tabellen sicherstellen
+                # ===================================================
+                from database_manager import create_batch_writer
+                batch_writer = create_batch_writer(self)
+                batch_writer.ensure_price_snapshots_table()
+                batch_writer.ensure_charts_tracking_table()
+                batch_writer.ensure_charts_prices_table()
+
                 # ===================================================
                 # HAUPT-TRACKING-TABELLE
                 # ===================================================
@@ -76,83 +94,12 @@ class DatabaseManager:
                     )
                 ''')
                 
-                # ===================================================
-                # PRICE SNAPSHOTS (ERWEITERT FÜR ALLE STORES)
-                # ===================================================
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS price_snapshots (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        steam_app_id TEXT NOT NULL REFERENCES tracked_apps,
-                        game_title TEXT,
-                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        
-                        -- Steam Preise
-                        steam_price REAL,
-                        steam_original_price REAL,
-                        steam_discount_percent INTEGER DEFAULT 0,
-                        steam_available BOOLEAN DEFAULT 0,
-                        
-                        -- GreenManGaming Preise
-                        greenmangaming_price REAL,
-                        greenmangaming_original_price REAL,
-                        greenmangaming_discount_percent INTEGER DEFAULT 0,
-                        greenmangaming_available BOOLEAN DEFAULT 0,
-                        
-                        -- GOG Preise
-                        gog_price REAL,
-                        gog_original_price REAL,
-                        gog_discount_percent INTEGER DEFAULT 0,
-                        gog_available BOOLEAN DEFAULT 0,
-                        
-                        -- HumbleStore Preise
-                        humblestore_price REAL,
-                        humblestore_original_price REAL,
-                        humblestore_discount_percent INTEGER DEFAULT 0,
-                        humblestore_available BOOLEAN DEFAULT 0,
-                        
-                        -- Fanatical Preise
-                        fanatical_price REAL,
-                        fanatical_original_price REAL,
-                        fanatical_discount_percent INTEGER DEFAULT 0,
-                        fanatical_available BOOLEAN DEFAULT 0,
-                        
-                        -- Gamesplanet Preise
-                        gamesplanet_price REAL,
-                        gamesplanet_original_price REAL,
-                        gamesplanet_discount_percent INTEGER DEFAULT 0,
-                        gamesplanet_available BOOLEAN DEFAULT 0
-                    )
-                ''')
                 
                 # ===================================================
                 # STEAM CHARTS TABELLEN (KORRIGIERT - ENTSPRICHT ECHTER DDL)
                 # ===================================================
                 
-                # steam_charts_tracking (HAUPTTABELLE für Charts)
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS steam_charts_tracking (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        steam_app_id TEXT NOT NULL,
-                        name TEXT NOT NULL,
-                        chart_type TEXT NOT NULL,
-                        current_rank INTEGER DEFAULT 0,
-                        best_rank INTEGER DEFAULT 999999,
-                        first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        total_appearances INTEGER DEFAULT 1,
-                        active BOOLEAN DEFAULT 1,
-                        metadata TEXT,
-                        -- ERWEITERTE SPALTEN FÜR KOMPATIBILITÄT
-                        days_in_charts INTEGER DEFAULT 1,
-                        rank_trend TEXT DEFAULT 'new',
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        peak_players INTEGER,
-                        current_players INTEGER,
-                        UNIQUE(steam_app_id, chart_type)
-                    )
-                ''')
-                
-                # charts_history (wie echte DDL)
+                # charts_history
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS charts_history (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -161,22 +108,6 @@ class DatabaseManager:
                         rank_position INTEGER NOT NULL,
                         snapshot_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         additional_data TEXT
-                    )
-                ''')
-                
-                # steam_charts_prices (wie echte DDL)
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS steam_charts_prices (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        steam_app_id TEXT NOT NULL,
-                        chart_type TEXT NOT NULL,
-                        current_price REAL,
-                        original_price REAL,
-                        discount_percent INTEGER DEFAULT 0,
-                        store TEXT DEFAULT 'Steam',
-                        deal_url TEXT,
-                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (steam_app_id, chart_type) REFERENCES steam_charts_tracking(steam_app_id, chart_type)
                     )
                 ''')
                 
