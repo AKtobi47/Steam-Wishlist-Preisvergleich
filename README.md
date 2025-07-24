@@ -1,3 +1,6 @@
+Letztes Kibana-Dashboard:
+Dashboard.ndjson
+
 # 💰 Steam Price Tracker v1.0
 
 **Vollständiges System für automatisches Steam-Preis-Tracking mit CheapShark API**
