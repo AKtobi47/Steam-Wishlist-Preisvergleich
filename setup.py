@@ -12,7 +12,7 @@ VOLLSTÄNDIGKEIT:
 - Database-Manager Kompatibilität
 - Neue und alte Funktionen kombiniert
 """
-
+from typing import List
 import os
 import sys
 import subprocess

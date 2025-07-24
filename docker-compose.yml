@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  steam-price-tracker:
+    build: .
+    container_name: steam_price_tracker
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./exports:/app/exports
+      - ./backups:/app/backups
+    environment:
+      - DATABASE_PATH=/app/data/steam_price_tracker.db
+      - LOG_LEVEL=INFO
+    restart: unless-stopped
+    
+  # Optional: Elasticsearch für erweiterte Analytics
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.8.0
+    container_name: steam_elasticsearch
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    profiles:
+      - analytics
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.8.0
+    container_name: steam_kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+    profiles:
+      - analytics
+
+volumes:
+  elasticsearch_data:
