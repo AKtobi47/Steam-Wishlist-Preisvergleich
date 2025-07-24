@@ -453,7 +453,16 @@ class ElasticsearchManager:
             'tracked_apps_price_history': {
                 'properties': {
                     'steam_app_id':         {'type': 'keyword'},
-                    'name':                 {'type': 'text', 'analyzer': 'standard'},
+                    "name": {
+                        "type": "text",
+                        "analyzer": "standard",
+                        "fields": {
+                        "keyword": {
+                            "type": "keyword",
+                            "ignore_above": 256
+                        }
+                        }
+                    },
                     'target_price':         {'type': 'float'},
                     'timestamp':            {'type': 'date'},
                     'steam_price':          {'type': 'float'},
@@ -467,7 +476,16 @@ class ElasticsearchManager:
             'tracked_apps_latest_prices': {
                 'properties': {
                     'steam_app_id': {'type': 'keyword'},
-                    'name': {'type': 'text', 'analyzer': 'standard'},
+                    "name": {
+                        "type": "text",
+                        "analyzer": "standard",
+                        "fields": {
+                        "keyword": {
+                            "type": "keyword",
+                            "ignore_above": 256
+                        }
+                        }
+                    },
                     'app_active': {'type': 'boolean'},
                     'target_price': {'type': 'float'},
                     'app_source': {'type': 'keyword'},
