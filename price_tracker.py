@@ -30,6 +30,8 @@ except ImportError:
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     logger = logging.getLogger(__name__)
 
+_INITIALIZING = False
+
 class SteamPriceTracker:
     """
     Steam Price Tracker Hauptklasse - KORRIGIERT
@@ -47,34 +49,51 @@ class SteamPriceTracker:
             enable_charts: Charts-Funktionalität aktivieren
             enable_scheduler: Scheduler aktivieren
         """
-        # Database Manager
-        self.db_manager = db_manager or create_database_manager()
+
+        global _INITIALIZING
         
-        # API Key
-        self.api_key = api_key or self._load_api_key()
+        # Rekursions-Schutz
+        if _INITIALIZING:
+            print("⚠️ Rekursion erkannt - stoppe Charts-Initialisierung")
+            enable_charts = False
+            enable_scheduler = False
         
-        # Features
-        self.enable_charts = enable_charts
-        self.enable_scheduler = enable_scheduler
-        
-        # Scheduler
-        self.scheduler = None
-        self.scheduler_thread = None
-        self.scheduler_running = False
-        
-        # Charts Manager
-        self.charts_manager = None
-        self.charts_enabled = False
-        
-        # Performance Tracking
-        self.last_update = None
-        self.update_count = 0
-        self.error_count = 0
-        
-        # Initialisierung
-        self._init_components()
-        
-        logger.info("✅ SteamPriceTracker erfolgreich initialisiert")
+        _INITIALIZING = True
+
+        try:
+            print(f"🔧 SteamPriceTracker.__init__ - enable_charts={enable_charts}")
+            
+            # Database Manager
+            self.db_manager = db_manager or create_database_manager()
+            
+            # API Key
+            self.api_key = api_key or self._load_api_key()
+            
+            # Features
+            self.enable_charts = enable_charts
+            self.enable_scheduler = enable_scheduler
+            
+            # Initialisiere alle Variablen BEVOR _init_components
+            self.scheduler = None
+            self.scheduler_thread = None
+            self.scheduler_running = False
+            self.charts_manager = None
+            self.charts_enabled = False
+            self.last_update = None
+            self.update_count = 0
+            self.error_count = 0
+            
+            # NUR wenn nicht bereits initialisierend
+            if not _INITIALIZING or enable_charts:
+                self._init_components()
+            
+            print("✅ SteamPriceTracker erfolgreich initialisiert")
+            logger.info("✅ SteamPriceTracker erfolgreich initialisiert")
+            
+        finally:
+            _INITIALIZING = False
+
+    
     
     def _load_api_key(self) -> Optional[str]:
         """Lädt Steam API Key aus .env Datei"""
@@ -97,17 +116,33 @@ class SteamPriceTracker:
             return None
     
     def _init_components(self):
-        """Initialisiert alle Komponenten"""
-        # Charts Manager
-        if self.enable_charts:
+        """SICHERE Komponenten-Initialisierung"""
+        global _INITIALIZING
+        
+        print(f"🔧 _init_components - enable_charts={self.enable_charts}")
+        
+        # Charts Manager NUR wenn explizit gewünscht UND nicht bereits initialisierend
+        if self.enable_charts and not _INITIALIZING:
             try:
-                from steam_charts_manager import SteamChartsManager
+                print("🔧 Versuche Charts Manager zu laden...")
+                
+                # WICHTIG: Lazy Import um Zirkel zu vermeiden
+                import importlib
+                charts_module = importlib.import_module('steam_charts_manager')
+                SteamChartsManager = getattr(charts_module, 'SteamChartsManager')
+                
                 self.charts_manager = SteamChartsManager(self.api_key, self.db_manager, self)
                 self.charts_enabled = True
+                print("✅ Charts Manager initialisiert")
                 logger.info("✅ Charts Manager initialisiert")
-            except ImportError:
-                logger.warning("⚠️ Charts Manager nicht verfügbar")
+                
+            except Exception as e:
+                print(f"⚠️ Charts Manager Fehler: {e}")
+                logger.warning(f"⚠️ Charts Manager nicht verfügbar: {e}")
                 self.charts_enabled = False
+        else:
+            print("ℹ️ Charts Manager übersprungen")
+            self.charts_enabled = False
         
         # Scheduler
         if self.enable_scheduler:
@@ -1537,6 +1572,7 @@ class SteamPriceTracker:
 # FACTORY FUNCTIONS
 # =====================================================================
 
+
 def create_price_tracker(db_path: str = "steam_price_tracker.db", 
                         api_key: Optional[str] = None,
                         enable_charts: bool = True) -> SteamPriceTracker:
@@ -1551,23 +1587,120 @@ def create_price_tracker(db_path: str = "steam_price_tracker.db",
     Returns:
         SteamPriceTracker Instanz
     """
+    global _INITIALIZING
+    
+    print(f"🔧 create_price_tracker aufgerufen - db_path={db_path}, enable_charts={enable_charts}")
+    
+    # Singleton-Check mit statischem Attribut
+    if hasattr(create_price_tracker, '_instance') and create_price_tracker._instance:
+        print("ℹ️ Verwende existierende Tracker-Instanz")
+        return create_price_tracker._instance
+    
+    # Rekursions-Schutz
+    if _INITIALIZING:
+        print("❌ Rekursion in create_price_tracker erkannt - Abbruch")
+        return None
+    
     try:
-        # Database Manager erstellen
+        print("🔧 Erstelle Database Manager...")
         db_manager = create_database_manager(db_path)
         
-        # Price Tracker erstellen
+        print("🔧 Erstelle SteamPriceTracker...")
         tracker = SteamPriceTracker(
             db_manager=db_manager,
             api_key=api_key,
-            enable_charts=enable_charts
+            enable_charts=enable_charts,
+            enable_scheduler=False  # Scheduler später separat starten
         )
         
+        # Instanz für Singleton speichern
+        create_price_tracker._instance = tracker
+        
+        print("✅ SteamPriceTracker erfolgreich erstellt")
         logger.info(f"✅ SteamPriceTracker erstellt mit DB: {db_path}")
         return tracker
         
     except Exception as e:
+        print(f"❌ Fehler beim Erstellen: {e}")
         logger.error(f"❌ Fehler beim Erstellen des SteamPriceTracker: {e}")
         return None
+    
+def create_tracker_with_fallback_safe():
+    """
+    SICHERE Version für main.py - verhindert endlose Schleifen
+    """
+    print("🚀 Sichere Tracker-Initialisierung...")
+    
+    # Timeout-Schutz
+    import time
+    start_time = time.time()
+    timeout = 10  # 10 Sekunden Maximum
+    
+    try:
+        # Erste Versuche: Ohne Charts
+        print("📋 Erstelle Basis-Tracker ohne Charts...")
+        tracker = create_price_tracker(enable_charts=False)
+        
+        if not tracker:
+            raise Exception("Basis-Tracker konnte nicht erstellt werden")
+        
+        # Charts Manager separat hinzufügen (falls gewünscht)
+        charts_manager = None
+        try:
+            if time.time() - start_time < timeout:
+                print("📊 Versuche Charts Manager hinzuzufügen...")
+                if hasattr(tracker, '_init_components'):
+                    tracker.enable_charts = True
+                    tracker._init_components()
+                    charts_manager = tracker.charts_manager
+        except Exception as e:
+            print(f"⚠️ Charts Manager konnte nicht hinzugefügt werden: {e}")
+        
+        # Elasticsearch Manager
+        es_manager = None
+        try:
+            from elasticsearch_manager import ElasticsearchManager
+            es_manager = ElasticsearchManager()
+            if not es_manager.test_connection():
+                es_manager = None
+        except:
+            pass
+        
+        duration = time.time() - start_time
+        print(f"✅ Tracker erfolgreich erstellt in {duration:.1f}s")
+        
+        return tracker, charts_manager, es_manager
+    
+    except Exception as e:
+        print(f"❌ Kritischer Fehler: {e}")
+        
+        # Absoluter Notfall-Tracker
+        class MinimalTracker:
+            def __init__(self):
+                self.charts_enabled = False
+                self.charts_manager = None
+                try:
+                    from database_manager import create_database_manager
+                    self.db_manager = create_database_manager()
+                except:
+                    self.db_manager = None
+            
+            def get_tracked_apps(self):
+                try:
+                    return self.db_manager.get_tracked_apps() if self.db_manager else []
+                except:
+                    return []
+            
+            def get_database_stats(self):
+                return {
+                    'tracked_apps': 0,
+                    'total_snapshots': 0,
+                    'stores_tracked': ['Steam'],
+                    'newest_snapshot': None,
+                    'emergency_mode': True
+                }
+        
+        return MinimalTracker(), None, None
 
 def setup_full_automation(db_path: str = "steam_price_tracker.db",
                          api_key: Optional[str] = None) -> SteamPriceTracker:
