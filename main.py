@@ -14,7 +14,7 @@ import time as time_module
 import threading
 from typing import Dict, List, Optional
 
-# Core imports (bestehend)
+# Core imports
 from database_manager import DatabaseManager
 from price_tracker import SteamPriceTracker, create_price_tracker
 from steam_wishlist_manager import SteamWishlistManager
@@ -27,7 +27,7 @@ except ImportError:
     print("⚠️ Dynamisches Menü nicht verfügbar - nutze klassisches Menü")
     DYNAMIC_MENU_AVAILABLE = False
 
-# Charts imports (bestehend)
+# Charts imports 
 try:
     from steam_charts_manager import CHART_TYPES
     VALID_CHART_TYPES = list(CHART_TYPES.keys())
@@ -35,7 +35,7 @@ except ImportError:
     VALID_CHART_TYPES = ['most_played', 'top_releases', 'most_concurrent_players']
     print("⚠️ steam_charts_manager nicht verfügbar - verwende Fallback Chart-Typen")
 
-# Logging Konfiguration (bestehend)
+# Logging Konfiguration
 try:
     from logging_config import get_main_logger
     logger = get_main_logger()
@@ -223,7 +223,7 @@ def load_stats_safe(tracker):
 
 
 # =================================================================
-# CHARTS OPERATIONS (bestehend, erweitert)
+# CHARTS OPERATIONS
 # =================================================================
 
 def update_charts_safe(charts_manager):
@@ -260,7 +260,7 @@ def get_charts_deals_safe(charts_manager, tracker):
         return []
 
 # =================================================================
-# MAIN MENU FUNCTIONS (alle bestehenden + neue)
+# MAIN MENU FUNCTIONS
 # =================================================================
 
 def menu_add_app_manually(tracker):
@@ -721,14 +721,12 @@ def menu_charts_automation(charts_manager, tracker):
         
         if hasattr(charts_manager, 'update_all_charts_batch'):
             try:
-                # GEFIXT: VERWENDE time_module ANSTATT time
-                start_time = time_module.time()  # ← HIER WAR DAS PROBLEM!
+                start_time = time_module.time()
                 result = charts_manager.update_all_charts_batch(
                     include_names=True,
                     include_prices=True
                 )
-                # GEFIXT: VERWENDE time_module ANSTATT time
-                duration = time_module.time() - start_time  # ← HIER WAR DAS PROBLEM!
+                duration = time_module.time() - start_time
                 
                 if result.get('overall_success'):
                     print(f"✅ Vollständiges Update erfolgreich in {duration:.1f}s!")
@@ -752,14 +750,12 @@ def menu_charts_automation(charts_manager, tracker):
         
         if hasattr(charts_manager, 'update_all_charts_batch'):
             try:
-                # GEFIXT: VERWENDE time_module ANSTATT time
-                start_time = time_module.time()  # ← HIER WAR DAS PROBLEM!
+                start_time = time_module.time()
                 result = charts_manager.update_all_charts_batch(
                     include_names=False,
                     include_prices=False
                 )
-                # GEFIXT: VERWENDE time_module ANSTATT time
-                duration = time_module.time() - start_time  # ← HIER WAR DAS PROBLEM!
+                duration = time_module.time() - start_time
                 
                 if result.get('overall_success'):
                     print(f"✅ Schnelles Update erfolgreich in {duration:.1f}s!")
@@ -901,8 +897,7 @@ def menu_batch_charts_update(charts_manager):
     try:
         print("\n🚀 BATCH-Update gestartet...")
         
-        # GEFIXT: VERWENDE time_module ANSTATT time
-        start_time = time_module.time()  # ← HIER WAR DAS PROBLEM!
+        start_time = time_module.time()
         
         # Progress-Callback
         def progress_callback(progress_info):
@@ -918,8 +913,7 @@ def menu_batch_charts_update(charts_manager):
                 progress_callback=progress_callback if show_progress else None
             )
             
-            # GEFIXT: VERWENDE time_module ANSTATT time
-            duration = time_module.time() - start_time  # ← HIER WAR DAS PROBLEM!
+            duration = time_module.time() - start_time
             
             if result.get('overall_success'):
                 print(f"\n🎉 BATCH-Update erfolgreich in {duration:.1f}s!")
@@ -954,7 +948,7 @@ def menu_batch_charts_update(charts_manager):
         if progress_tracker:
             progress_tracker.stop()
 
-# Elasticsearch-Funktionen (bestehend)
+# Elasticsearch-Funktionen 
 def menu_elasticsearch_export(es_manager, tracker):
     """Option 18: ES Daten exportieren"""
     print("\n📤 ELASTICSEARCH EXPORT")
@@ -1015,7 +1009,7 @@ def menu_elasticsearch_sync(es_manager, tracker):
     print("🔄 Synchronisiere Daten mit Elasticsearch...")
     print("💡 Diese Funktion ist noch in Entwicklung")
 
-# System-Tools (bestehend)
+# System-Tools 
 def menu_system_tools(tracker):
     """Option 23: System-Tools"""
     print("\n🔧 SYSTEM-TOOLS")
@@ -1213,7 +1207,7 @@ def run_dynamic_menu():
             print("⚠️ Statistiken konnten nicht geladen werden")
             print("=" * 60)
         
-        # 🚀 VOLLSTÄNDIGE FUNCTION MAP - ALLE FUNKTIONEN
+        # VOLLSTÄNDIGE FUNCTION MAP - ALLE FUNKTIONEN
         function_map = {
             # 🏠 BASIS-FUNKTIONEN
             'menu_add_app_manually': lambda: menu_add_app_manually(tracker),

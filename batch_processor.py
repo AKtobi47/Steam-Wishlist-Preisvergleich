@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Enhanced Batch Processor CLI - Erweiterte Verwaltung für Steam Price Tracker
+Batch Processor CLI - Erweiterte Verwaltung für Steam Price Tracker
 Mit App-Namen Updates und erweiterten Wartungsfunktionen
 """
 
@@ -712,7 +712,7 @@ def cmd_run_batch_optimized(args):
 
 def cmd_batch_performance(args):
     """
-    NEUE FUNKTION: Detaillierte BATCH-Performance Analyse
+    Detaillierte BATCH-Performance Analyse
     """
     print("📊 BATCH-PERFORMANCE MONITOR")
     print("=" * 32)
@@ -823,7 +823,7 @@ def cmd_batch_charts_update(args):
 
 def cmd_batch_automation_setup(args):
     """
-    NEUE FUNKTION: BATCH-Automation Setup via CLI
+    BATCH-Automation Setup via CLI
     """
     print("🚀 BATCH-AUTOMATION SETUP")
     print("=" * 28)
@@ -913,7 +913,7 @@ def cmd_batch_automation_setup(args):
 
 def cmd_batch_health_check(args):
     """
-    NEUE FUNKTION: Umfassender BATCH-System Gesundheitscheck
+    Umfassender BATCH-System Gesundheitscheck
     """
     print("🔍 BATCH-SYSTEM GESUNDHEITSCHECK")
     print("=" * 37)
