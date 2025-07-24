@@ -60,7 +60,7 @@ class SteamChartsManager:
 }
 
     
-    def __init__(self, api_key: str, db_manager, price_tracker=None):
+    def __init__(self, api_key: str, db_manager=None, price_tracker=None):
         """
         Initialisiert Steam Charts Manager
         
@@ -69,35 +69,54 @@ class SteamChartsManager:
             db_manager: DatabaseManager Instanz
             price_tracker: Optionale PriceTracker Instanz
         """
+        try:
+            from logging_config import get_steam_charts_logger
+            self.logger = get_steam_charts_logger()
+        except ImportError:
+            import logging
+            self.logger = logging.getLogger(__name__)
+
         self.api_key = api_key
-        self.db_manager = db_manager
-        self.price_tracker = price_tracker
+
+        if db_manager:
+            self.db_manager = db_manager
+        else:
+            from database_manager import create_database_manager
+            self.db_manager = create_database_manager()
         
+        from database_manager import create_batch_writer
+        self.batch_writer = create_batch_writer(self.db_manager)
+        
+        db_manager.init_charts_tables()  # Sicherstellen, dass Charts-Tabellen existieren
+        
+        # Price Tracker
+        try:
+            from price_tracker import create_price_tracker
+            self.price_tracker = create_price_tracker()
+        except ImportError:
+            self.price_tracker = None
+            self.logger.warning("⚠️ Price Tracker nicht verfügbar")
+
+        # Charts-Konfiguration
+        self.charts_config = self._load_charts_config()
+
         # HTTP Session für API-Requests
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'SteamPriceTracker-Charts/3.0'
+            'User-Agent': 'SteamPriceTracker-Charts'
         })
         
         # Rate Limiting für Steam API
         self.last_steam_request = 0
         self.steam_rate_limit = 1.0  # 1 Sekunde zwischen Steam-Requests
-        
-        # Charts-Konfiguration
-        self.charts_config = self._load_charts_config()
+               
         
         # Background Scheduler Integration
         self.charts_scheduler_running = False
         self.charts_scheduler_thread = None
         self.stop_charts_scheduler_event = threading.Event()
         
-        # Charts-Tabellen in Datenbank sicherstellen
-        if hasattr(self.db_manager, 'init_charts_tables_enhanced'):
-            self.db_manager.init_charts_tables_enhanced()
-        elif hasattr(self.db_manager, 'init_charts_tables'):
-            self.db_manager.init_charts_tables()
-        
-        logger.info("✅ Steam Charts Manager mit Enhanced Background Scheduler initialisiert")
+        logger.info("✅ Steam Charts Manager initialisiert")
     
     def _wait_for_steam_rate_limit(self):
         """
@@ -1828,7 +1847,7 @@ class SteamChartsManager:
         current_phase = 'charts'
         last_phase = None
 
-        def progress_tracker_callback(progress_info):
+        def progress_callback(progress_info):
             """ProgressTracker-kompatible Progress-Updates"""
             nonlocal current_phase, last_phase
 
@@ -1888,8 +1907,8 @@ class SteamChartsManager:
         logger.info(f"📊 Chart-Typen: {', '.join(chart_types)}")
 
         # Progress: Start
-        if progress_tracker_callback:
-            progress_tracker_callback({
+        if progress_callback:
+            progress_callback({
                 'progress_percent': 0,
                 'status': 'Initialisierung',
                 'current_task': 'Starte Charts-Update',
@@ -1907,8 +1926,8 @@ class SteamChartsManager:
             # Progress für aktuelle Chart-Type
             base_percent = (i / total_chart_types) * 60  # Charts = 60% der Gesamt-Arbeit
 
-            if progress_tracker_callback:
-                progress_tracker_callback({
+            if progress_callback:
+                progress_callback({
                     'progress_percent': base_percent,
                     'status': f'📊 Sammle {chart_type} Charts',
                     'current_task': f'Chart-Typ {i+1}/{total_chart_types}',
@@ -1960,8 +1979,8 @@ class SteamChartsManager:
 
         # Phase 2: Charts in Datenbank schreiben (60-70%)
         if all_charts_data:
-            if progress_tracker_callback:
-                progress_tracker_callback({
+            if progress_callback:
+                progress_callback({
                     'progress_percent': 60,
                     'status': '💾 Schreibe Charts in Datenbank',
                     'current_task': f'{len(all_charts_data)} Charts verarbeiten'
@@ -1971,7 +1990,7 @@ class SteamChartsManager:
 
             try:
                 # Batch-Writer für Charts verwenden
-                batch_result = self.db_manager.batch_write_charts(all_charts_data)
+                batch_result = self.batch_writer.batch_write_charts(all_charts_data)
             
                 if batch_result.get('success', False):
                     results['charts_update'] = {
@@ -1995,8 +2014,8 @@ class SteamChartsManager:
 
         # Phase 3: Namen aktualisieren (70-85%) - KORRIGIERT
         if include_names and all_charts_data:
-            if progress_tracker_callback:
-                progress_tracker_callback({
+            if progress_callback:
+                progress_callback({
                     'progress_percent': 70,
                     'status': '📝 Namen aktualisieren',
                     'current_task': 'Steam API Namen abrufen'
@@ -2015,7 +2034,7 @@ class SteamChartsManager:
                     logger.info(f"🌐 Bulk-Namen-Update für {len(unique_app_ids)} Charts-Apps...")
                 
                     # VERWENDE KORRIGIERTE SICHERE METHODE
-                    successful_names = self._safe_update_chart_names_bulk(unique_app_ids, progress_tracker_callback)
+                    successful_names = self._safe_update_chart_names_bulk(unique_app_ids, progress_callback)
                 
                     results['name_updates'] = {
                         'success': True,
@@ -2042,7 +2061,7 @@ class SteamChartsManager:
             logger.info("💰 Phase 4: Preis-Updates für Charts-Apps...")
 
             try:
-                # ✅ SAMMLE NAMEN-CACHE VOR PREIS-UPDATE (NEU!)
+                # SAMMLE NAMEN-CACHE VOR PREIS-UPDATE
                 charts_names_cache = {}
                 if include_names and all_charts_data:
                     chart_app_ids_for_cache = list(set([
@@ -2054,7 +2073,7 @@ class SteamChartsManager:
                     charts_names_cache = self._collect_names_cache_after_update(chart_app_ids_for_cache)
                     logger.info(f"📋 Namen-Cache für Preis-Update: {len(charts_names_cache)} Einträge")
 
-                # Eindeutige App-IDs für Preis-Update (BESTEHEND - unverändert)
+                # Eindeutige App-IDs für Preis-Update
                 unique_app_ids = list(set([
                     str(chart.get('steam_app_id', ''))
                     for chart in all_charts_data
@@ -2062,13 +2081,13 @@ class SteamChartsManager:
                 ]))
 
                 if unique_app_ids and hasattr(self, 'price_tracker') and self.price_tracker:
-                    # ✅ EINZIGE ÄNDERUNG: charts_names_cache Parameter hinzufügen
+                    # charts_names_cache Parameter hinzufügen
                     price_result = self.safe_batch_update_charts_prices(
                         unique_app_ids, 
-                        progress_tracker_callback,  # Euer bestehender Callback
-                        charts_names_cache=charts_names_cache  # ✅ NEU!
+                        progress_callback,  # Euer bestehender Callback
+                        charts_names_cache=charts_names_cache
                     )
-                    results['price_updates'] = price_result  # BESTEHEND
+                    results['price_updates'] = price_result
                     logger.info(f"✅ Preis-Update: {price_result.get('updated_count', 0)} Apps aktualisiert")
                 else:
                     results['price_updates'] = {
@@ -2080,7 +2099,7 @@ class SteamChartsManager:
             except Exception as e:
                 logger.error(f"❌ Preis-Update Fehler: {e}")
                 results['price_updates'] = {'success': False, 'error': str(e)}
-                results['total_errors'] += 1  # BESTEHEND - unverändert
+                results['total_errors'] += 1
 
         # Phase 5: Finale Zusammenfassung (95-100%)
         total_duration = time_module.time() - start_time
@@ -2109,9 +2128,9 @@ class SteamChartsManager:
         })
 
         # Finale Progress-Meldung
-        if progress_tracker_callback:
+        if progress_callback:
             final_status = "completed" if overall_success else "completed_with_errors"
-            progress_tracker_callback({
+            progress_callback({
                 'progress_percent': 100,
                 'status': final_status,
                 'current_task': f"✅ Abgeschlossen: {len(all_charts_data)} Charts, {results['name_updates'].get('updated_count', 0)} Namen, {results['price_updates'].get('updated_count', 0)} Preise",
@@ -2365,33 +2384,9 @@ class SteamChartsManager:
         start_time = time_module.time()
     
         try:
-            # SCHRITT 3: Nutze bestehende Multi-Store-Funktionalität
-            logger.info("📊 Verwende Price Tracker Batch-Update...")
-        
-            def price_tracker_progress(progress_info):
-                if progress_tracker_callback and isinstance(progress_info, (int, float)):
-                    progress_tracker_callback(int(progress_info))
-        
-            price_result = self.price_tracker.batch_update_multiple_apps(
-                app_ids, 
-                progress_callback=price_tracker_progress
-            )
-        
-            if not price_result.get('success'):
-                logger.error(f"❌ Price Tracker Batch fehlgeschlagen: {price_result.get('error', 'Unbekannt')}")
-                return {
-                    'success': False,
-                    'error': f"Price Tracker Fehler: {price_result.get('error', 'Unbekannt')}",
-                    'apps_processed': len(app_ids),
-                    'updated_count': 0,
-                    'failed_count': len(app_ids),
-                    'total_duration': time_module.time() - start_time
-                }
-        
-            logger.info(f"✅ Price Tracker Batch: {price_result.get('successful_updates', 0)} Apps erfolgreich")
-        
-            # 🏗️ SCHRITT 4: Datenbankstruktur sicherstellen
-            if not self.db_manager.ensure_charts_prices_table():
+                  
+            # SCHRITT 3: Datenbankstruktur sicherstellen
+            if not self.batch_writer.ensure_charts_prices_table():
                 logger.error("❌ Charts-Prices-Tabelle konnte nicht sichergestellt werden")
                 return {
                     'success': False,
@@ -2402,11 +2397,11 @@ class SteamChartsManager:
                     'total_duration': time_module.time() - start_time
                 }
         
-            # SCHRITT 5: Charts-spezifische Anreicherung - Kopiere zu steam_charts_prices
-            charts_copied = 0
+            # SCHRITT 4: Besorge Preise für Apps
+            charts_written = 0
             charts_failed = 0
         
-            logger.info("📊 Kopiere Preisdaten zu steam_charts_prices...")
+            logger.info("📊 Sammle Preisdaten für steam_charts_prices...")
         
             with self.db_manager.get_connection() as conn:
                 cursor = conn.cursor()
@@ -2415,90 +2410,78 @@ class SteamChartsManager:
                     try:
                         chart_info = chart_apps_info.get(app_id, {})
                         chart_type = chart_info.get('chart_type', 'unknown')
+                        app_name = chart_info.get('name', f'Steam App {app_id}')
+
                     
-                        # Hole neueste price_snapshots für diese App
-                        cursor.execute("""
-                            SELECT * FROM price_snapshots 
-                            WHERE steam_app_id = ? 
-                            ORDER BY timestamp DESC LIMIT 1
-                        """, (app_id,))
+                        if hasattr(self.price_tracker, '_fetch_prices_for_app'):
+                            price_data = self.price_tracker._fetch_prices_for_app(app_id, app_name)
                     
-                        snapshot = cursor.fetchone()
-                        if snapshot:
-                            # Konvertiere zu Dictionary für einfache Verarbeitung
-                            if hasattr(snapshot, 'keys'):  # Row object
-                                snapshot_dict = dict(snapshot)
-                            else:  # Tuple
-                                # Spaltennamen aus price_snapshots holen
-                                cursor.execute("PRAGMA table_info(price_snapshots)")
-                                columns = [column[1] for column in cursor.fetchall()]
-                                snapshot_dict = dict(zip(columns, snapshot))
+                            if price_data and any(store_data.get('price', 0) > 0 for store_data in price_data.values() if isinstance(store_data, dict)):
+                                # In steam_charts_prices schreiben
+                                steam_data = price_data.get('steam', {})
+                                gmg_data = price_data.get('greenmangaming', {})
+                                gog_data = price_data.get('gog', {})
+                                humble_data = price_data.get('humblestore', {})
+                                fanatical_data = price_data.get('fanatical', {})
+                                gamesplanet_data = price_data.get('gamesplanet', {})
                         
-                            # Kopiere zu steam_charts_prices mit chart_type
-                            cursor.execute("""
-                                INSERT OR REPLACE INTO steam_charts_prices 
-                                (steam_app_id, chart_type, game_title, timestamp,
-                                 steam_price, steam_original_price, steam_discount_percent, steam_available,
-                                 greenmangaming_price, greenmangaming_original_price, greenmangaming_discount_percent, greenmangaming_available,
-                                 gog_price, gog_original_price, gog_discount_percent, gog_available,
-                                 humblestore_price, humblestore_original_price, humblestore_discount_percent, humblestore_available,
-                                 fanatical_price, fanatical_original_price, fanatical_discount_percent, fanatical_available,
-                                 gamesplanet_price, gamesplanet_original_price, gamesplanet_discount_percent, gamesplanet_available)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (
-                                app_id,
-                                chart_type,
-                                chart_info.get('name', snapshot_dict.get('game_title', f'Steam App {app_id}')),
-                                snapshot_dict.get('timestamp'),
-                                snapshot_dict.get('steam_price', 0),
-                                snapshot_dict.get('steam_original_price', 0),
-                                snapshot_dict.get('steam_discount_percent', 0),
-                                snapshot_dict.get('steam_available', False),
-                                snapshot_dict.get('greenmangaming_price', 0),
-                                snapshot_dict.get('greenmangaming_original_price', 0),
-                                snapshot_dict.get('greenmangaming_discount_percent', 0),
-                                snapshot_dict.get('greenmangaming_available', False),
-                                snapshot_dict.get('gog_price', 0),
-                                snapshot_dict.get('gog_original_price', 0),
-                                snapshot_dict.get('gog_discount_percent', 0),
-                                snapshot_dict.get('gog_available', False),
-                                snapshot_dict.get('humblestore_price', 0),
-                                snapshot_dict.get('humblestore_original_price', 0),
-                                snapshot_dict.get('humblestore_discount_percent', 0),
-                                snapshot_dict.get('humblestore_available', False),
-                                snapshot_dict.get('fanatical_price', 0),
-                                snapshot_dict.get('fanatical_original_price', 0),
-                                snapshot_dict.get('fanatical_discount_percent', 0),
-                                snapshot_dict.get('fanatical_available', False),
-                                snapshot_dict.get('gamesplanet_price', 0),
-                                snapshot_dict.get('gamesplanet_original_price', 0),
-                                snapshot_dict.get('gamesplanet_discount_percent', 0),
-                                snapshot_dict.get('gamesplanet_available', False)
-                            ))
-                            charts_copied += 1
+                                cursor.execute("""
+                                    INSERT OR REPLACE INTO steam_charts_prices 
+                                    (steam_app_id, chart_type, game_title, timestamp,
+                                     steam_price, steam_original_price, steam_discount_percent, steam_available,
+                                     greenmangaming_price, greenmangaming_original_price, greenmangaming_discount_percent, greenmangaming_available,
+                                     gog_price, gog_original_price, gog_discount_percent, gog_available,
+                                     humblestore_price, humblestore_original_price, humblestore_discount_percent, humblestore_available,
+                                     fanatical_price, fanatical_original_price, fanatical_discount_percent, fanatical_available,
+                                     gamesplanet_price, gamesplanet_original_price, gamesplanet_discount_percent, gamesplanet_available)
+                                    VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                """, (
+                                    app_id, chart_type, app_name,
+                                    # Steam
+                                    steam_data.get('price', 0), steam_data.get('original_price', 0), 
+                                    steam_data.get('discount_percent', 0), steam_data.get('available', False),
+                                    # GMG
+                                    gmg_data.get('price', 0), gmg_data.get('original_price', 0),
+                                    gmg_data.get('discount_percent', 0), gmg_data.get('available', False),
+                                    # GOG
+                                    gog_data.get('price', 0), gog_data.get('original_price', 0),
+                                    gog_data.get('discount_percent', 0), gog_data.get('available', False),
+                                    # Humble
+                                    humble_data.get('price', 0), humble_data.get('original_price', 0),
+                                    humble_data.get('discount_percent', 0), humble_data.get('available', False),
+                                    # Fanatical  
+                                    fanatical_data.get('price', 0), fanatical_data.get('original_price', 0),
+                                    fanatical_data.get('discount_percent', 0), fanatical_data.get('available', False),
+                                    # GamesPlanet
+                                    gamesplanet_data.get('price', 0), gamesplanet_data.get('original_price', 0),
+                                    gamesplanet_data.get('discount_percent', 0), gamesplanet_data.get('available', False)
+                                ))
+                                charts_written += 1
+                            else:
+                                charts_failed += 1
                         else:
-                            logger.debug(f"Keine price_snapshots für {app_id}")
                             charts_failed += 1
-                        
+                    
                     except Exception as app_error:
-                        logger.debug(f"❌ Charts-Kopie für {app_id} fehlgeschlagen: {app_error}")
+                        logger.debug(f"❌ Charts-Preis für {app_id} fehlgeschlagen: {app_error}")
                         charts_failed += 1
-            
+        
                 conn.commit()
+
+            # SCHRITT 5: Ergebnisse zurückgeben
         
             duration = time_module.time() - start_time
         
-            logger.info(f"💾 ✅ {charts_copied} Charts-Preise in steam_charts_prices geschrieben!")
+            logger.info(f"💾 ✅ {charts_written} Charts-Preise in steam_charts_prices geschrieben!")
         
             return {
-                'success': charts_copied > 0,
+                'success': charts_written > 0,
                 'apps_processed': len(app_ids),
-                'updated_count': charts_copied,
+                'updated_count': charts_written,
                 'failed_count': charts_failed,
                 'duration': duration,
-                'table_used': 'steam_charts_prices (multi-store)',
-                'method': 'price_tracker_integration',
-                'price_tracker_result': price_result,
+                'table_used': 'steam_charts_prices',
+                'method': 'direct_price_fetch',
                 'stores_supported': 6
             }
         
@@ -3753,12 +3736,8 @@ def create_batch_optimized_charts_manager(api_key: str, db_manager) -> SteamChar
     
     # Prüfe ob BATCH-Methoden verfügbar sind
     if not hasattr(charts_manager, 'update_all_charts_batch'):
-        logger.warning("⚠️ BATCH-Methoden nicht verfügbar - füge sie hinzu")
-        
-        # Monkey-patch BATCH-Methoden falls nötig
-        charts_manager.get_batch_performance_stats = lambda: get_batch_performance_stats(charts_manager)
-        charts_manager.update_specific_charts_batch = lambda ct, ma=100: update_specific_charts_batch(charts_manager, ct, ma)
-        charts_manager.batch_charts_health_check = lambda: batch_charts_health_check(charts_manager)
+        logger.warning("⚠️ BATCH-Methoden nicht verfügbar")
+        logger.info("💡 Tipp: Stellen Sie sicher, dass update_all_charts_batch() implementiert ist")
     
     return charts_manager
 

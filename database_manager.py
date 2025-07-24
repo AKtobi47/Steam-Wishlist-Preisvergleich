@@ -663,7 +663,7 @@ class DatabaseManager:
                 # Dictionary normal verarbeiten
                 normalized_data = {
                     'steam_app_id': steam_app_id,
-                    'game_title': game_name or price_data.get('game_title', f"Game {steam_app_id}"),
+                    'game_title': game_title or price_data.get('game_title', f"Game {steam_app_id}"),
                     'timestamp': price_data.get('timestamp', datetime.now())
                 }
                 steam_data = price_data.get('steam', {})
@@ -671,7 +671,7 @@ class DatabaseManager:
                 # Fallback für andere Typen
                 normalized_data = {
                     'steam_app_id': steam_app_id,
-                    'game_title': game_name or f"Game {steam_app_id}",
+                    'game_title': game_title or f"Game {steam_app_id}",
                     'timestamp': datetime.now()
                 }
                 steam_data = {}
