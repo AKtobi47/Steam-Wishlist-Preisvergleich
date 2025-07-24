@@ -148,74 +148,76 @@ class SteamWishlistManager:
     
     def get_simple_wishlist(self, steam_id: str) -> List[Dict]:
         """
-        Holt vereinfachte Wishlist von Steam
-        
+        Holt vereinfachte Wishlist von Steam über die offizielle API
+        Inkl. Spielnamen (nachgeladen)
+
         Args:
-            steam_id: Steam ID (verschiedene Formate unterstützt)
-            
+            steam_id: SteamID64 des eigenen Accounts
+
         Returns:
-            Liste von Wishlist-Items mit steam_app_id und name
+            Liste von Wishlist-Items mit steam_app_id, name, priority, added
         """
-        # Steam ID normalisieren
         steam_id_64 = self.get_steam_id_64(steam_id)
-        
+
         if not steam_id_64:
             logger.error(f"❌ Ungültige Steam ID: {steam_id}")
             return []
-        
+
         self._wait_for_rate_limit()
-        
-        # Steam Store API für Wishlist (öffentlich, kein API Key nötig)
-        url = f"https://store.steampowered.com/wishlist/profiles/{steam_id_64}/wishlistdata/"
-        
+
+        url = "https://api.steampowered.com/IWishlistService/GetWishlist/v1/"
+        params = {
+            "key": self.api_key,
+            "steamid": steam_id_64
+        }
+
         try:
-            logger.info(f"🔍 Lade Wishlist für Steam ID: {steam_id_64}")
-            response = self.session.get(url, timeout=15)
-            
+            logger.info(f"🔍 Lade Wishlist über Steam Web API für Steam ID: {steam_id_64}")
+            response = self.session.get(url, params=params, timeout=15)
+
             if response.status_code == 200:
                 try:
                     data = response.json()
-                    
-                    if not data:
-                        logger.warning("⚠️ Wishlist ist leer oder privat")
+                    items = data.get("response", {}).get("items", [])
+
+                    if not items:
+                        logger.warning("⚠️ Wishlist ist leer oder es wurde nichts zurückgegeben")
                         return []
-                    
-                    # Wishlist-Items verarbeiten
+
                     wishlist_items = []
-                    
-                    for app_id, item_data in data.items():
-                        # Steam App ID und Name extrahieren
-                        name = item_data.get('name', f'Unknown Game {app_id}')
-                        
+
+                    for item in items:
+                        app_id = str(item.get("appid"))
+                        name = self.get_app_name_only(app_id)
+
                         wishlist_items.append({
-                            'steam_app_id': app_id,
-                            'name': name,
-                            'priority': item_data.get('priority', 0),
-                            'added': item_data.get('added', 0)
+                            "steam_app_id": app_id,
+                            "name": name or f"App {app_id}",
+                            "priority": item.get("priority", 0),
+                            "added": item.get("added", 0)
                         })
-                    
+
                     logger.info(f"✅ {len(wishlist_items)} Wishlist-Items gefunden")
-                    
-                    # Nach Priorität sortieren (niedrigere Zahl = höhere Priorität)
-                    wishlist_items.sort(key=lambda x: x['priority'])
-                    
+                    wishlist_items.sort(key=lambda x: x["priority"])
                     return wishlist_items
-                    
+
                 except ValueError as e:
                     logger.error(f"❌ JSON Parse Fehler: {e}")
                     return []
-                    
+
             elif response.status_code == 403:
-                logger.error("❌ Wishlist ist privat - mache sie öffentlich in Steam Privatsphäre-Einstellungen")
+                logger.error("❌ Zugriff verweigert – vermutlich falscher SteamID oder ungültiger API Key")
                 return []
+
             else:
-                logger.error(f"❌ Steam Store API Fehler: {response.status_code}")
+                logger.error(f"❌ Steam API Fehler: {response.status_code} - {response.text}")
                 return []
-                
+
         except requests.RequestException as e:
-            logger.error(f"❌ Request Fehler beim Laden der Wishlist: {e}")
+            logger.error(f"❌ Request Fehler beim Abrufen der Wishlist: {e}")
             return []
-    
+
+
     def get_app_details(self, app_id: str) -> Optional[Dict]:
         """
         Holt Details für eine Steam App

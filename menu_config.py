@@ -1,6 +1,5 @@
 """
 Dynamisches Menu-System für Steam Price Tracker
-Finale Version - WIRKLICH dynamisch ohne statische Mappings
 """
 
 from dataclasses import dataclass
@@ -62,7 +61,7 @@ class MenuCategory:
         return available
 
 class DynamicMenuSystem:
-    """WIRKLICH dynamisches Menüsystem mit automatischer Nummerierung"""
+    """dynamisches Menüsystem mit automatischer Nummerierung"""
     
     def __init__(self):
         self.categories: List[MenuCategory] = []
@@ -73,7 +72,6 @@ class DynamicMenuSystem:
     def _initialize_menu_structure(self):
         """
         Initialisiert die komplette Menüstruktur mit allen Optionen
-        VOLLSTÄNDIGE VERSION mit menu_batch_charts_update Integration
         """
     
         # 🏠 BASIS-FUNKTIONEN (automatisch nummeriert)
@@ -176,7 +174,7 @@ class DynamicMenuSystem:
 
     def display_menu(self) -> None:
         """
-        VOLLSTÄNDIG KONFIGURIERBARE Menü-Anzeige - KORRIGIERTE VERSION
+        VOLLSTÄNDIG KONFIGURIERBARE Menü-Anzeige
         Alle Aspekte über .env steuerbar + funktionierende Menü-Stile
         """
         config = load_menu_config_from_env()
