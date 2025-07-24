@@ -453,7 +453,16 @@ class ElasticsearchManager:
             'tracked_apps_price_history': {
                 'properties': {
                     'steam_app_id':         {'type': 'keyword'},
-                    'name':                 {'type': 'text', 'analyzer': 'standard'},
+                    "name": {
+                        "type": "text",
+                        "analyzer": "standard",
+                        "fields": {
+                        "keyword": {
+                            "type": "keyword",
+                            "ignore_above": 256
+                        }
+                        }
+                    },
                     'target_price':         {'type': 'float'},
                     'timestamp':            {'type': 'date'},
                     'steam_price':          {'type': 'float'},
@@ -467,7 +476,16 @@ class ElasticsearchManager:
             'tracked_apps_latest_prices': {
                 'properties': {
                     'steam_app_id': {'type': 'keyword'},
-                    'name': {'type': 'text', 'analyzer': 'standard'},
+                    "name": {
+                        "type": "text",
+                        "analyzer": "standard",
+                        "fields": {
+                        "keyword": {
+                            "type": "keyword",
+                            "ignore_above": 256
+                        }
+                        }
+                    },
                     'app_active': {'type': 'boolean'},
                     'target_price': {'type': 'float'},
                     'app_source': {'type': 'keyword'},
@@ -559,19 +577,14 @@ class ElasticsearchManager:
         def prepare_record_for_elasticsearch(record):
             """Bereitet einen Datensatz für Elasticsearch vor"""
             # Timestamp-Felder ins ISO8601-Format bringen
-            for field in ['timestamp', 'first_tracked', 'last_updated', 'change_date']:
+            for field in ['timestamp', 'first_tracked', 'last_updated', 'change_date', 'price_timestamp']:
                 if field in record and isinstance(record[field], str):
                     if ' ' in record[field] and 'T' not in record[field]:
                         record[field] = record[field].replace(' ', 'T')
-            
-            # *_available Felder in Boolean umwandeln
+            # *_available Felder und app_active in Boolean umwandeln
             for key in record:
-                if key.endswith('_available'):
-                    if record[key] in [1, '1', True]:
-                        record[key] = True
-                    else:
-                        record[key] = False
-            
+                if key.endswith('_available') or key == 'app_active':
+                    record[key] = True if str(record[key]) in ('1', 'True', 'true', 'yes') else False
             return record
         
         def bulk_export_data(data, index_name, batch_size=10000):
