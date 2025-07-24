@@ -1,3 +1,7 @@
+Link zu Database File (steam_price_tracker)in Seafile, da zu gross für Git:
+https://seafile.rlp.net/d/263379a1691f4472968b/
+
+
 # 💰 Steam Price Tracker v1.0
 
 **Vollständiges System für automatisches Steam-Preis-Tracking mit CheapShark API**
