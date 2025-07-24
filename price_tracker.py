@@ -691,32 +691,90 @@ class SteamPriceTracker:
             return None
     
     def _fetch_steam_prices(self, steam_app_id: str) -> Optional[Dict]:
-        """Holt Preise vom Steam Store"""
+        """
+        Holt Preise vom Steam Store
+        """
         try:
             url = f"https://store.steampowered.com/api/appdetails"
-            params = {'appids': steam_app_id, 'filters': 'price_overview'}
-            
-            response = requests.get(url, params=params, timeout=10)
+            params = {
+                'appids': steam_app_id, 
+                'filters': 'price_overview',
+                'cc': 'de'  # Deutsche Preise
+            }
+        
+            response = requests.get(url, params=params, timeout=15)
             response.raise_for_status()
-            
+        
             data = response.json()
-            app_data = data.get(steam_app_id, {})
+        
+            # KRITISCHER FIX: Validiere Response-Typ
+            if not isinstance(data, dict):
+                logger.debug(f"Steam API gab unerwarteten Datentyp zurück: {type(data)} für App {steam_app_id}")
+                return None
+        
+            # App-spezifische Daten extrahieren
+            app_data = data.get(str(steam_app_id))
+        
+            # KRITISCHER FIX: Weitere Validierung
+            if not app_data:
+                logger.debug(f"Keine App-Daten für {steam_app_id} in Response")
+                return None
             
-            if app_data.get('success') and 'data' in app_data:
-                price_overview = app_data['data'].get('price_overview')
-                
-                if price_overview:
-                    return {
-                        'price': price_overview.get('final', 0) / 100,  # Von Cent zu Euro
-                        'original_price': price_overview.get('initial', 0) / 100,
-                        'discount_percent': price_overview.get('discount_percent', 0),
-                        'available': True
-                    }
+            if not isinstance(app_data, dict):
+                logger.debug(f"App-Daten sind kein Dictionary für {steam_app_id}: {type(app_data)}")
+                return None
+        
+            # Success-Flag prüfen
+            if not app_data.get('success', False):
+                logger.debug(f"Steam API success=False für {steam_app_id}")
+                return None
+        
+            # Price Overview extrahieren
+            if 'data' not in app_data:
+                logger.debug(f"Keine 'data'-Sektion für {steam_app_id}")
+                return None
             
+            app_info = app_data['data']
+            if not isinstance(app_info, dict):
+                logger.debug(f"App-Info ist kein Dictionary für {steam_app_id}: {type(app_info)}")
+                return None
+            
+            price_overview = app_info.get('price_overview')
+        
+            if price_overview and isinstance(price_overview, dict):
+                # Preise in Euro umrechnen (Steam gibt Cent zurück)
+                final_price = price_overview.get('final', 0) / 100
+                initial_price = price_overview.get('initial', final_price * 100) / 100
+                discount_percent = price_overview.get('discount_percent', 0)
+            
+                return {
+                    'price': final_price,
+                    'original_price': initial_price,
+                    'discount_percent': discount_percent,
+                    'available': True,
+                    'currency': price_overview.get('currency', 'EUR')
+                }
+        
+            # App verfügbar aber kein Preis (möglicherweise kostenlos)
+            if app_info.get('is_free', False):
+                return {
+                    'price': 0.0,
+                    'original_price': 0.0,
+                    'discount_percent': 0,
+                    'available': True,
+                    'currency': 'EUR'
+                }
+        
             return None
-            
+        
+        except requests.RequestException as e:
+            logger.debug(f"Request-Fehler bei Steam API für {steam_app_id}: {e}")
+            return None
+        except (ValueError, KeyError, TypeError) as e:
+            logger.debug(f"Parsing-Fehler bei Steam API für {steam_app_id}: {e}")
+            return None
         except Exception as e:
-            logger.debug(f"Fehler beim Abrufen der Steam-Preise für {steam_app_id}: {e}")
+            logger.debug(f"Unerwarteter Fehler bei Steam API für {steam_app_id}: {e}")
             return None
     
     def _fetch_cheapshark_prices(self, steam_app_id: str) -> Optional[Dict]:
@@ -847,61 +905,138 @@ class SteamPriceTracker:
         Holt Preis direkt von Steam Store API (Fallback)
         """
         try:
-            # Rate Limiting (bestehend)
+            # Rate Limiting
             if not hasattr(self, '_steam_last_request'):
                 self._steam_last_request = 0
-        
+    
             current_time = time_module.time()
             if current_time - self._steam_last_request < 1.2:
                 time_module.sleep(1.2 - (current_time - self._steam_last_request))
-        
+    
             self._steam_last_request = time_module.time()
-        
-            # Steam API Call (bestehend)
+    
+            # Steam API Call
             url = f"https://store.steampowered.com/api/appdetails"
             params = {
-                'appids': app_id,
+                'appids': str(app_id),
                 'filters': 'price_overview',
                 'cc': 'de'
             }
-        
+    
             response = requests.get(url, params=params, timeout=15)
-        
+    
             if response.status_code == 200:
                 data = response.json()
-            
-                # KRITISCHER FIX: Datentyp-Validierung
+        
+                # KRITISCHER FIX: Umfassende Datentyp-Validierung
                 if not isinstance(data, dict):
                     logger.debug(f"Steam API gab unerwartete Datenstruktur zurück: {type(data)}")
                     return None
-            
+        
                 app_data = data.get(str(app_id))
                 if not app_data or not isinstance(app_data, dict):
                     logger.debug(f"Keine gültigen App-Daten für {app_id}")
                     return None
-            
-                if not app_data.get('success'):
+        
+                if not app_data.get('success', False):
                     logger.debug(f"Steam API success=False für {app_id}")
                     return None
-            
-                # FIX: Sicherer Zugriff auf nested data
-                app_info = app_data.get('data', {})
-                if not isinstance(app_info, dict):
-                    logger.debug(f"App-Info ist kein Dictionary für {app_id}")
+        
+                # Data-Sektion validieren
+                app_info = app_data.get('data')
+                if not app_info or not isinstance(app_info, dict):
+                    logger.debug(f"App-Info ist kein Dictionary für {app_id}: {type(app_info)}")
                     return None
-            
+        
+                # Preis extrahieren
                 price_overview = app_info.get('price_overview')
                 if price_overview and isinstance(price_overview, dict):
                     final_price = price_overview.get('final', 0)
-                    return final_price / 100.0
-                elif app_info.get('is_free', False):
+                    if isinstance(final_price, (int, float)) and final_price > 0:
+                        return final_price / 100  # Cent zu Euro
+            
+                # Kostenlose Apps
+                if app_info.get('is_free', False):
                     return 0.0
-        
+    
             return None
-        
+    
         except Exception as e:
-            logger.debug(f"Steam API Fehler für {app_id}: {e}")
+            logger.debug(f"Steam Direct API Fehler für {app_id}: {e}")
             return None
+     
+    def _prepare_price_entry(self, app_id: str, price_data: Dict) -> Dict:
+        """
+        Bereitet einen Preis-Entry für die Datenbank vor
+        """
+        # Unterstützte Stores
+        SUPPORTED_STORES = [
+            'steam', 'greenmangaming', 'gog', 
+            'humblestore', 'fanatical', 'gamesplanet'
+        ]
+
+        # Basis-Entry
+        entry = {
+            'steam_app_id': str(app_id),
+            'game_title': price_data.get('game_title', f"App {app_id}"),
+            'timestamp': time_module.time(),
+        }
+
+        # Alle Store-Felder dynamisch hinzufügen
+        for store in SUPPORTED_STORES:
+            if store in price_data and isinstance(price_data[store], dict):
+                store_data = price_data[store]
+                entry.update({
+                    f'{store}_price': store_data.get('price', 0.0),
+                    f'{store}_original_price': store_data.get('original_price', 0.0),
+                    f'{store}_discount_percent': store_data.get('discount_percent', 0),
+                    f'{store}_available': store_data.get('available', False),
+                })
+            else:
+                # Fallback-Werte für nicht verfügbare Stores
+                entry.update({
+                    f'{store}_price': 0.0,
+                    f'{store}_original_price': 0.0,
+                    f'{store}_discount_percent': 0,
+                    f'{store}_available': False,
+                })
+
+        # Aggregierte Daten berechnen
+        available_prices = []
+        available_stores = []
+    
+        for store in SUPPORTED_STORES:
+            price = entry.get(f'{store}_price', 0)
+            available = entry.get(f'{store}_available', False)
+        
+            if available and price > 0:
+                available_prices.append(price)
+                available_stores.append(store)
+
+        # Beste Preis-Informationen
+        if available_prices:
+            best_price = min(available_prices)
+            best_price_idx = available_prices.index(best_price)
+            best_store = available_stores[best_price_idx]
+        
+            # Discount-Prozent vom besten Store
+            best_discount = entry.get(f'{best_store}_discount_percent', 0)
+        
+            entry.update({
+                'best_price': best_price,
+                'best_store': best_store,
+                'best_discount_percent': best_discount,
+                'total_stores_available': len(available_stores),
+            })
+        else:
+            entry.update({
+                'best_price': 0.0,
+                'best_store': '',
+                'best_discount_percent': 0,
+                'total_stores_available': 0,
+            })
+
+        return entry
 
     
     # =====================================================================
