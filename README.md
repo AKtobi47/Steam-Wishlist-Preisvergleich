@@ -1,120 +1,140 @@
-# 💰 Steam Price Tracker v1.0
+# 💰 Steam Price Tracker v1.2-dev
 
-**Vollständiges System für automatisches Steam-Preis-Tracking mit CheapShark API**
+**Professionelles System für automatisches Steam-Preis-Tracking mit erweiterten Analytics**
 
 ![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Status](https://img.shields.io/badge/status-production--ready-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.2--dev-orange.svg)
 
-## ✨ Features
+## ✨ Highlights
 
-- 🎯 **Direktes CheapShark-Tracking** mit Steam App IDs (kein komplexes Mapping)
-- 📊 **Multi-Store Preisvergleich** für 6 major Stores (Steam, GOG, etc.)
-- 📥 **Steam Wishlist Import** für automatisches Setup
-- ⚡ **Automatisches Preis-Tracking** mit konfigurierbaren Intervallen
-- 🗄️ **SQLite-Datenbank** für historische Preisdaten
-- 📈 **Preisverlauf und Trend-Analyse**
-- 🏆 **Best Deals Detection** mit Rabatt-Tracking
-- 📄 **CSV-Export** kompatibel mit Excel/Pandas
-- 🔧 **Benutzerfreundliche CLI** für alle Funktionen
-- 🛡️ **Robuste Fehlerbehandlung** und Rate Limiting
-- 📦 **Einfache Installation** mit Setup-Wizard
+- 🎯 **Direktes CheapShark-Tracking** mit Steam App IDs (kein komplexes Mapping nötig)
+- 📊 **Multi-Store Preisvergleich** für 6 major Stores (Steam, GOG, HumbleBundle, etc.)
+- 📥 **Steam Wishlist Import** mit vollständiger API-Integration
+- 📈 **Steam Charts Tracking** für automatische Trending-Spiele-Überwachung
+- 🔍 **Elasticsearch Analytics** mit Kibana-Dashboards für erweiterte Datenanalyse
+- ⚡ **Intelligentes Batch-Processing** mit optimierter Performance
+- 🗄️ **SQLite-Datenbank** für historische Preisdaten und Trends
+- 📄 **CSV/JSON-Export** kompatibel mit Excel, Pandas und Power BI
+- 🤖 **Background-Scheduler** für vollautomatisches Tracking
+- 🛡️ **Robuste Fehlerbehandlung** mit Rate Limiting und Retry-Logic
+- 📦 **Ein-Klick-Setup** mit automatischem Setup-Wizard
 
-## 🚀 Schnellstart
+## 🚀 5-Minuten Schnellstart
 
 ### 1. Installation
-
 ```bash
 # Repository klonen
 git clone <repository-url>
 cd steam-price-tracker
 
-# Setup-Wizard starten (installiert alles automatisch)
+# Ein-Klick-Setup (installiert alles automatisch)
 python setup.py setup
 ```
 
-### 2. Steam API Key
-
-1. Gehe zu [Steam Web API Key](https://steamcommunity.com/dev/apikey)
-2. Erstelle einen API Key für deine Domain (z.B. "localhost")
-3. Der Setup-Wizard erstellt automatisch eine `.env`-Datei
-4. Trage deinen API Key ein:
+### 2. Steam API Key einrichten
+1. **Steam API Key holen:** [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey)
+2. **Domain eingeben:** `localhost` (für lokale Nutzung)
+3. **Key in .env eintragen:** Der Setup-Wizard erstellt automatisch die Datei
 
 ```env
 STEAM_API_KEY=dein_api_key_hier
 ```
 
 ### 3. Erste Nutzung
-
 ```bash
 # Hauptanwendung starten
 python main.py
 
-# Oder Setup-Script verwenden
-python setup.py run
+# Empfohlener Workflow:
+# 1. Option 2: Steam Wishlist importieren
+# 2. Option 7: Automatisches Tracking starten
+# 3. Option 4: Beste Deals anzeigen
 ```
 
-## 📦 Architektur
+**Das war's!** 🎉 Ihr Preis-Tracking-System läuft jetzt vollautomatisch.
+
+## 📦 System-Architektur
 
 ### Hauptkomponenten
 
 ```
 steam-price-tracker/
-├── main.py                     # 🎯 Hauptanwendung mit interaktiver CLI
-├── price_tracker.py            # 🦈 Kern-Klasse für CheapShark Integration
-├── database_manager.py         # 🗄️ SQLite-Datenbank-Management
-├── steam_wishlist_manager.py   # 📥 Steam Wishlist Import
-├── config.py                   # ⚙️ Konfigurationsverwaltung
-├── setup.py                    # 🚀 Setup-Wizard und Tools
-├── requirements.txt            # 📦 Python-Dependencies
-├── .env.example               # 📋 Environment Template
-├── config.json                # ⚙️ Konfigurationsdatei
-└── README.md                   # 📖 Diese Dokumentation
+├── 🎯 main.py                      # Interaktive CLI mit 30+ Funktionen
+├── 💰 price_tracker.py             # Kern-Engine für CheapShark Integration
+├── 🗄️ database_manager.py          # SQLite-Datenbank
+├Charts-Support (in Entwicklung)
+├── 📥 steam_wishlist_manager.py    # Steam Web API Integration
+├── 📈 steam_charts_manager.py      # Steam Charts Tracking System
+├Konfigurationsverwaltung
+├── 🚀 setup.py                     # Setup-Wizard und System-Tools
+├── 📋 requirements.txt             # Python-Dependencies
+├Elasticsearch
+├── 🔍 elasticsearch_manager.py     # Analytics-Engine für Kibana
+├── 📊 elasticsearch_cli.py         # CLI für Elasticsearch-Operationen
+├── 🐳 docker-compose.yml           # Elasticsearch/Kibana Container
+├── 📋 requirements-elasticsearch.txt # Elasticsearch-Dependencies
+└── 🌐 kibana_dashboards/           # Vorkonfigurierte Analytics-Dashboards
 ```
 
-### Unterstützte Stores
+### Unterstützte Stores & APIs
 
-| Store ID | Store Name | API Support | Rabatt-Tracking |
-|----------|------------|-------------|-----------------|
-| 1 | Steam | ✅ | ✅ |
-| 3 | GreenManGaming | ✅ | ✅ |
-| 7 | GOG | ✅ | ✅ |
-| 11 | HumbleStore | ✅ | ✅ |
-| 15 | Fanatical | ✅ | ✅ |
-| 27 | GamesPlanet | ✅ | ✅ |
+| Store | Unterstützung | 
+|-------|----------------|
+| **Steam** | ✅ Native API und via Cheapshark| 
+| **GOG** | ✅ via CheapShark | 
+| **HumbleStore** | ✅ via CheapShark | 
+| **GreenManGaming** | ✅ via CheapShark |
+| **Fanatical** | ✅ via CheapShark | 
+| **GamesPlanet** | ✅ via CheapShark |
 
-### Datenbank-Schema
+### Datenbank-Schema (v1.2)
 
-**tracked_apps** - Apps die getrackt werden
+**tracked_apps** - Basis-Tracking
 ```sql
 steam_app_id TEXT PRIMARY KEY
 name TEXT NOT NULL
 added_at TIMESTAMP
 last_price_update TIMESTAMP
-active BOOLEAN
+target_price REAL
+active BOOLEAN DEFAULT 1
+source TEXT DEFAULT 'manual'  -- 'wishlist', 'charts', 'manual'
 ```
 
-**price_snapshots** - Historische Preisdaten
+**price_snapshots** - Multi-Store Preisdaten
 ```sql
 steam_app_id TEXT
 game_title TEXT
 timestamp TIMESTAMP
-steam_price, steam_original_price, steam_discount_percent, steam_available
-greenmangaming_price, greenmangaming_original_price, ...
--- Für alle 6 Stores
+best_price REAL, best_store TEXT, max_discount INTEGER
+-- 6 Stores: steam_*, greenmangaming_*, gog_*, humble_*, fanatical_*, gamesplanet_*
+-- Jeweils: price, original_price, discount_percent, available
 ```
 
-## 🎯 Nutzung
+**steam_charts_tracking** ⭐ NEU in v1.1 (In Entwicklung)
+```sql
+steam_app_id TEXT
+name TEXT
+chart_type TEXT  -- 'most_played', 'top_releases', 'upcoming', 'specials'
+current_rank INTEGER
+best_rank INTEGER
+first_seen TIMESTAMP
+last_seen TIMESTAMP
+popularity_score REAL
+```
 
-### CLI-Interface
+## 🎯 Erweiterte Nutzung
+
+### CLI-Interface mit 30+ Funktionen
 
 ```bash
 python main.py
 ```
 
-**Verfügbare Aktionen:**
-1. 📱 App manuell zum Tracking hinzufügen
-2. 📥 Steam Wishlist importieren
+**🎮 SPIELE-MANAGEMENT (1-12)**
+1. 📱 App manuell hinzufügen
+2. 📥 Steam Wishlist importieren  
 3. 🔍 Aktuelle Preise anzeigen
 4. 📊 Beste Deals anzeigen
 5. 📈 Preisverlauf anzeigen
@@ -126,299 +146,377 @@ python main.py
 11. 📊 Detaillierte Statistiken
 12. 👋 Beenden
 
-### Programmatische Nutzung
+**📊 CHARTS & ANALYTICS (13-18) [In Entwicklung]** ⭐ NEU
+13. 📈 Steam Charts anzeigen
+14. 🚀 Charts vollständig aktualisieren (BATCH)
+15. 🎯 Charts-Deals anzeigen
+16. 📊 Charts-Statistiken  
+17. 🤖 Charts-Automation
+18. 📦 Erweiterte BATCH-Optionen
 
+**🛠️ SYSTEM-TOOLS (24-30)**
+24. ⚙️ System-Einstellungen
+25. 📊 System-Informationen
+26. 💾 Backup erstellen
+27. 📥 Backup importieren
+28. 🔍 Health Check
+29. 🧹 Datenbank bereinigen
+30. 🔧 Developer Tools
+
+### Programmische API-Nutzung
+
+**Basis-Setup:**
 ```python
 from price_tracker import SteamPriceTracker
-from database_manager import DatabaseManager
+from steam_wishlist_manager import SteamWishlistManager
+from steam_charts_manager import SteamChartsManager
 
-# Tracker initialisieren
-db = DatabaseManager()
-tracker = SteamPriceTracker(db)
-
-# App zum Tracking hinzufügen
-tracker.add_app_to_tracking("413150", "Stardew Valley")
-
-# Preise aktualisieren
-result = tracker.track_app_prices(["413150", "105600"])
-print(f"✅ {result['successful']}/{result['processed']} Apps aktualisiert")
-
-# Automatisches Tracking starten
-tracker.start_scheduler(interval_hours=6)
-
-# Preisverlauf abrufen
-history = tracker.get_price_history("413150", days_back=30)
-
-# Beste Deals anzeigen
-deals = tracker.get_current_best_deals(limit=10)
-for deal in deals:
-    print(f"{deal['game_title']}: €{deal['best_price']:.2f} (-{deal['discount_percent']}%)")
+# System initialisieren
+tracker = SteamPriceTracker(enable_charts=True)
+steam_manager = SteamWishlistManager("YOUR_API_KEY")
+charts_manager = SteamChartsManager()
 ```
 
-### Steam Wishlist Import
+**Wishlist-Import mit intelligentem Zielpreis:**
+```python
+# Wishlist importieren
+steam_id = "76561198000000000"
+wishlist = steam_manager.get_simple_wishlist(steam_id)
+
+# Apps mit intelligenten Zielpreisen hinzufügen
+for game in wishlist:
+    current_price = float(game.get('price', '0') or '0')
+    # Zielpreis: 50% des aktuellen Preises
+    target_price = current_price * 0.5 if current_price > 0 else None
+    
+    tracker.add_or_update_app(
+        steam_app_id=game['steam_app_id'],
+        name=game['name'],
+        target_price=target_price
+    )
+
+print(f"✅ {len(wishlist)} Spiele zum Tracking hinzugefügt")
+```
+
+**Optimiertes Batch-Processing:**
+```python
+# Alle Apps aktualisieren (intelligent optimiert)
+result = tracker.process_all_pending_apps_optimized(
+    hours_threshold=24,       # Mindestabstand zwischen Updates
+    prioritize_discounts=True # Zuerst Apps mit aktuellen Rabatten
+)
+
+print(f"📊 Batch-Update: {result['total_successful']}/{result['total_processed']}")
+print(f"💰 Deals gefunden: {result['total_deals_found']}")
+print(f"⏱️ Durchschnitt pro App: {result['avg_time_per_app']:.2f}s")
+```
+
+**Steam Charts Integration:**
+```python
+# Alle Charts aktualisieren
+charts_result = charts_manager.update_all_charts()
+print(f"📈 Charts aktualisiert: {charts_result['total_processed']}")
+
+# Trending Spiele automatisch zum Tracking hinzufügen
+trending = charts_manager.get_trending_games("most_played", limit=10)
+for game in trending:
+    tracker.add_or_update_app(
+        steam_app_id=game['steam_app_id'],
+        name=game['name'],
+        source="charts"
+    )
+```
+
+**Automatisches Background-Tracking:**
+```python
+# Background-Scheduler starten
+tracker.start_background_scheduler(
+    interval_hours=6,         # Alle 6 Stunden
+    enable_charts=True,       # Charts-Updates einschließen
+    max_apps_per_run=100     # Max. Apps pro Durchlauf
+)
+
+# Status abrufen
+status = tracker.get_scheduler_status()
+print(f"Scheduler läuft: {status['running']}")
+print(f"Nächste Ausführung: {status['next_run']}")
+```
+
+## 🔍 Elasticsearch Analytics ⭐ NEU
+
+### Schnell-Setup
+
+```bash
+# Elasticsearch/Kibana mit Docker starten
+python elasticsearch_setup.py setup
+python elasticsearch_setup.py start
+
+# Alle Daten exportieren
+python elasticsearch_cli.py setup
+
+# Kibana-Dashboard öffnen
+http://localhost:5601
+```
+
+### Verfügbare Analytics-Dashboards
+
+**📊 Price Analytics Dashboard**
+- Preisentwicklung über Zeit (Line Charts)
+- Store-Vergleich nach Rabatten (Bar Charts)
+- Rabatt-Verteilung (Pie Charts)
+- Best Deals Timeline (Area Charts)
+
+**📱 App Management Dashboard**
+- Getrackte Apps-Übersicht (Metrics)
+- Hinzufügungen über Zeit (Line Charts)
+- Source-Verteilung (Wishlist vs Charts) (Pie Chart)
+- Update-Frequenz-Heatmap
+
+
+### Erweiterte Analytics-Queries
 
 ```python
-# Vereinfachter Import
-result = tracker.import_steam_wishlist("76561197960435530", "dein_api_key")
+from elasticsearch_manager import ElasticsearchManager
 
-if result['success']:
-    print(f"✅ {result['imported']} Apps hinzugefügt")
-    
-    # Preise für alle neuen Apps abrufen
-    batch_result = tracker.process_all_pending_apps_optimized()
-    print(f"📊 {batch_result['total_successful']} Apps verarbeitet")
+es = ElasticsearchManager()
+
+# Beispiel 1: Hohe Rabatte der letzten 7 Tage
+high_discounts = es.search_data(
+    "steam-price-snapshots",
+    {
+        "query": {
+            "bool": {
+                "must": [
+                    {"range": {"timestamp": {"gte": "now-7d"}}},
+                    {"range": {"max_discount": {"gte": 75}}}
+                ]
+            }
+        }
+    }
+)
+
+# Beispiel 2: Preistrend-Analyse für spezifisches Spiel
+price_trend = es.search_data(
+    "steam-price-snapshots", 
+    {
+        "query": {"match": {"game_title": "Stardew Valley"}},
+        "sort": [{"timestamp": {"order": "desc"}}],
+        "size": 30
+    }
+)
+
+# Beispiel 3: Charts-Spiele-Performance
+charts_performance = es.search_data(
+    "steam-charts-tracking",
+    {
+        "query": {"match": {"chart_type": "most_played"}},
+        "aggs": {
+            "avg_rank": {"avg": {"field": "current_rank"}},
+            "rank_distribution": {"histogram": {"field": "current_rank", "interval": 10}}
+        }
+    }
+)
 ```
 
-## 🔧 Konfiguration
+## ⚙️ Konfiguration & Anpassung
 
 ### Environment Variables (.env)
 
 ```env
-# Erforderlich
-STEAM_API_KEY=dein_steam_api_key
+# Steam API
+STEAM_API_KEY=dein_steam_api_key_hier
+STEAM_RATE_LIMIT=1.0                    # Sekunden zwischen Steam API Calls
+STEAM_TIMEOUT=15                        # Timeout für Steam API Requests
 
-# Optional - Rate Limiting
-STEAM_RATE_LIMIT=1.0
-CHEAPSHARK_RATE_LIMIT=1.5
+# CheapShark API  
+CHEAPSHARK_RATE_LIMIT=1.5              # Sekunden zwischen CheapShark Calls
+CHEAPSHARK_TIMEOUT=20                   # Timeout für CheapShark Requests
 
-# Optional - Tracking
-TRACKING_INTERVAL_HOURS=6
-MAX_APPS_PER_UPDATE=100
+# Features
+ENABLE_CHARTS=true                      # Steam Charts Tracking aktivieren
+ENABLE_ELASTICSEARCH=false              # Elasticsearch Integration
 
-# Optional - Export
-EXPORT_FORMAT=csv
-EXPORT_DIRECTORY=exports
+# Background Scheduler
+SCHEDULER_INTERVAL_HOURS=6              # Standard-Intervall für Auto-Updates
+SCHEDULER_MAX_APPS_PER_RUN=200         # Max. Apps pro Scheduler-Durchlauf
+
+# Performance
+BATCH_SIZE=50                          # Apps pro Batch bei großen Updates
+PARALLEL_WORKERS=3                     # Parallele Worker (experimentell)
 ```
 
-### Konfigurationsdatei (config.json)
+### Erweiterte Konfiguration (config.json)
 
 ```json
 {
   "database": {
     "path": "steam_price_tracker.db",
-    "cleanup_days": 90,
-    "backup_enabled": true
+    "backup_interval_days": 7,
+    "cleanup_old_data_days": 90
   },
   "tracking": {
-    "default_interval_hours": 6,
-    "max_apps_per_update": 100,
-    "enable_automatic_tracking": false
+    "default_target_discount": 50,
+    "auto_add_wishlist_games": true,
+    "auto_add_trending_charts": true,
+    "prioritize_discount_updates": true
   },
-  "cheapshark": {
-    "rate_limit_seconds": 1.5,
-    "timeout_seconds": 15,
-    "store_ids": "1,3,7,11,15,27"
+  "charts": {
+    "enabled_charts": ["most_played", "top_releases", "specials"],
+    "update_interval_hours": 12,
+    "max_rank_tracking": 100,
+    "auto_track_top_games": 20
+  },
+  "elasticsearch": {
+    "host": "localhost",
+    "port": 9200,
+    "auto_export": false,
+    "retention_days": 365
+  },
+  "notifications": {
+    "enable_console_alerts": true,
+    "price_drop_threshold": 0.75,
+    "new_discount_threshold": 30
   }
 }
 ```
 
-## 📈 Erweiterte Features
+## 🛠️ Wartung & Troubleshooting
 
-### Automatisches Tracking
+### Häufige Probleme und Lösungen
 
-```python
-# Scheduler starten (alle 6 Stunden)
-tracker.start_scheduler(interval_hours=6)
+| Problem | Lösung |
+|---------|--------|
+| **Steam API Key Fehler** | `python setup.py test-api` → Neuen Key auf [Steam Dev Portal](https://steamcommunity.com/dev/apikey) |
+| **Leere Wishlist** | Steam-Profil auf "Öffentlich" stellen |
+| **CheapShark Rate Limit** | `CHEAPSHARK_RATE_LIMIT=2.0` in .env erhöhen |
+| **Datenbank-Fehler** | `python setup.py init-db` für Datenbank-Reset |
+| **Elasticsearch nicht erreichbar** | `python elasticsearch_setup.py start` für Docker-Container |
+| **Charts nicht verfügbar** | `ENABLE_CHARTS=true` in .env setzen |
 
-# Status prüfen
-status = tracker.get_scheduler_status()
-print(f"Läuft: {status['scheduler_running']}")
-print(f"Nächster Lauf: {status['next_run']}")
-
-# Scheduler stoppen
-tracker.stop_scheduler()
-```
-
-### Batch-Processing
-
-```python
-# Alle Apps die Updates benötigen (älter als 6h)
-result = tracker.process_all_pending_apps_optimized(hours_threshold=6)
-
-print(f"📊 {result['total_successful']}/{result['total_apps']} Apps")
-print(f"⏱️ Dauer: {result['total_duration']}s")
-print(f"⚡ {result['apps_per_second']:.1f} Apps/s")
-```
-
-### CSV-Export
-
-```python
-# Export für einzelne App
-csv_file = tracker.export_price_history_csv("413150")
-print(f"✅ Export erstellt: {csv_file}")
-```
-
-**CSV-Format (Excel/Pandas kompatibel):**
-```csv
-date,Steam,GreenManGaming,GOG,HumbleStore,Fanatical,GamesPlanet
-2024-12-20,14.99,13.49,,12.99,13.99,14.49
-2024-12-19,14.99,13.49,,12.99,13.99,14.49
-```
-
-### Datenbank-Wartung
-
-```python
-# Alte Daten bereinigen (>90 Tage)
-deleted = db.cleanup_old_prices(days=90)
-print(f"🧹 {deleted} alte Snapshots entfernt")
-
-# Backup erstellen
-backup_file = db.backup_database()
-print(f"💾 Backup: {backup_file}")
-
-# Datenbank optimieren
-db.vacuum_database()
-```
-
-## 🛠️ Setup und Tools
-
-### Setup-Wizard
+### System-Health-Check
 
 ```bash
-# Vollständiges Setup
-python setup.py setup
-
-# Nur Abhängigkeiten installieren
-python setup.py install
-
-# System-Status prüfen
+# Umfassender System-Check
 python setup.py status
 
-# API-Verbindungen testen
-python setup.py test-api
+# Einzelne Komponenten testen
+python setup.py test-api          # Steam API Key
+python setup.py test-db           # Datenbank-Integrität  
+python setup.py test-elasticsearch # Elasticsearch-Verbindung
 ```
 
-### Systemanforderungen
-
-- **Python:** 3.8 oder höher
-- **Betriebssystem:** Windows, macOS, Linux
-- **Speicher:** ~50MB für Datenbank bei 1000 Apps
-- **Internet:** Für CheapShark und Steam APIs
-
-### Dependencies
-
-**Kern-Requirements:**
-- `requests>=2.31.0` - HTTP-Requests
-- `schedule>=1.2.0` - Automatisches Scheduling
-- `python-dotenv>=1.0.0` - Environment Variables
-
-**Optional:**
-- `pandas>=2.0.0` - Erweiterte Datenanalyse
-- `rich>=13.7.0` - Bessere CLI-Ausgabe
-- `tqdm>=4.66.0` - Progress Bars
-
-## 📊 Beispiel-Workflows
-
-### 1. Erste Einrichtung
-
-```bash
-# 1. Setup-Wizard starten
-python setup.py setup
-
-# 2. Steam API Key in .env eintragen
-# 3. Hauptanwendung starten
-python main.py
-
-# 4. Wishlist importieren (Option 2)
-# 5. Automatisches Tracking starten (Option 7)
-```
-
-### 2. Tägliche Nutzung
-
-```bash
-# Beste Deals anzeigen
-python main.py
-# -> Option 4: Beste aktuelle Deals
-
-# Preisverlauf einer App
-python main.py
-# -> Option 5: Preisverlauf für App
-
-# CSV-Export erstellen
-python main.py
-# -> Option 10: CSV-Export
-```
-
-### 3. Wartung
-
-```bash
-# System-Status prüfen
-python setup.py status
-
-# Datenbank-Cleanup
-python -c "
-from database_manager import DatabaseManager
-db = DatabaseManager()
-db.cleanup_old_prices(days=60)
-db.vacuum_database()
-"
-```
-
-## 🔍 Troubleshooting
-
-### Häufige Probleme
-
-**1. AttributeError: 'SteamPriceTracker' object has no attribute 'get_scheduler_status'**
-```bash
-# Lösung: Verwende die vollständigen Dateien aus diesem Repository
-# Alle Methoden sind in price_tracker.py implementiert
-```
-
-**2. Steam API Key Fehler**
-```bash
-# Prüfe API Key in .env
-python setup.py test-api
-
-# Neu generieren auf: https://steamcommunity.com/dev/apikey
-```
-
-**3. CheapShark API Rate Limiting**
-```bash
-# Rate Limit in .env erhöhen
-CHEAPSHARK_RATE_LIMIT=2.0
-```
-
-**4. Datenbank-Fehler**
-```bash
-# Datenbank neu initialisieren
-python setup.py init-db
-```
-
-### Debug-Modus
+### Performance-Monitoring
 
 ```python
-import logging
-logging.basicConfig(level=logging.DEBUG)
+# Detaillierte Performance-Statistiken
+from price_tracker import SteamPriceTracker
 
-# Ausführliche API-Logs
 tracker = SteamPriceTracker()
-tracker.print_price_summary("413150")  # Debug-Ausgabe
+performance = tracker.get_performance_stats()
+
+print(f"📊 Performance-Übersicht:")
+print(f"   Durchschnittliche Update-Zeit: {performance['avg_update_time']:.2f}s")
+print(f"   Successful Rate: {performance['success_rate']:.1f}%")
+print(f"   Cache Hit Rate: {performance['cache_hit_rate']:.1f}%")
 ```
 
-## 🤝 Beitragen
+### Backup-System
 
-1. Fork das Repository
-2. Erstelle einen Feature-Branch (`git checkout -b feature/AmazingFeature`)
-3. Committe deine Änderungen (`git commit -m 'Add AmazingFeature'`)
-4. Push zum Branch (`git push origin feature/AmazingFeature`)
-5. Öffne eine Pull Request
+```bash
+# Automatisches Backup erstellen
+python main.py  # Option 26: Backup erstellen
 
-## 📄 Lizenz
+# Backup wiederherstellen
+python main.py  # Option 27: Backup importieren
 
-Dieses Projekt ist unter der MIT Lizenz lizensiert - siehe [LICENSE](LICENSE) für Details.
+# Backup-Verzeichnis: ./backups/steam_tracker_backup_YYYYMMDD_HHMMSS/
+```
 
-## 🙏 Danksagungen
+## 🚀 Erweiterte Features
 
-- **CheapShark API** für kostenlose Preisdaten
-- **Steam Web API** für Wishlist-Integration
-- **Projekt_SteamGoG.ipynb** für Store-Mapping Insights
+### Web Dashboard
 
-## 📞 Support
+```bash
+# Flask-basiertes Web-Dashboard
 
-- 🐛 **Bug Reports:** [GitHub Issues](https://github.com/your-repo/issues)
-- 💡 **Feature Requests:** [GitHub Discussions](https://github.com/your-repo/discussions)
-- 📧 **Email:** your-email@example.com
+python web_dashboard.py
+# Dashboard verfügbar unter: http://localhost:5000
+```
+
+## 📊 Statistiken & Erfolgsmessung
+
+### Beispiel-Ausgabe nach 30 Tagen Nutzung
+
+```
+🎉 Steam Price Tracker - 30-Tage-Bericht
+
+📊 TRACKING-STATISTIKEN
+   🎯 Apps getrackt: 847 (234 aus Wishlist, 156 aus Charts, 457 manuell)
+   📊 Preis-Updates: 15,234 (durchschnittlich 508 pro Tag)
+   💰 Deals entdeckt: 1,891 (durchschnittlich 63 pro Tag)
+   📈 Beste Ersparnis: €47.99 für "Cyberpunk 2077" (-78%)
+
+📈 CHARTS-INTEGRATION
+   🔥 Trending Spiele getrackt: 156 
+   🎯 Neu entdeckte Hits: 23
+   📊 Charts-Updates: 2,134
+
+🔍 ELASTICSEARCH-ANALYTICS
+   📄 Dokumente indexiert: 67,891
+   📊 Dashboards erstellt: 4
+   🔍 Erweiterte Queries: 234
+
+⏱️ PERFORMANCE
+   🚀 Durchschnittliche Update-Zeit: 1.3s pro App
+   ✅ Success Rate: 97.8%
+   🏃 Background-Scheduler läuft seit: 29 Tage
+
+💡 EMPFEHLUNGEN
+   • 23 Spiele unter Ihrem Zielpreis verfügbar
+   • 5 neue Charts-Hits zur Überwachung empfohlen
+   • Nächstes Backup-Fenster: in 3 Tagen
+```
+
+## 🤝 Community & Beitragen
+
+### Entwicklung
+
+```bash
+# Repository für Entwicklung klonen
+git clone <repository-url>
+cd steam-price-tracker
+
+# Development-Environment einrichten
+python -m venv venv
+source venv/bin/activate  # Linux/macOS
+# venv\Scripts\activate   # Windows
+
+# Development-Dependencies installieren
+pip install -r requirements-dev.txt
+
+# Pre-commit hooks einrichten
+pre-commit install
+
+# Tests ausführen
+python -m pytest tests/ -v
+
+# Code-Quality prüfen
+flake8 .
+mypy price_tracker.py
+```
+
+
+### Code-Standards
+
+- 🐍 **Python 3.8+** Kompatibilität
+- 📝 **Type Hints** für alle Funktionen
+- 📚 **Docstrings** im Google-Stil
+- ✅ **Unit Tests** für neue Features
+- 🎨 **PEP 8** Code-Stil
+
 
 ---
 
-**⭐ Gefällt dir das Projekt? Gib uns einen Stern auf GitHub!**
+[⬆ Zurück zum Anfang](#-steam-price-tracker-v12-dev)
+
+</div>
