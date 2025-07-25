@@ -1,0 +1,26 @@
+# Kibana Configuration for Steam Price Tracker
+server.name: steam-price-tracker-kibana
+server.host: 0.0.0.0
+server.port: 5601
+
+# Elasticsearch
+elasticsearch.hosts: ["http://elasticsearch:9200"]
+
+# Monitoring
+monitoring.ui.container.elasticsearch.enabled: true
+
+# Dashboard Settings
+kibana.index: ".kibana"
+
+# Logging
+logging.appenders:
+  file:
+    type: file
+    fileName: /usr/share/kibana/logs/kibana.log
+    layout:
+      type: json
+
+logging.root:
+  appenders:
+    - default
+    - file

@@ -16,10 +16,10 @@ STEAM_RATE_LIMIT=1.0
 # ===================================================================
 
 # CheapShark API Rate Limiting (Sekunden zwischen Requests)
-CHEAPSHARK_RATE_LIMIT=1.5
+CHEAPSHARK_RATE_LIMIT=2.5
 
 # CheapShark Request Timeout (Sekunden)
-CHEAPSHARK_TIMEOUT=15
+CHEAPSHARK_TIMEOUT=25
 
 # Store IDs für CheapShark (Standard: Steam, GMG, GOG, Humble, Fanatical, GamesPlanet)
 CHEAPSHARK_STORE_IDS=1,3,7,11,15,27
@@ -431,7 +431,7 @@ STEAM_RATE_LIMIT=1.0
 # ===================================================================
 
 # CheapShark API Rate Limiting (Sekunden zwischen Requests)
-CHEAPSHARK_RATE_LIMIT=1.5
+CHEAPSHARK_RATE_LIMIT=5.0
 
 # CheapShark Request Timeout (Sekunden)
 CHEAPSHARK_TIMEOUT=15
@@ -742,6 +742,40 @@ CONNECTION_POOL_SIZE=20
 
 # User Agent für HTTP Requests
 USER_AGENT=SteamPriceTracker/3.0
+
+# ==========================================
+# STEAM PRICE TRACKER - MENÜ KONFIGURATION
+# ==========================================
+
+# Beschreibungen anzeigen (true/false)
+SHOW_MENU_DESCRIPTIONS=true
+
+# Kategorie-Beschreibungen anzeigen (true/false)
+SHOW_CATEGORY_DESCRIPTIONS=true
+
+# Option-Beschreibungen anzeigen (true/false) 
+SHOW_OPTION_DESCRIPTIONS=true
+
+# Menü-Stil (standard/compact/detailed)
+MENU_STYLE=standard
+
+# Symbol für Beschreibungen
+MENU_DESCRIPTION_SYMBOL=⨠
+
+# Einrückung für Beschreibungen (Anzahl Leerzeichen)
+MENU_DESCRIPTION_INDENT=6
+
+# Debug-Informationen anzeigen (true/false)
+SHOW_MENU_DEBUG=false
+
+# Menü-Breite (Anzahl Zeichen für Trennlinien)
+MENU_WIDTH=60
+
+# Kategorien-Trennlinie (standard/double/none)
+MENU_SEPARATOR_STYLE=standard
+
+# Farbschema (falls terminal colors unterstützt)
+# MENU_COLOR_SCHEME=default
 
 # ===================================================================
 # FEATURE FLAGS

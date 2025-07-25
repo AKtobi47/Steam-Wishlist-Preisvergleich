@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Kibana Dashboard Setup für Steam Price Tracker
-Erstellt automatisch Index Patterns, Dashboards und Visualisierungen
+Erstellt automatisch Dashboards durch NDJSON-Import
 """
 
 import json
@@ -10,6 +10,7 @@ import time
 import sys
 from pathlib import Path
 import logging
+import docker
 
 # Logging Setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -27,7 +28,7 @@ class KibanaDashboardSetup:
     
     def wait_for_kibana(self, max_retries=30, retry_interval=10):
         """Wartet bis Kibana verfügbar ist"""
-        logger.info("🔄 Warte auf Kibana...")
+        logger.info(" Warte auf Kibana...")
         
         for attempt in range(max_retries):
             try:
@@ -41,429 +42,189 @@ class KibanaDashboardSetup:
             logger.info(f"⏳ Versuch {attempt + 1}/{max_retries} - warte {retry_interval}s...")
             time.sleep(retry_interval)
         
-        logger.error("❌ Kibana nicht verfügbar nach maximaler Wartezeit")
+        logger.error(" Kibana nicht verfügbar nach maximaler Wartezeit")
         return False
     
-    def create_index_pattern(self, pattern_id, title, time_field=None):
-        """Erstellt ein Index Pattern"""
-        logger.info(f"📋 Erstelle Index Pattern: {title}")
+    def import_ndjson_to_kibana(self, ndjson_path):
+        """Importiert NDJSON-Datei nach Kibana"""
+        logger.info(f" Importiere NDJSON-Datei: {ndjson_path}")
         
-        pattern_data = {
-            "attributes": {
-                "title": title,
-                "timeFieldName": time_field if time_field else ""
-            }
-        }
+        if not Path(ndjson_path).exists():
+            logger.error(f" NDJSON-Datei nicht gefunden: {ndjson_path}")
+            return False
         
         try:
-            response = requests.post(
-                f"{self.kibana_url}/api/saved_objects/index-pattern/{pattern_id}",
-                headers=self.headers,
-                json=pattern_data
-            )
+            with open(ndjson_path, 'rb') as f:
+                files = {'file': (ndjson_path, f, 'application/ndjson')}
+                headers = {'kbn-xsrf': 'true'}
+                response = requests.post(
+                    f"{self.kibana_url}/api/saved_objects/_import?overwrite=true",
+                    headers=headers,
+                    files=files
+                )
             
-            if response.status_code in [200, 409]:  # 409 = already exists
-                logger.info(f"✅ Index Pattern '{title}' erstellt/aktualisiert")
+            if response.status_code == 200:
+                result = response.json()
+                success_count = result.get('successCount', 0)
+                logger.info(f" NDJSON erfolgreich importiert! {success_count} Objekte importiert")
+                
+                # Zeige Details zu importierten Objekten
+                if 'successResults' in result:
+                    for obj in result['successResults']:
+                        obj_type = obj.get('type', 'unknown')
+                        obj_title = obj.get('meta', {}).get('title', 'unnamed')
+                        logger.info(f"  ✓ {obj_type}: {obj_title}")
+                
                 return True
             else:
-                logger.error(f"❌ Fehler beim Erstellen des Index Patterns: {response.text}")
+                logger.error(f" Fehler beim Import: {response.text}")
                 return False
                 
-        except requests.exceptions.RequestException as e:
-            logger.error(f"❌ Verbindungsfehler: {e}")
+        except Exception as e:
+            logger.error(f" Import-Fehler: {e}")
             return False
     
-    def create_visualization(self, viz_id, title, viz_type, source_id):
-        """Erstellt eine Visualisierung"""
-        logger.info(f"📊 Erstelle Visualisierung: {title}")
-        
-        # Basis-Visualisierung je nach Typ
-        if viz_type == "metric":
-            viz_state = {
-                "title": title,
-                "type": "metric",
-                "params": {
-                    "addTooltip": True,
-                    "addLegend": False,
-                    "type": "metric",
-                    "metric": {
-                        "percentageMode": False,
-                        "useRanges": False,
-                        "colorSchema": "Green to Red",
-                        "metricColorMode": "None",
-                        "colorsRange": [{"from": 0, "to": 10000}],
-                        "labels": {"show": True},
-                        "invertColors": False,
-                        "style": {
-                            "bgFill": "#000",
-                            "bgColor": False,
-                            "labelColor": False,
-                            "subText": "",
-                            "fontSize": 60
-                        }
-                    }
-                },
-                "aggs": [
-                    {
-                        "id": "1",
-                        "enabled": True,
-                        "type": "count",
-                        "schema": "metric",
-                        "params": {}
-                    }
-                ]
-            }
-        elif viz_type == "line":
-            viz_state = {
-                "title": title,
-                "type": "line",
-                "params": {
-                    "grid": {"categoryLines": False, "style": {"color": "#eee"}},
-                    "categoryAxes": [
-                        {
-                            "id": "CategoryAxis-1",
-                            "type": "category",
-                            "position": "bottom",
-                            "show": True,
-                            "style": {},
-                            "scale": {"type": "linear"},
-                            "labels": {"show": True, "truncate": 100},
-                            "title": {}
-                        }
-                    ],
-                    "valueAxes": [
-                        {
-                            "id": "ValueAxis-1",
-                            "name": "LeftAxis-1",
-                            "type": "value",
-                            "position": "left",
-                            "show": True,
-                            "style": {},
-                            "scale": {"type": "linear", "mode": "normal"},
-                            "labels": {"show": True, "rotate": 0, "filter": False, "truncate": 100},
-                            "title": {"text": "Count"}
-                        }
-                    ],
-                    "seriesParams": [
-                        {
-                            "show": "true",
-                            "type": "line",
-                            "mode": "normal",
-                            "data": {"label": "Count", "id": "1"},
-                            "valueAxis": "ValueAxis-1",
-                            "drawLinesBetweenPoints": True,
-                            "showCircles": True
-                        }
-                    ],
-                    "addTooltip": True,
-                    "addLegend": True,
-                    "legendPosition": "right",
-                    "times": [],
-                    "addTimeMarker": False
-                },
-                "aggs": [
-                    {
-                        "id": "1",
-                        "enabled": True,
-                        "type": "count",
-                        "schema": "metric",
-                        "params": {}
-                    },
-                    {
-                        "id": "2",
-                        "enabled": True,
-                        "type": "date_histogram",
-                        "schema": "segment",
-                        "params": {
-                            "field": "timestamp",
-                            "interval": "auto",
-                            "customInterval": "2h",
-                            "min_doc_count": 1,
-                            "extended_bounds": {}
-                        }
-                    }
-                ]
-            }
-        elif viz_type == "pie":
-            viz_state = {
-                "title": title,
-                "type": "pie",
-                "params": {
-                    "addTooltip": True,
-                    "addLegend": True,
-                    "legendPosition": "right",
-                    "isDonut": True
-                },
-                "aggs": [
-                    {
-                        "id": "1",
-                        "enabled": True,
-                        "type": "count",
-                        "schema": "metric",
-                        "params": {}
-                    },
-                    {
-                        "id": "2",
-                        "enabled": True,
-                        "type": "terms",
-                        "schema": "segment",
-                        "params": {
-                            "field": "chart_type.keyword",
-                            "size": 10,
-                            "order": "desc",
-                            "orderBy": "1"
-                        }
-                    }
-                ]
-            }
-        else:
-            viz_state = {"title": title, "type": viz_type}
-        
-        viz_data = {
-            "attributes": {
-                "title": title,
-                "visState": json.dumps(viz_state),
-                "uiStateJSON": "{}",
-                "description": "",
-                "version": 1,
-                "kibanaSavedObjectMeta": {
-                    "searchSourceJSON": json.dumps({
-                        "index": source_id,
-                        "query": {"match_all": {}},
-                        "filter": []
-                    })
-                }
-            }
-        }
+    def refresh_index_patterns(self):
+        """Aktualisiert alle Index Patterns"""
+        logger.info(" Aktualisiere Index Patterns...")
         
         try:
-            response = requests.post(
-                f"{self.kibana_url}/api/saved_objects/visualization/{viz_id}",
-                headers=self.headers,
-                json=viz_data
+            # Hole alle Index Patterns
+            response = requests.get(
+                f"{self.kibana_url}/api/saved_objects/_find?type=index-pattern",
+                headers=self.headers
             )
             
-            if response.status_code in [200, 409]:
-                logger.info(f"✅ Visualisierung '{title}' erstellt/aktualisiert")
+            if response.status_code == 200:
+                index_patterns = response.json().get('saved_objects', [])
+                
+                for pattern in index_patterns:
+                    pattern_id = pattern['id']
+                    pattern_title = pattern['attributes'].get('title', 'unknown')
+                    
+                    # Refresh das Pattern
+                    refresh_response = requests.post(
+                        f"{self.kibana_url}/api/index_patterns/index_pattern/{pattern_id}/refresh_fields",
+                        headers=self.headers
+                    )
+                    
+                    if refresh_response.status_code == 200:
+                        logger.info(f"  ✓ Index Pattern '{pattern_title}' aktualisiert")
+                    else:
+                        logger.warning(f"   Fehler beim Aktualisieren von '{pattern_title}'")
+                
                 return True
             else:
-                logger.error(f"❌ Fehler beim Erstellen der Visualisierung: {response.text}")
+                logger.error(f" Fehler beim Abrufen der Index Patterns: {response.text}")
                 return False
                 
-        except requests.exceptions.RequestException as e:
-            logger.error(f"❌ Verbindungsfehler: {e}")
+        except Exception as e:
+            logger.error(f" Fehler beim Aktualisieren der Index Patterns: {e}")
             return False
     
-    def create_dashboard(self, dashboard_id, title, panel_configs):
-        """Erstellt ein Dashboard mit Panels"""
-        logger.info(f"📊 Erstelle Dashboard: {title}")
-        
-        panels = []
-        for i, panel in enumerate(panel_configs):
-            panels.append({
-                "version": "8.11.0",
-                "type": panel["type"],
-                "gridData": {
-                    "x": panel.get("x", 0),
-                    "y": panel.get("y", 0),
-                    "w": panel.get("w", 24),
-                    "h": panel.get("h", 15),
-                    "i": str(i)
-                },
-                "panelIndex": str(i),
-                "embeddableConfig": {},
-                "panelRefName": f"panel_{i}"
-            })
-        
-        dashboard_data = {
-            "attributes": {
-                "title": title,
-                "hits": 0,
-                "description": f"Dashboard für {title}",
-                "panelsJSON": json.dumps(panels),
-                "optionsJSON": json.dumps({
-                    "useMargins": True,
-                    "syncColors": False,
-                    "hidePanelTitles": False
-                }),
-                "version": 1,
-                "timeRestore": True,
-                "timeTo": "now",
-                "timeFrom": "now-30d",
-                "refreshInterval": {
-                    "pause": False,
-                    "value": 300000
-                },
-                "kibanaSavedObjectMeta": {
-                    "searchSourceJSON": json.dumps({
-                        "query": {"match_all": {}},
-                        "filter": []
-                    })
-                }
-            },
-            "references": []
-        }
-        
-        # References für Panels hinzufügen
-        for i, panel in enumerate(panel_configs):
-            dashboard_data["references"].append({
-                "name": f"panel_{i}",
-                "type": "visualization",
-                "id": panel["viz_id"]
-            })
+    def list_dashboards(self):
+        """Listet alle verfügbaren Dashboards auf"""
+        logger.info(" Verfügbare Dashboards:")
         
         try:
-            response = requests.post(
-                f"{self.kibana_url}/api/saved_objects/dashboard/{dashboard_id}",
-                headers=self.headers,
-                json=dashboard_data
+            response = requests.get(
+                f"{self.kibana_url}/api/saved_objects/_find?type=dashboard",
+                headers=self.headers
             )
             
-            if response.status_code in [200, 409]:
-                logger.info(f"✅ Dashboard '{title}' erstellt/aktualisiert")
-                return True
-            else:
-                logger.error(f"❌ Fehler beim Erstellen des Dashboards: {response.text}")
-                return False
+            if response.status_code == 200:
+                dashboards = response.json().get('saved_objects', [])
                 
-        except requests.exceptions.RequestException as e:
-            logger.error(f"❌ Verbindungsfehler: {e}")
-            return False
-    
-    def setup_steam_price_tracker_dashboards(self):
-        """Erstellt alle Steam Price Tracker Dashboards"""
-        logger.info("🚀 Setup Steam Price Tracker Dashboards")
-        logger.info("=" * 50)
-        
-        # 1. Index Patterns erstellen
-        logger.info("📋 Erstelle Index Patterns...")
-        index_patterns = [
-            ("steam-price-snapshots", "steam-price-snapshots*", "timestamp"),
-            ("steam-tracked-apps", "steam-tracked-apps*", "added_at"),
-            ("steam-charts-tracking", "steam-charts-tracking*", "last_seen"),
-            ("steam-charts-prices", "steam-charts-prices*", "timestamp"),
-            ("steam-name-history", "steam-name-history*", "updated_at")
-        ]
-        
-        for pattern_id, title, time_field in index_patterns:
-            self.create_index_pattern(pattern_id, title, time_field)
-        
-        # 2. Visualisierungen erstellen
-        logger.info("📊 Erstelle Visualisierungen...")
-        
-        # Tracked Apps Count
-        self.create_visualization(
-            "tracked-apps-count",
-            "Anzahl getrackte Apps",
-            "metric",
-            "steam-tracked-apps"
-        )
-        
-        # Price Snapshots Timeline
-        self.create_visualization(
-            "price-snapshots-timeline",
-            "Preis-Snapshots über Zeit",
-            "line",
-            "steam-price-snapshots"
-        )
-        
-        # Charts by Type
-        self.create_visualization(
-            "charts-by-type",
-            "Charts nach Typ",
-            "pie",
-            "steam-charts-tracking"
-        )
-        
-        # Best Deals
-        self.create_visualization(
-            "best-deals-table",
-            "Beste aktuelle Deals",
-            "table",
-            "steam-price-snapshots"
-        )
-        
-        # Store Distribution
-        self.create_visualization(
-            "store-distribution",
-            "Verteilung nach Stores",
-            "pie",
-            "steam-price-snapshots"
-        )
-        
-        # Price Timeline
-        self.create_visualization(
-            "price-timeline",
-            "Preisentwicklung",
-            "line",
-            "steam-price-snapshots"
-        )
-        
-        # 3. Dashboards erstellen
-        logger.info("📊 Erstelle Dashboards...")
-        
-        # Overview Dashboard
-        overview_panels = [
-            {"viz_id": "tracked-apps-count", "type": "visualization", "x": 0, "y": 0, "w": 12, "h": 8},
-            {"viz_id": "price-snapshots-timeline", "type": "visualization", "x": 12, "y": 0, "w": 36, "h": 8},
-            {"viz_id": "store-distribution", "type": "visualization", "x": 0, "y": 8, "w": 24, "h": 16},
-            {"viz_id": "best-deals-table", "type": "visualization", "x": 24, "y": 8, "w": 24, "h": 16}
-        ]
-        
-        self.create_dashboard(
-            "steam-price-tracker-overview",
-            "Steam Price Tracker - Overview",
-            overview_panels
-        )
-        
-        # Charts Dashboard
-        charts_panels = [
-            {"viz_id": "charts-by-type", "type": "visualization", "x": 0, "y": 0, "w": 24, "h": 15},
-            {"viz_id": "price-timeline", "type": "visualization", "x": 24, "y": 0, "w": 24, "h": 15}
-        ]
-        
-        self.create_dashboard(
-            "steam-charts-analytics",
-            "Steam Charts Analytics",
-            charts_panels
-        )
-        
-        logger.info("✅ Dashboard Setup abgeschlossen!")
-        logger.info(f"🌐 Kibana Dashboard: {self.kibana_url}/app/dashboards")
+                if not dashboards:
+                    logger.info("  Keine Dashboards gefunden")
+                    return
+                
+                for dashboard in dashboards:
+                    title = dashboard['attributes'].get('title', 'Untitled')
+                    dashboard_id = dashboard['id']
+                    logger.info(f"   {title} (ID: {dashboard_id})")
+                    logger.info(f"     URL: {self.kibana_url}/app/dashboards#/view/{dashboard_id}")
+                
+            else:
+                logger.error(f" Fehler beim Abrufen der Dashboards: {response.text}")
+                
+        except Exception as e:
+            logger.error(f" Fehler beim Auflisten der Dashboards: {e}")
     
     def export_dashboards(self, output_dir="kibana/dashboards"):
         """Exportiert alle Dashboards als JSON"""
-        logger.info("📤 Exportiere Dashboards...")
+        logger.info(" Exportiere Dashboards...")
         
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
         
-        # Dashboard IDs
-        dashboard_ids = [
-            "steam-price-tracker-overview",
-            "steam-charts-analytics"
-        ]
-        
-        for dashboard_id in dashboard_ids:
-            try:
-                response = requests.get(
-                    f"{self.kibana_url}/api/saved_objects/dashboard/{dashboard_id}",
-                    headers=self.headers
-                )
+        try:
+            # Hole alle Dashboards
+            response = requests.get(
+                f"{self.kibana_url}/api/saved_objects/_find?type=dashboard",
+                headers=self.headers
+            )
+            
+            if response.status_code == 200:
+                dashboards = response.json().get('saved_objects', [])
                 
-                if response.status_code == 200:
-                    dashboard_data = response.json()
+                for dashboard in dashboards:
+                    dashboard_id = dashboard['id']
+                    title = dashboard['attributes'].get('title', 'Untitled')
                     
-                    export_file = output_path / f"{dashboard_id}.json"
-                    with open(export_file, 'w', encoding='utf-8') as f:
-                        json.dump(dashboard_data, f, indent=2)
+                    # Exportiere Dashboard
+                    export_response = requests.get(
+                        f"{self.kibana_url}/api/saved_objects/dashboard/{dashboard_id}",
+                        headers=self.headers
+                    )
                     
-                    logger.info(f"✅ Dashboard exportiert: {export_file}")
-                else:
-                    logger.error(f"❌ Fehler beim Exportieren von {dashboard_id}")
-                    
-            except requests.exceptions.RequestException as e:
-                logger.error(f"❌ Export-Fehler für {dashboard_id}: {e}")
+                    if export_response.status_code == 200:
+                        dashboard_data = export_response.json()
+                        
+                        # Sichere Dateinamen erstellen
+                        safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+                        export_file = output_path / f"{safe_title}_{dashboard_id}.json"
+                        
+                        with open(export_file, 'w', encoding='utf-8') as f:
+                            json.dump(dashboard_data, f, indent=2)
+                        
+                        logger.info(f" Dashboard exportiert: {export_file}")
+                    else:
+                        logger.error(f" Fehler beim Exportieren von '{title}': {export_response.text}")
+                
+            else:
+                logger.error(f" Fehler beim Abrufen der Dashboards: {response.text}")
+                
+        except Exception as e:
+            logger.error(f" Export-Fehler: {e}")
+
+def start_kibana_container(container_name='kibana-steam-tracker', elasticsearch_url='http://host.docker.internal:9200', kibana_port=5601):
+    """Startet Kibana Docker Container"""
+    client = docker.from_env()
+    try:
+        container = client.containers.get(container_name)
+        if container.status != 'running':
+            container.start()
+            logger.info(f"Kibana-Container '{container_name}' gestartet.")
+        else:
+            logger.info(f"Kibana-Container '{container_name}' läuft bereits.")
+        logger.info(f" Kibana Dashboard erreichbar unter: http://localhost:{kibana_port}")
+    except docker.errors.NotFound:
+        logger.info(f"Erstelle und starte Kibana-Container '{container_name}'...")
+        client.containers.run(
+            "docker.elastic.co/kibana/kibana:8.11.0",
+            name=container_name,
+            ports={f"{kibana_port}/tcp": kibana_port},
+            environment={
+                "ELASTICSEARCH_HOSTS": elasticsearch_url,
+                "SERVER_PUBLICBASEURL": f"http://localhost:{kibana_port}",
+                "XPACK_SECURITY_ENABLED": "false"
+            },
+            detach=True,
+            remove=False
+        )
+        logger.info(f"Kibana-Container '{container_name}' wurde erstellt und gestartet.")
+        logger.info(f" Kibana Dashboard erreichbar unter: http://localhost:{kibana_port}")
 
 def main():
     """Hauptfunktion"""
@@ -472,36 +233,54 @@ def main():
     parser = argparse.ArgumentParser(description="Kibana Dashboard Setup für Steam Price Tracker")
     parser.add_argument('--kibana-url', default='http://localhost:5601', 
                        help='Kibana URL (Standard: http://localhost:5601)')
-    parser.add_argument('--wait', action='store_true',
-                       help='Warte auf Kibana bevor Setup startet')
+    parser.add_argument('--ndjson', required=True,
+                       help='Pfad zur NDJSON-Datei für Dashboard-Import')
     parser.add_argument('--export', action='store_true',
                        help='Exportiere Dashboards nach Setup')
+    parser.add_argument('--list', action='store_true',
+                       help='Liste alle verfügbaren Dashboards auf')
+    parser.add_argument('--refresh-patterns', action='store_true',
+                       help='Aktualisiere Index Patterns nach Import')
     
     args = parser.parse_args()
+    
+    # 1. Kibana-Container starten
+    start_kibana_container()
     
     setup = KibanaDashboardSetup(args.kibana_url)
     
     try:
-        # Warte auf Kibana falls gewünscht
-        if args.wait:
-            if not setup.wait_for_kibana():
-                logger.error("❌ Kibana nicht verfügbar - Setup abgebrochen")
-                sys.exit(1)
+        # 2. Immer auf Kibana warten
+        print("Warte auf Kibana, bis es bereit ist...")
+        if not setup.wait_for_kibana():
+            logger.error(" Kibana nicht verfügbar - Setup abgebrochen")
+            sys.exit(1)
         
-        # Dashboard Setup
-        setup.setup_steam_price_tracker_dashboards()
+        # 3. NDJSON importieren
+        if not setup.import_ndjson_to_kibana(args.ndjson):
+            logger.error(" NDJSON-Import fehlgeschlagen")
+            sys.exit(1)
         
-        # Export falls gewünscht
+        # 4. Index Patterns aktualisieren
+        if args.refresh_patterns:
+            setup.refresh_index_patterns()
+        
+        # 5. Dashboards auflisten
+        if args.list:
+            setup.list_dashboards()
+        
+        # 6. Export falls gewünscht
         if args.export:
             setup.export_dashboards()
         
-        logger.info("🎉 Setup erfolgreich abgeschlossen!")
+        logger.info(" Setup erfolgreich abgeschlossen!")
+        logger.info(f" Kibana Dashboard: {args.kibana_url}/app/dashboards")
         
     except KeyboardInterrupt:
-        logger.info("\n⏹️ Setup abgebrochen durch Benutzer")
+        logger.info("\n Setup abgebrochen durch Benutzer")
         sys.exit(1)
     except Exception as e:
-        logger.error(f"❌ Unerwarteter Fehler: {e}")
+        logger.error(f" Unerwarteter Fehler: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":

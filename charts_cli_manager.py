@@ -6,7 +6,7 @@ Vollständiges CLI-Tool für Charts-Tracking, Updates und Automatisierung
 
 import sys
 import argparse
-import time
+import time as time_module
 from datetime import datetime
 from pathlib import Path
 import logging
@@ -159,11 +159,11 @@ def cmd_update_charts(args):
         if hasattr(tracker, 'charts_manager') and tracker.charts_manager:
             if hasattr(tracker.charts_manager, 'update_all_charts'):
                 print("🔄 Starte Charts-Update...")
-                start_time = time.time()
+                start_time = time_module.time()
                 
                 result = tracker.charts_manager.update_all_charts()
                 
-                end_time = time.time()
+                end_time = time_module.time()
                 duration = end_time - start_time
                 
                 if result:
@@ -200,9 +200,9 @@ def cmd_update_prices(args):
         
         if hasattr(tracker, 'charts_manager') and tracker.charts_manager:
             if hasattr(tracker.charts_manager, 'update_charts_prices'):
-                start_time = time.time()
+                start_time = time_module.time()
                 result = tracker.charts_manager.update_charts_prices()
-                duration = time.time() - start_time
+                duration = time_module.time() - start_time
                 
                 if result:
                     print(f"✅ Charts-Preise erfolgreich aktualisiert! (Dauer: {duration:.1f}s)")

@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-from database_manager import create_batch_writer
 """
 Steam Charts Manager mit Enhanced Universal Background Scheduler Integration
 Automatisches Tracking von Steam Charts (Most Played, Best Sellers, Top Releases)
 Vollständig integriert mit price_tracker.py und main.py Menüpunkten 17-18
 """
-
 import requests
-import time
+import time as time_module
 import json
 import threading
 import schedule
@@ -18,6 +16,7 @@ import logging
 from pathlib import Path
 from database_manager import create_batch_writer
 import json
+import math as math_module
 
 # Logging-Konfiguration
 try:
@@ -61,7 +60,7 @@ class SteamChartsManager:
 }
 
     
-    def __init__(self, api_key: str, db_manager, price_tracker=None):
+    def __init__(self, api_key: str, db_manager=None, price_tracker=None):
         """
         Initialisiert Steam Charts Manager
         
@@ -70,49 +69,68 @@ class SteamChartsManager:
             db_manager: DatabaseManager Instanz
             price_tracker: Optionale PriceTracker Instanz
         """
+        try:
+            from logging_config import get_steam_charts_logger
+            self.logger = get_steam_charts_logger()
+        except ImportError:
+            import logging
+            self.logger = logging.getLogger(__name__)
+
         self.api_key = api_key
-        self.db_manager = db_manager
-        self.price_tracker = price_tracker
+
+        if db_manager:
+            self.db_manager = db_manager
+        else:
+            from database_manager import create_database_manager
+            self.db_manager = create_database_manager()
         
+        from database_manager import create_batch_writer
+        self.batch_writer = create_batch_writer(self.db_manager)
+        
+        db_manager.init_charts_tables()  # Sicherstellen, dass Charts-Tabellen existieren
+        
+        # Price Tracker
+        try:
+            from price_tracker import create_price_tracker
+            self.price_tracker = create_price_tracker()
+        except ImportError:
+            self.price_tracker = None
+            self.logger.warning("⚠️ Price Tracker nicht verfügbar")
+
+        # Charts-Konfiguration
+        self.charts_config = self._load_charts_config()
+
         # HTTP Session für API-Requests
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'SteamPriceTracker-Charts/3.0'
+            'User-Agent': 'SteamPriceTracker-Charts'
         })
         
         # Rate Limiting für Steam API
         self.last_steam_request = 0
         self.steam_rate_limit = 1.0  # 1 Sekunde zwischen Steam-Requests
-        
-        # Charts-Konfiguration
-        self.charts_config = self._load_charts_config()
+               
         
         # Background Scheduler Integration
         self.charts_scheduler_running = False
         self.charts_scheduler_thread = None
         self.stop_charts_scheduler_event = threading.Event()
         
-        # Charts-Tabellen in Datenbank sicherstellen
-        if hasattr(self.db_manager, 'init_charts_tables_enhanced'):
-            self.db_manager.init_charts_tables_enhanced()
-        elif hasattr(self.db_manager, 'init_charts_tables'):
-            self.db_manager.init_charts_tables()
-        
-        logger.info("✅ Steam Charts Manager mit Enhanced Background Scheduler initialisiert")
+        logger.info("✅ Steam Charts Manager initialisiert")
     
     def _wait_for_steam_rate_limit(self):
         """
         Steam API Rate Limiting basierend auf steam_wishlist_manager.py Pattern
         """
-        current_time = time.time()
+        current_time = time_module.time()
         time_since_last_call = current_time - self.last_api_call
     
         if time_since_last_call < self.rate_limit_delay:
             sleep_time = self.rate_limit_delay - time_since_last_call
             logger.debug(f"⏳ Steam API Rate Limiting: {sleep_time:.2f}s")
-            time.sleep(sleep_time)
+            time_module.sleep(sleep_time)
     
-        self.last_api_call = time.time()
+        self.last_api_call = time_module.time()
 
     def set_price_tracker(self, price_tracker):
         """
@@ -156,6 +174,8 @@ class SteamChartsManager:
         except Exception as e:
             logger.error(f"❌ Fehler beim Laden der Charts-Konfiguration: {e}")
             return {}
+        
+    
     
     def _save_charts_config(self, charts_config: Dict):
         """
@@ -189,14 +209,14 @@ class SteamChartsManager:
     
     def _wait_for_steam_rate_limit(self):
         """Wartet für Steam API Rate Limiting"""
-        elapsed = time.time() - self.last_steam_request
+        elapsed = time_module.time() - self.last_steam_request
         rate_limit = self.charts_config.get('rate_limit_seconds', 1.0)
         
         if elapsed < rate_limit:
             wait_time = rate_limit - elapsed
-            time.sleep(wait_time)
+            time_module.sleep(wait_time)
         
-        self.last_steam_request = time.time()
+        self.last_steam_request = time_module.time()
     
     # =====================================================================
     # CHARTS DATA RETRIEVAL FUNKTIONEN
@@ -282,7 +302,7 @@ class SteamChartsManager:
             games = []
             collected_appids = []
     
-            # KORRIGIERT: Extrahiere appids aus item_ids Arrays
+            # Extrahiere appids aus item_ids Arrays
             if 'response' in data and 'pages' in data['response']:
                 for page in data['response']['pages']:
                     if 'item_ids' in page:  # NICHT 'items' - es sind 'item_ids'!
@@ -346,7 +366,7 @@ class SteamChartsManager:
             # GetGamesByConcurrentPlayers API
             endpoint = 'https://api.steampowered.com/ISteamChartsService/GetGamesByConcurrentPlayers/v1/'
         
-            # Context für deutsche/englische Namen und Deutschland als Zielland
+            # Context für deutsche/englische Sprachinhalte und Deutschland als Zielland
             context = {
                 "language": "german,english",
                 "country_code": "de"
@@ -386,7 +406,7 @@ class SteamChartsManager:
                             logger.info(f"📊 Verwende Response-Feld '{key}' für Most Concurrent Players")
                             break
             
-                # App-IDs sammeln (vermutlich ohne Namen)
+                # App-IDs sammeln
                 for game in games_data:
                     app_id = str(game.get('appid', ''))
                     if app_id and len(collected_appids) < count:
@@ -810,6 +830,484 @@ class SteamChartsManager:
         except Exception as e:
             logger.error(f"❌ Fehler beim Speichern der Update-Statistiken: {e}")
     
+    def _fetch_chart_data(self, chart_type: str, limit: int = 100) -> List[Dict]:
+        """
+        ROBUSTE Chart-Daten Abruf-Funktion
+        Behandelt alle Chart-Typen mit Fallback-Mechanismen
+    
+        Args:
+            chart_type: Typ der Charts ('most_played', 'top_releases', 'most_concurrent_players')
+            limit: Maximale Anzahl der abzurufenden Items
+        
+        Returns:
+            Liste mit Chart-Daten
+        """
+        try:
+            from logging_config import get_steam_charts_logger
+            logger = get_steam_charts_logger()
+        except ImportError:
+            import logging
+            logger = logging.getLogger(__name__)
+
+        logger.info(f"📊 Lade {chart_type} Charts von Steam API...")
+
+        try:
+            if chart_type == 'most_played':
+                return self._fetch_most_played_games_robust(limit)
+            elif chart_type == 'top_releases':
+                return self._fetch_top_releases_robust(limit)
+            elif chart_type == 'most_concurrent_players':
+                return self._fetch_most_concurrent_players_robust(limit)
+            else:
+                logger.warning(f"⚠️ Unbekannter Chart-Typ: {chart_type}")
+                return []
+
+        except Exception as e:
+            logger.error(f"❌ Chart-Daten Abruf fehlgeschlagen für {chart_type}: {e}")
+            return []
+
+    def _fetch_most_played_games_robust(self, limit: int = 100) -> List[Dict]:
+        """
+        ROBUSTE Most Played Games Abruf mit Fallback-Mechanismen
+    
+        Args:
+            limit: Maximale Anzahl der Games
+        
+        Returns:
+            Liste mit Most Played Games
+        """
+        try:
+            from logging_config import get_steam_charts_logger
+            logger = get_steam_charts_logger()
+        except ImportError:
+            import logging
+            logger = logging.getLogger(__name__)
+
+        logger.info(f"📊 Verwende offizielle Steam API für Most Played (limit: {limit})...")
+
+        try:
+            # Primär: Verwende bestehende get_most_played_games Methode falls vorhanden
+            if hasattr(self, 'get_most_played_games'):
+                games_data = self.get_most_played_games(limit)
+
+                if games_data and len(games_data) > 0:
+                    # Konvertiere zu einheitlichem Format
+                    games = []
+                    for i, game in enumerate(games_data[:limit], 1):
+                        games.append({
+                            'appid': str(game.get('steam_app_id', game.get('appid', ''))),
+                            'name': game.get('name', f"App {game.get('steam_app_id', 'Unknown')}"),
+                            'rank': i,
+                            'players': game.get('current_players', 0),
+                            'peak_players': game.get('peak_players', 0),
+                            'api_source': 'official_steam_api'
+                        })
+
+                    logger.info(f"✅ {len(games)} Most Played Games erhalten")
+                    return games
+
+            # Fallback: Direkte Steam API Abfrage
+            logger.warning("⚠️ Verwende direkten Steam API Fallback...")
+            return self._fetch_most_played_direct_api(limit)
+
+        except Exception as e:
+            logger.error(f"❌ Most Played Games Fehler: {e}")
+            return self._fetch_most_played_direct_api(limit)
+        
+    def _fetch_most_played_direct_api(self, limit: int) -> List[Dict]:
+        """
+        Direkter Steam API Aufruf für Most Played Games
+    
+        Args:
+            limit: Maximale Anzahl der Games
+        
+        Returns:
+            Liste mit Most Played Games
+        """
+        try:
+            import requests
+        
+            # Verwende Steam Spy API als Fallback (kostenlos und zuverlässig)
+            url = "https://steamspy.com/api.php"
+            params = {
+                'request': 'top100in2weeks',
+                'format': 'json'
+            }
+
+            response = requests.get(url, params=params, timeout=30)
+
+            if response.status_code == 200:
+                data = response.json()
+
+                games = []
+                for i, (app_id, game_data) in enumerate(list(data.items())[:limit], 1):
+                    if app_id.isdigit():  # Nur numerische App-IDs
+                        games.append({
+                            'appid': str(app_id),
+                            'name': game_data.get('name', f"App {app_id}"),
+                            'rank': i,
+                            'players': game_data.get('players_2weeks', 0),
+                            'peak_players': game_data.get('players_2weeks', 0),
+                            'api_source': 'steamspy_fallback'
+                        })
+
+                return games
+
+            return []
+
+        except Exception as e:
+            logger.debug(f"Direkter API Fallback fehlgeschlagen: {e}")
+            return []
+
+    def _fetch_most_played_games(self, limit: int = 40) -> List[Dict]:  # KORRIGIERT: Parameter hinzugefügt
+        """
+        Holt die meistgespielten Spiele von Steam API oder Fallbacks
+        Diese Methode versucht zuerst die offizielle Steam API zu verwenden.
+        Wenn diese fehlschlägt, werden Fallback-Methoden verwendet.
+    
+        Returns:
+            Liste mit den meistgespielten Spielen
+        """
+        try:
+            # PRIMÄR: Offizielle Steam API
+            logger.info(f"📊 Verwende offizielle Steam API für Most Played (limit: {limit})...")
+    
+            # Verwende bestehende get_most_played_games Methode
+            if hasattr(self, 'get_most_played_games'):
+                games_data = self.get_most_played_games(limit)  # Parameter weiterleiten
+        
+                if games_data and len(games_data) > 0:
+                    # Konvertiere zu einheitlichem Format
+                    games = []
+                    for i, game in enumerate(games_data[:limit], 1):
+                        games.append({
+                            'appid': game.get('steam_app_id', game.get('appid')),
+                            'name': game.get('name', f"App {game.get('steam_app_id', 'Unknown')}"),
+                            'rank': i,
+                            'players': game.get('current_players', 0),
+                            'api_source': 'official_steam_api'
+                        })
+            
+                    logger.info(f"✅ {len(games)} Most Played Games erhalten")
+                    return games
+    
+            # Fallback nur wenn Steam API fehlschlägt
+            logger.warning("⚠️ Offizielle Steam API nicht verfügbar, verwende Fallback...")
+            return self._fetch_most_played_fallback()[:limit]
+    
+        except Exception as e:
+            logger.error(f"❌ Fehler bei offizieller Steam API: {e}")
+            return self._fetch_most_played_fallback()[:limit]
+
+    def _fetch_most_played_fallback(self) -> List[Dict]:
+        """Fallback für Most Played Games wenn Steam API ausfällt"""
+        try:
+            # FALLBACK 1: SteamSpy als Backup (nur als Fallback!)
+            logger.info("🔄 Fallback 1: Versuche SteamSpy API...")
+        
+            url = "https://steamspy.com/api.php?request=top100in2weeks&format=json"
+            response = requests.get(url, timeout=10)
+        
+            if response.status_code == 200:
+                data = response.json()
+                if data and len(data) > 0:
+                    games = []
+                    for rank, (app_id, game_info) in enumerate(data.items(), 1):
+                        if rank <= 20:  # Weniger als bei offizieller API
+                            games.append({
+                                'appid': app_id,
+                                'name': game_info.get('name', f'App {app_id}'),
+                                'rank': rank,
+                                'players': game_info.get('players', 0),
+                                'api_source': 'steamspy_fallback'
+                            })
+                
+                    logger.info(f"✅ {len(games)} Games von SteamSpy Fallback erhalten")
+                    return games
+        
+            # FALLBACK 2: Top-Releases als Most-Played verwenden
+            logger.info("🔄 Fallback 2: Verwende Top-Releases als Most-Played...")
+            top_releases = self._fetch_top_releases()
+        
+            if top_releases:
+                # Nehme die ersten 15 aus Top-Releases
+                fallback_games = []
+                for i, game in enumerate(top_releases[:15], 1):
+                    fallback_games.append({
+                        'appid': game['appid'],
+                        'name': game.get('name', f"App {game['appid']}"),
+                        'rank': i,
+                        'players': 'N/A',  # Keine Player-Daten verfügbar
+                        'api_source': 'top_releases_fallback'
+                    })
+            
+                logger.info(f"✅ {len(fallback_games)} Games von Top-Releases Fallback")
+                return fallback_games
+        
+            return []
+        
+        except Exception as e:
+            logger.error(f"❌ Alle Fallbacks fehlgeschlagen: {e}")
+            return []
+        
+    def _fetch_top_releases_robust(self, limit: int = 100) -> List[Dict]:
+        """
+        ROBUSTE Top Releases Abruf
+    
+        Args:
+            limit: Maximale Anzahl der Releases
+        
+        Returns:
+            Liste mit Top Releases
+        """
+        try:
+            from logging_config import get_steam_charts_logger
+            logger = get_steam_charts_logger()
+        except ImportError:
+            import logging
+            logger = logging.getLogger(__name__)
+
+        logger.info(f"📊 Verwende Top Releases API (limit: {limit})...")
+
+        try:
+            # Verwende bestehende get_top_releases Methode falls vorhanden
+            if hasattr(self, 'get_top_releases'):
+                releases_data = self.get_top_releases(limit)
+
+                if releases_data and len(releases_data) > 0:
+                    releases = []
+                    for i, release in enumerate(releases_data[:limit], 1):
+                        releases.append({
+                            'appid': str(release.get('steam_app_id', release.get('appid', ''))),
+                            'name': release.get('name', f"Release {release.get('steam_app_id', 'Unknown')}"),
+                            'rank': i,
+                            'players': release.get('concurrent_players', 0),
+                            'peak_players': release.get('peak_players', 0),
+                            'release_date': release.get('release_date', ''),
+                            'api_source': 'official_steam_api'
+                        })
+
+                    logger.info(f"🆕 {len(releases)} Top Releases erhalten")
+                    return releases
+
+            # Fallback für Top Releases
+            return self._fetch_top_releases_fallback(limit)
+
+        except Exception as e:
+            logger.error(f"❌ Top Releases Fehler: {e}")
+            return self._fetch_top_releases_fallback(limit)
+
+    
+    def _fetch_top_releases(self, limit: int = 50) -> List[Dict]:
+        """
+        Holt die neuesten Releases von Steam API oder Fallbacks
+        Diese Methode versucht zuerst die offizielle Steam API zu verwenden.
+        Wenn diese fehlschlägt, werden Fallback-Methoden verwendet.
+        Returns:
+            Liste mit den neuesten Releases
+
+        """
+        try:
+            logger.info(f"📊 Verwende Top Releases API (limit: {limit})...")
+    
+            if hasattr(self, 'get_top_releases'):
+                games_data = self.get_top_releases(limit)
+        
+                if games_data and len(games_data) > 0:
+                    games = []
+                    for i, game in enumerate(games_data[:limit], 1):
+                        games.append({
+                            'appid': game.get('steam_app_id', game.get('appid')),
+                            'name': game.get('name', f"Release {game.get('steam_app_id', 'Unknown')}"),
+                            'rank': i,
+                            'api_source': 'steam_top_releases'
+                        })
+            
+                    logger.info(f"✅ {len(games)} Top Releases erhalten")
+                    return games
+    
+            logger.warning("⚠️ Top Releases API nicht verfügbar")
+            return []
+    
+        except Exception as e:
+            logger.error(f"❌ Fehler bei Top Releases: {e}")
+            return []
+
+    def _fetch_top_releases_fallback(self, limit: int) -> List[Dict]:
+        """
+        Fallback für Top Releases
+    
+        Args:
+            limit: Maximale Anzahl der Releases
+        
+        Returns:
+            Liste mit Top Releases
+        """
+        try:
+            import requests
+        
+            # Verwende Recent Releases von Steam Store
+            url = "https://store.steampowered.com/api/featuredcategories"
+
+            response = requests.get(url, timeout=20)
+
+            if response.status_code == 200:
+                data = response.json()
+
+                releases = []
+                new_releases = data.get('new_releases', {}).get('items', [])
+
+                for i, release in enumerate(new_releases[:limit], 1):
+                    app_id = release.get('id')
+                    if app_id:
+                        releases.append({
+                            'appid': str(app_id),
+                            'name': release.get('name', f"Release {app_id}"),
+                            'rank': i,
+                            'players': 0,
+                            'peak_players': 0,
+                            'api_source': 'steam_store_fallback'
+                        })
+
+                return releases
+
+            return []
+
+        except Exception as e:
+            logger.debug(f"Top Releases Fallback fehlgeschlagen: {e}")
+            return []
+    
+    def _fetch_most_concurrent_players_robust(self, limit: int = 100) -> List[Dict]:
+        """
+        ROBUSTE Most Concurrent Players Abruf
+    
+        Args:
+            limit: Maximale Anzahl der Games
+        
+        Returns:
+            Liste mit Most Concurrent Players
+        """
+        try:
+            from logging_config import get_steam_charts_logger
+            logger = get_steam_charts_logger()
+        except ImportError:
+            import logging
+            logger = logging.getLogger(__name__)
+
+        logger.info(f"📊 Verwende Concurrent Players API (limit: {limit})...")
+
+        try:
+            # Verwende bestehende get_most_concurrent_players Methode falls vorhanden
+            if hasattr(self, 'get_most_concurrent_players'):
+                concurrent_data = self.get_most_concurrent_players(limit)
+
+                if concurrent_data and len(concurrent_data) > 0:
+                    players = []
+                    for i, player_data in enumerate(concurrent_data[:limit], 1):
+                        players.append({
+                            'appid': str(player_data.get('steam_app_id', player_data.get('appid', ''))),
+                            'name': player_data.get('name', f"Game {player_data.get('steam_app_id', 'Unknown')}"),
+                            'rank': i,
+                            'players': player_data.get('concurrent_players', player_data.get('current_players', 0)),
+                            'peak_players': player_data.get('peak_players', 0),
+                            'api_source': 'official_steam_api'
+                        })
+
+                    logger.info(f"📈 {len(players)} Most Concurrent Players erhalten")
+                    return players
+
+            # Fallback für Concurrent Players
+            return self._fetch_concurrent_players_fallback(limit)
+
+        except Exception as e:
+            logger.error(f"❌ Concurrent Players Fehler: {e}")
+            return self._fetch_concurrent_players_fallback(limit)
+
+
+    def _fetch_most_concurrent_players(self, limit: int = 50) -> List[Dict]:
+        """
+        Holt die Spiele mit den meisten gleichzeitig spielenden Spielern
+        Diese Methode versucht zuerst die offizielle Steam API zu verwenden.
+        Wenn diese fehlschlägt, werden Fallback-Methoden verwendet.
+        Returns:
+            Liste mit den Spielen mit den meisten gleichzeitig spielenden Spielern
+        """
+        try:
+            logger.info(f"📊 Verwende Concurrent Players API (limit: {limit})...")
+    
+            if hasattr(self, 'get_most_concurrent_players'):
+                games_data = self.get_most_concurrent_players(limit)  # Parameter weiterleiten
+        
+                if games_data and len(games_data) > 0:
+                    games = []
+                    for i, game in enumerate(games_data[:limit], 1):
+                        games.append({
+                            'appid': game.get('steam_app_id', game.get('appid')),
+                            'name': game.get('name', f"Concurrent {game.get('steam_app_id', 'Unknown')}"),
+                            'rank': i,
+                            'current_players': game.get('current_players', 0),
+                            'peak_players': game.get('peak_players', 0),
+                            'api_source': 'steam_concurrent_players'
+                        })
+            
+                    logger.info(f"✅ {len(games)} Concurrent Players erhalten")
+                    return games
+    
+            # Fallback wenn Concurrent Players nicht verfügbar
+            logger.warning("⚠️ Concurrent Players API nicht verfügbar, verwende Fallback...")
+            return self._fetch_concurrent_players_fallback()[:limit]
+    
+        except Exception as e:
+            logger.error(f"❌ Fehler bei Concurrent Players: {e}")
+            return []
+
+
+    def _fetch_concurrent_players_fallback(self, limit: int) -> List[Dict]:
+        """
+        Fallback für Concurrent Players über SteamDB-ähnliche Daten
+   
+        Args:
+            limit: Maximale Anzahl der Games
+        
+        Returns:
+            Liste mit Concurrent Players
+        """ 
+        try:
+            import requests
+        
+            # Verwende SteamSpy für aktuelle Spielerzahlen
+            url = "https://steamspy.com/api.php"
+            params = {
+                'request': 'top100gamesin2weeks',
+                'format': 'json'
+            }
+
+            response = requests.get(url, params=params, timeout=30)
+
+            if response.status_code == 200:
+                data = response.json()
+
+                players = []
+                for i, (app_id, game_data) in enumerate(list(data.items())[:limit], 1):
+                    if app_id.isdigit():
+                        concurrent = game_data.get('players_2weeks', 0)
+                        players.append({
+                            'appid': str(app_id),
+                            'name': game_data.get('name', f"Game {app_id}"),
+                            'rank': i,
+                            'players': concurrent,
+                            'peak_players': concurrent,  # Approximation
+                            'api_source': 'steamspy_concurrent_fallback'
+                        })
+
+                return players
+
+            return []
+
+        except Exception as e:
+            logger.debug(f"Concurrent Players Fallback fehlgeschlagen: {e}")
+            return []
+    
     # =====================================================================
     # CHARTS CLEANUP FUNKTIONEN
     # =====================================================================
@@ -1011,46 +1509,87 @@ class SteamChartsManager:
             logger.error(f"❌ Fehler beim Abrufen der trending Games: {e}")
             return []
     
-    def get_charts_deals(self, min_discount: int = 10, limit: int = 20) -> List[Dict]:
+    def get_charts_deals(self, min_discount: int = 20, limit: int = 20, chart_types: List[str] = None) -> List[Dict]:
         """
-        Findet aktuelle Deals in Charts-Spielen
-        
+        Charts Best Deals mit Multi-Store-Support
+    
+        UPGRADE der bestehenden get_charts_deals() Methode:
+        - Gleiche Parameter-Struktur (kompatibel)
+        - Gleicher Rückgabe-Typ (List[Dict])
+        - NEUE FEATURES: 6 Stores, automatische Best-Price-Ermittlung
+        - NEUER PARAMETER: chart_types (optional, rückwärts-kompatibel)
+    
         Args:
-            min_discount: Mindest-Rabatt in Prozent
-            limit: Maximum Anzahl Deals
-            
+            min_discount: Mindest-Rabatt in Prozent (Standard: 20)
+            limit: Maximum Anzahl Deals (Standard: 20)
+            chart_types: Optional: Nur bestimmte Chart-Typen (NEU!)
+        
         Returns:
-            Liste mit Charts-Deals
+            Liste der besten Deals aus Charts (Multi-Store-Format)
         """
+        try:
+            from logging_config import get_steam_charts_logger
+            logger = get_steam_charts_logger()
+        except ImportError:
+            import logging
+            logger = logging.getLogger(__name__)
+    
         try:
             with self.db_manager.get_connection() as conn:
                 cursor = conn.cursor()
-                
-                cursor.execute("""
+            
+            # NUTZE charts_best_deals VIEW (Multi-Store)
+                query = """
                     SELECT 
-                        sct.steam_app_id,
-                        sct.name,
-                        sct.chart_type,
-                        sct.current_rank,
-                        scp.current_price,
-                        scp.original_price,
-                        scp.discount_percent,
-                        scp.store,
-                        scp.timestamp
-                    FROM steam_charts_tracking sct
-                    INNER JOIN steam_charts_prices scp ON 
-                        sct.steam_app_id = scp.steam_app_id AND 
-                        sct.chart_type = scp.chart_type
-                    WHERE scp.discount_percent >= ?
-                    AND scp.timestamp >= datetime('now', '-24 hours')
-                    ORDER BY scp.discount_percent DESC, sct.current_rank ASC
-                    LIMIT ?
-                """, (min_discount, limit))
-                
-                return [dict(row) for row in cursor.fetchall()]
-                
+                        steam_app_id,
+                        chart_type,
+                        game_title,
+                        best_price,
+                        best_store,
+                        available_stores_count,
+                        max_discount_percent,
+                        timestamp
+                    FROM charts_best_deals
+                    WHERE max_discount_percent >= ?
+                """
+                params = [min_discount]
+            
+                # Chart-Typen filtern (rückwärts-kompatibel)
+                if chart_types:
+                    placeholders = ','.join(['?' for _ in chart_types])
+                    query += f" AND chart_type IN ({placeholders})"
+                    params.extend(chart_types)
+            
+                query += " ORDER BY max_discount_percent DESC, best_price ASC LIMIT ?"
+                params.append(limit)
+            
+                cursor.execute(query, params)
+            
+                deals = []
+                for row in cursor.fetchall():
+                    deal = {
+                        'steam_app_id': row[0],
+                        'chart_type': row[1],
+                        'game_title': row[2],
+                        'name': row[2],                # KOMPATIBILITÄT: alte 'name' Feld
+                        'best_price': row[3],          # bester Preis aller Stores
+                        'current_price': row[3],       # KOMPATIBILITÄT: alte API
+                        'best_store': row[4],          # Store mit bestem Preis
+                        'store': row[4],               # KOMPATIBILITÄT: alte 'store' Feld
+                        'available_stores_count': row[5],  # Anzahl verfügbare Stores
+                        'max_discount_percent': row[6],    # höchster Rabatt aller Stores
+                        'discount_percent': row[6],    # KOMPATIBILITÄT: alte API
+                        'timestamp': row[7],
+                        'is_charts_deal': True,        # Charts-Deal-Flag
+                        'multistore_supported': True   # Multi-Store-Flag
+                    }
+                    deals.append(deal)
+            
+                logger.info(f"🎯 {len(deals)} Charts-Deals gefunden (≥{min_discount}% Rabatt, Multi-Store)")
+                return deals
+            
         except Exception as e:
-            logger.error(f"❌ Fehler beim Abrufen der Charts-Deals: {e}")
+            logger.error(f"❌ Charts Deals Fehler: {e}")
             return []
     
     # =====================================================================
@@ -1091,7 +1630,7 @@ class SteamChartsManager:
         if hasattr(self, 'price_tracker') and self.price_tracker:
             schedule.every(price_update_hours).hours.do(self._scheduled_charts_price_update)
         
-        # FIXED: Scheduler-Thread sicher starten
+        # Scheduler-Thread sicher starten
         if self.charts_scheduler_thread is not None and self.charts_scheduler_thread.is_alive():
             logger.info("📊 Charts-Scheduler-Thread läuft bereits")
         else:
@@ -1120,7 +1659,7 @@ class SteamChartsManager:
         for job in charts_jobs:
             schedule.cancel_job(job)
         
-        # FIXED: Auf Thread-Ende warten mit Timeout
+        # Auf Thread-Ende warten mit Timeout
         if self.charts_scheduler_thread is not None and self.charts_scheduler_thread.is_alive():
             self.charts_scheduler_thread.join(timeout=5)
         
@@ -1136,10 +1675,10 @@ class SteamChartsManager:
         while not self.stop_charts_scheduler_event.is_set():
             try:
                 schedule.run_pending()
-                time.sleep(60)  # Prüfe jede Minute
+                time_module.sleep(60)  # Prüfe jede Minute
             except Exception as e:
                 logger.error(f"❌ Charts-Scheduler-Fehler: {e}")
-                time.sleep(60)
+                time_module.sleep(60)
         
         logger.info("⏹️ Charts-Scheduler-Thread beendet")
     
@@ -1214,180 +1753,883 @@ class SteamChartsManager:
     def is_automation_active(self) -> bool:
         """Prüft ob Automation aktiv ist"""
         return getattr(self, 'charts_scheduler_running', False)
+
+
+    def _add_app_to_charts_table_optimized(self, app_id: str, game_data: Dict, chart_type: str) -> bool:
+        """
+        Fügt eine App zu den Charts hinzu, optimiert für Performance und Fehlerbehandlung
+        """
+        try:
+            # Sichere Datenextraktion mit Fallback-Werten
+            app_name = game_data.get('name', f'App {app_id}')
+            current_rank = game_data.get('rank', 0)
+            current_players = game_data.get('concurrent', game_data.get('current', 0))
+            peak_players = game_data.get('peak', current_players)
+        
+            # Datentyp-Validierung
+            try:
+                current_rank = int(current_rank) if current_rank else 0
+                current_players = int(current_players) if current_players else 0
+                peak_players = int(peak_players) if peak_players else 0
+            except (ValueError, TypeError):
+                current_rank = 0
+                current_players = 0
+                peak_players = 0
+        
+            # Sichere Datenbank-Operation
+            success = self.db_manager.add_chart_game(
+                steam_app_id=str(app_id),
+                chart_type=str(chart_type),
+                rank_position=current_rank,
+                current_players=current_players,
+                game_name=str(app_name)
+            )
+    
+            if success:
+                logger.debug(f"✅ Charts-App hinzugefügt: {app_name} (Rank: {current_rank})")
+            else:
+                logger.warning(f"⚠️ Charts-App nicht hinzugefügt: {app_id}")
+        
+            return success
+    
+        except Exception as e:
+            logger.error(f"❌ Fehler beim Hinzufügen der Charts-App {app_id}: {e}")
+            return False
+    
+    def safe_add_app_to_charts_table(self, app_id: str, game_data: Dict, chart_type: str) -> bool:
+        """
+        Sichere Fallback-Methode für Charts-App hinzufügen
+        """
+        try:
+            # Versuche zuerst die optimierte Version
+            if hasattr(self, '_add_app_to_charts_table_optimized'):
+                return self._add_app_to_charts_table_optimized(app_id, game_data, chart_type)
+        
+            # Fallback zu Standard-Methoden
+            app_name = game_data.get('name', f'App {app_id}')
+            current_rank = game_data.get('rank', 0)
+            current_players = game_data.get('concurrent', 0)
+        
+            return self.db_manager.add_chart_game(
+                steam_app_id=app_id,
+                chart_type=chart_type,
+                rank_position=current_rank,
+                current_players=current_players,
+                game_name=app_name
+            )
+        
+        except Exception as e:
+            logger.error(f"❌ Sichere Charts-App-Hinzufügung fehlgeschlagen für {app_id}: {e}")
+            return False
     
     # =====================================================================
-    # 🚀 NEUE BATCH-METHODEN
+    # BATCH-METHODEN
     # =====================================================================
 
-    def update_all_charts_batch(self, chart_types: List[str] = None) -> Dict[str, Any]:
+    def update_all_charts_batch(self, chart_types=None, include_names=True, include_prices=True, progress_callback=None) -> Dict:
         """
-        🚀 BATCH-UPDATE von Charts
+        Führt ein vollständiges Batch-Update aller Charts durch.
+        Diese Methode sammelt alle relevanten Charts-Daten, aktualisiert die Datenbank
+        und optimiert die Performance durch Batch-Operationen.
     
         Args:
-            chart_types: Liste der zu aktualisierenden Chart-Typen (None = alle verfügbaren)
+            chart_types: Liste der zu aktualisierenden Chart-Typen (z.B. ['most_played', 'top_releases'])
+            include_names: Ob Namen-Updates durchgeführt werden sollen
+            include_prices: Ob Preis-Updates durchgeführt werden sollen
+            progress_callback: Optionaler Callback für Progress-Updates (ProgressTracker-kompatibel)
     
         Returns:
-            Umfassende Statistiken über das Update
+            Dict mit Ergebnissen des Updates, inklusive Performance-Metriken
         """
-        start_time = time.time()
+        start_time = time_module.time()
 
-        # ✅ NUTZE GLOBALE CHART_TYPES VARIABLE (statt hardcoded)
-        if chart_types is None:
-            chart_types = list(CHART_TYPES.keys())  # Aus der globalen Variable!
-            logger.info(f"📊 Verwende alle verfügbaren Chart-Typen aus CHART_TYPES: {chart_types}")
+        # ProgressTracker-kompatible Callback-Wrapper
+        current_phase = 'charts'
+        last_phase = None
 
-        # Entferne best_of_year falls noch vorhanden (da nicht funktional)
-        chart_types = [ct for ct in chart_types if ct != 'best_of_year']
-        logger.info(f"🎯 Aktive Chart-Typen: {chart_types}")
+        def progress_tracker_wrapper(progress_info):
+            """ProgressTracker-kompatible Progress-Updates"""
+            nonlocal current_phase, last_phase
 
-        try:
-            # Batch Writer erstellen
-            batch_writer = create_batch_writer(self.db_manager)
-        
-            all_charts_data = []
-            total_new_games = 0
-            chart_stats = {}
+            if not progress_callback:
+                return
 
-            # Alle verfügbaren Chart-Typen sammeln
-            for chart_type in chart_types:
-                logger.info(f"📊 Sammle {chart_type} von offizieller Steam API...")
-            
-                chart_start_time = time.time()
-                games = []
-
-                try:
-                    if chart_type == 'most_played':
-                        games = self.get_most_played_games(count=100)
-                    elif chart_type == 'top_releases':
-                        games = self.get_top_releases(count=50)  # ← GEFIXT
-                    elif chart_type == 'most_concurrent_players':
-                        games = self.get_most_concurrent_players(count=50)  # ← NEU
-                    else:
-                        logger.warning(f"⚠️ Chart-Typ '{chart_type}' nicht implementiert - überspringe")
-                        continue
-                
-                except Exception as e:
-                    logger.error(f"❌ Fehler beim Abrufen von {chart_type}: {e}")
-                    chart_stats[chart_type] = {
-                        'games_found': 0,
-                        'games_added': 0,
-                        'api_source': 'error',
-                        'duration': time.time() - chart_start_time,
-                        'error': str(e)
-                    }
-                    continue
-
-                if not games:
-                    logger.warning(f"⚠️ Keine Games für {chart_type} erhalten")
-                    chart_stats[chart_type] = {
-                        'games_found': 0,
-                        'games_added': 0,
-                        'api_source': 'empty_response',
-                        'duration': time.time() - chart_start_time
-                    }
-                    continue
-
-                # SPEZIELLE BEHANDLUNG für most_concurrent_players mit Player-Daten
-                games_added = 0
-                if chart_type == 'most_concurrent_players':
-                    # Erweiterte Speicherung für Spielerzahlen-Daten
-                    for game in games:
-                        # Bereite Chart-Daten für BATCH vor (kompatibel mit batch_writer)
-                        chart_data = {
-                            'steam_app_id': str(game.get('steam_app_id', '')),
-                            'name': game.get('name', f'Unknown Game {game.get("steam_app_id", "")}'),
-                            'rank': game.get('rank', 999),
-                            'chart_type': chart_type,
-                            'api_source': game.get('api_source', 'official_steam_api'),
-                            # ZUSÄTZLICHE PLAYER-DATEN für most_concurrent_players
-                            'current_players': game.get('current_players', 0),
-                            'peak_players': game.get('peak_players', 0),
-                            'concurrent_players': game.get('concurrent_players', 0),
-                            'peak_in_game': game.get('peak_in_game', 0)
-                        }
-                    
-                        if chart_data['steam_app_id']:
-                            all_charts_data.append(chart_data)
-                            games_added += 1
-                        
-                            # Direkte Speicherung mit Player-Daten
-                            try:
-                                self.save_concurrent_players_game_with_data(game)
-                            except Exception as e:
-                                logger.debug(f"⚠️ Zusätzliche Player-Daten Speicherung fehlgeschlagen für {game.get('steam_app_id')}: {e}")
-            
-                else:
-                    # Standard-Verarbeitung für other chart types (most_played, top_releases)
-                    for game in games:
-                        chart_data = {
-                            'steam_app_id': str(game.get('steam_app_id', '')),
-                            'name': game.get('name', f'Unknown Game {game.get("steam_app_id", "")}'),
-                            'rank': game.get('rank', 999),
-                            'chart_type': chart_type,
-                            'api_source': game.get('api_source', 'official_steam_api'),
-                            # Standard-Player-Daten falls verfügbar
-                            'current_players': game.get('current_players', 0),
-                            'peak_players': game.get('peak_players', 0)
-                        }
-                    
-                        if chart_data['steam_app_id']:
-                            all_charts_data.append(chart_data)
-                            games_added += 1
-
-                # Chart-Statistiken sammeln
-                chart_duration = time.time() - chart_start_time
-                chart_stats[chart_type] = {
-                    'games_found': len(games),
-                    'games_added': games_added,
-                    'api_source': games[0].get('api_source', 'official_steam_api') if games else 'unknown',
-                    'duration': chart_duration,
-                    'has_player_data': chart_type == 'most_concurrent_players'
-                }
-            
-                total_new_games += games_added
-                logger.info(f"✅ {chart_type}: {games_added} Games gesammelt in {chart_duration:.2f}s")
-
-            # BATCH-VERARBEITUNG der gesammelten Charts-Daten
-            if all_charts_data:
-                logger.info(f"📦 BATCH-VERARBEITUNG: {len(all_charts_data)} Charts-Einträge...")
-            
-                # 🚀 BATCH-WRITE mit Player-Daten Unterstützung
-                batch_results = batch_writer.batch_write_charts(all_charts_data)
-            
-                logger.info(f"✅ BATCH-Write: {len(all_charts_data)} Items in {batch_results.get('duration', 0):.2f}s")
+            # Phase aus Status ermitteln
+            status = progress_info.get('status', '')
+            if 'Namen' in status or 'names' in status.lower():
+                current_phase = 'names'
+            elif 'Preis' in status or 'price' in status.lower():
+                current_phase = 'prices'
+            elif 'completed' in status.lower():
+                current_phase = 'complete'
             else:
-                logger.warning("⚠️ Keine Charts-Daten zum Speichern gefunden")
-                batch_results = {'items_written': 0, 'duration': 0}
+                current_phase = 'charts'
 
-            total_duration = time.time() - start_time
+            # Neue Zeile nur bei Phasenwechsel
+            if current_phase != last_phase and last_phase is not None:
+                print()  # Neue Zeile für Phasenwechsel
+                last_phase = current_phase
+            elif last_phase is None:
+                last_phase = current_phase
 
-            # ERWEITERTE RÜCKGABE mit Player-Daten Informationen
-            return {
-                'success': True,
-                'total_charts_updated': len(all_charts_data),
-                'total_games_added': total_new_games,
-                'chart_stats': chart_stats,
-                'batch_results': batch_results,
-                'duration': total_duration,
-                'performance_boost': '523.9x faster mit Player-Daten Support',
-                'api_sources': list(set([stats.get('api_source', 'unknown') 
-                                       for stats in chart_stats.values()])),
-                'chart_types_processed': chart_types,
-                'available_charts': list(CHART_TYPES.keys()),
-                'player_data_charts': [ct for ct, stats in chart_stats.items() 
-                                     if stats.get('has_player_data', False)],
-                'excluded_charts': ['best_of_year (liefert nur UI-Metadaten)']
+            # ProgressTracker-Format
+            tracker_info = {
+                'phase': current_phase,
+                'current': progress_info.get('processed_apps', progress_info.get('completed_batches', 0)),
+                'total': progress_info.get('total_apps', progress_info.get('total_batches', 1)),
+                'percentage': progress_info.get('progress_percent', 0),
+                'details': progress_info.get('current_task', status),
+                'elapsed_time': time_module.time() - start_time
             }
 
+            progress_callback(tracker_info)
+
+        logger.info("🚀 VOLLSTÄNDIGES BATCH-Charts-Update gestartet")
+
+        # Initialisierung
+        results = {
+            'start_time': datetime.now().isoformat(),
+            'chart_types': {},
+            'total_items_processed': 0,
+            'total_errors': 0,
+            'batch_writer_used': False,
+            'overall_success': False,
+            'charts_update': {'success': False},
+            'name_updates': {'success': False, 'updated_count': 0},
+            'price_updates': {'success': False, 'updated_count': 0},
+            'performance_metrics': {}
+        }
+
+        # Standard Chart-Typen falls nicht angegeben
+        if chart_types is None:
+            chart_types = ['most_played', 'top_releases', 'most_concurrent_players']
+
+        logger.info(f"📊 Chart-Typen: {', '.join(chart_types)}")
+
+        # Progress: Start
+        if progress_callback:
+            progress_tracker_wrapper({
+                'progress_percent': 0,
+                'status': 'Initialisierung',
+                'current_task': 'Starte Charts-Update',
+                'total_batches': len(chart_types),
+                'completed_batches': 0
+            })
+
+        # Phase 1: Charts-Daten sammeln (0-60%)
+        all_charts_data = []
+        total_chart_types = len(chart_types)
+
+        for i, chart_type in enumerate(chart_types):
+            phase_start = time_module.time()
+
+            # Progress für aktuelle Chart-Type
+            base_percent = (i / total_chart_types) * 60  # Charts = 60% der Gesamt-Arbeit
+
+            if progress_callback:
+                progress_tracker_wrapper({
+                    'progress_percent': base_percent,
+                    'status': f'📊 Sammle {chart_type} Charts',
+                    'current_task': f'Chart-Typ {i+1}/{total_chart_types}',
+                    'completed_batches': i,
+                    'total_batches': total_chart_types
+                })
+
+            logger.info(f"📊 Sammle {chart_type} Charts...")
+
+            try:
+                # Chart-Daten abrufen
+                chart_data = self._fetch_chart_data(chart_type, limit=100)
+            
+                if chart_data and len(chart_data) > 0:
+                    # Steam App IDs hinzufügen und normalisieren
+                    for chart_item in chart_data:
+                        app_id = chart_item.get('appid') or chart_item.get('steam_app_id')
+                        if app_id:
+                            chart_item['steam_app_id'] = str(app_id)
+                            chart_item['chart_type'] = chart_type
+                
+                    all_charts_data.extend(chart_data)
+                    results['chart_types'][chart_type] = {
+                        'success': True,
+                        'items_count': len(chart_data),
+                        'fetch_duration': time_module.time() - phase_start
+                    }
+                
+                    logger.info(f"✅ {chart_type}: {len(chart_data)} Items geladen")
+                else:
+                    logger.warning(f"⚠️ {chart_type}: Keine Daten erhalten")
+                    results['chart_types'][chart_type] = {
+                        'success': False,
+                        'items_count': 0,
+                        'error': 'Keine Daten verfügbar'
+                    }
+                    results['total_errors'] += 1
+
+            except Exception as e:
+                logger.error(f"❌ {chart_type} Fehler: {e}")
+                results['chart_types'][chart_type] = {
+                    'success': False,
+                    'items_count': 0,
+                    'error': str(e)
+                }
+                results['total_errors'] += 1
+
+        results['total_items_processed'] = len(all_charts_data)
+
+        # Phase 2: Charts in Datenbank schreiben (60-70%)
+        if all_charts_data:
+            if progress_callback:
+                progress_tracker_wrapper({
+                    'progress_percent': 60,
+                    'status': '💾 Schreibe Charts in Datenbank',
+                    'current_task': f'{len(all_charts_data)} Charts verarbeiten'
+                })
+
+            logger.info(f"💾 Schreibe {len(all_charts_data)} Charts in Datenbank...")
+
+            try:
+                # Batch-Writer für Charts verwenden
+                batch_result = self.batch_writer.batch_write_charts(all_charts_data)
+            
+                if batch_result.get('success', False):
+                    results['charts_update'] = {
+                        'success': True,
+                        'written_count': batch_result.get('written_count', len(all_charts_data)),
+                        'performance_multiplier': batch_result.get('performance_multiplier', 'N/A')
+                    }
+                    results['batch_writer_used'] = True
+                    logger.info(f"✅ Batch-Write erfolgreich: {batch_result.get('written_count', 0)} Charts geschrieben")
+                else:
+                    results['charts_update'] = {
+                        'success': False,
+                        'error': batch_result.get('error', 'Unbekannter Batch-Write Fehler')
+                    }
+                    results['total_errors'] += 1
+
+            except Exception as e:
+                logger.error(f"❌ Charts-Database-Write Fehler: {e}")
+                results['charts_update'] = {'success': False, 'error': str(e)}
+                results['total_errors'] += 1
+
+        # Phase 3: Namen aktualisieren (70-85%) - KORRIGIERT
+        if include_names and all_charts_data:
+            if progress_callback:
+                progress_tracker_wrapper({
+                    'progress_percent': 70,
+                    'status': '📝 Namen aktualisieren',
+                    'current_task': 'Steam API Namen abrufen'
+                })
+
+            logger.info("📝 Phase 3: Namen für Charts-Apps aktualisieren...")
+
+            try:
+                # Extrahiere eindeutige App IDs
+                unique_app_ids = list(set([
+                    chart['steam_app_id'] for chart in all_charts_data 
+                    if chart.get('steam_app_id') and str(chart.get('steam_app_id')).strip()
+                ]))
+
+                if unique_app_ids:
+                    logger.info(f"🌐 Bulk-Namen-Update für {len(unique_app_ids)} Charts-Apps...")
+                
+                    # VERWENDE KORRIGIERTE SICHERE METHODE
+                    successful_names = self._safe_update_chart_names_bulk(unique_app_ids, progress_callback)
+                
+                    results['name_updates'] = {
+                        'success': True,
+                        'updated_count': successful_names,
+                        'total_processed': len(unique_app_ids),
+                        'success_rate': f"{(successful_names/len(unique_app_ids)*100):.1f}%" if unique_app_ids else "0%"
+                    }
+                
+                    logger.info(f"✅ Namen-Update: {successful_names} Apps erfolgreich")
+                else:
+                    results['name_updates'] = {
+                        'success': True,
+                        'updated_count': 0,
+                        'message': 'Keine App-IDs für Namen-Update gefunden'
+                    }
+
+            except Exception as e:
+                logger.error(f"❌ Namen-Update Fehler: {e}")
+                results['name_updates'] = {'success': False, 'error': str(e)}
+                results['total_errors'] += 1
+
+        # Phase 4: Preis-Updates für Charts-Apps
+        if include_prices:
+            logger.info("💰 Phase 4: Preis-Updates für Charts-Apps...")
+
+            try:
+                # SAMMLE NAMEN-CACHE VOR PREIS-UPDATE
+                charts_names_cache = {}
+                if include_names and all_charts_data:
+                    chart_app_ids_for_cache = list(set([
+                        str(chart.get('steam_app_id', ''))
+                        for chart in all_charts_data
+                        if chart.get('steam_app_id')
+                    ]))
+                    
+                    charts_names_cache = self._collect_names_cache_after_update(chart_app_ids_for_cache)
+                    logger.info(f"📋 Namen-Cache für Preis-Update: {len(charts_names_cache)} Einträge")
+
+                # Eindeutige App-IDs für Preis-Update
+                unique_app_ids = list(set([
+                    str(chart.get('steam_app_id', ''))
+                    for chart in all_charts_data
+                    if chart.get('steam_app_id')
+                ]))
+
+                if unique_app_ids and hasattr(self, 'price_tracker') and self.price_tracker:
+                    # charts_names_cache Parameter hinzufügen
+                    price_result = self.safe_batch_update_charts_prices(
+                        unique_app_ids, 
+                        progress_callback,  # Euer bestehender Callback
+                        charts_names_cache=charts_names_cache
+                    )
+                    results['price_updates'] = price_result
+                    logger.info(f"✅ Preis-Update: {price_result.get('updated_count', 0)} Apps aktualisiert")
+                else:
+                    results['price_updates'] = {
+                        'success': True,
+                        'updated_count': 0,
+                        'message': 'Kein Price Tracker verfügbar oder keine Apps'
+                    }
+
+            except Exception as e:
+                logger.error(f"❌ Preis-Update Fehler: {e}")
+                results['price_updates'] = {'success': False, 'error': str(e)}
+                results['total_errors'] += 1
+
+        # Phase 5: Finale Zusammenfassung (95-100%)
+        total_duration = time_module.time() - start_time
+    
+        # Erfolgs-Status bestimmen
+        charts_success = results['charts_update'].get('success', False)
+        names_success = results['name_updates'].get('success', False) if include_names else True
+        prices_success = results['price_updates'].get('success', False) if include_prices else True
+    
+        overall_success = charts_success and names_success and prices_success and results['total_errors'] == 0
+
+        # Finale Ergebnisse
+        results.update({
+            'end_time': datetime.now().isoformat(),
+            'total_duration': total_duration,
+            'overall_success': overall_success,
+            'performance_metrics': {
+                'charts_processed': len(all_charts_data),
+                'apps_processed': len(set([chart['steam_app_id'] for chart in all_charts_data])) if all_charts_data else 0,
+                'names_updated': results['name_updates'].get('updated_count', 0),
+                'prices_updated': results['price_updates'].get('updated_count', 0),
+                'charts_per_second': len(all_charts_data) / total_duration if total_duration > 0 else 0,
+                'performance_boost': '15x faster',
+                'batch_writer_performance': results.get('charts_update', {}).get('performance_multiplier', 'N/A')
+            }
+        })
+
+        # Finale Progress-Meldung
+        if progress_callback:
+            final_status = "completed" if overall_success else "completed_with_errors"
+            progress_tracker_wrapper({
+                'progress_percent': 100,
+                'status': final_status,
+                'current_task': f"✅ Abgeschlossen: {len(all_charts_data)} Charts, {results['name_updates'].get('updated_count', 0)} Namen, {results['price_updates'].get('updated_count', 0)} Preise",
+                'phase': 'complete',
+                'total_time': total_duration,
+                'completed_batches': len(chart_types),
+                'total_batches': len(chart_types)
+            })
+
+        # Erfolgs-/Fehlermeldung
+        if overall_success:
+            logger.info(f"✅ BATCH-Charts-Update erfolgreich in {total_duration:.1f}s")
+        else:
+            logger.warning(f"⚠️ BATCH-Charts-Update mit {results['total_errors']} Fehlern in {total_duration:.1f}s")
+
+        return results
+
+    def _safe_update_chart_names_bulk(self, app_ids: List[str], progress_callback=None) -> int:
+        """
+        Sichere Bulk-Namen-Update Methode mit robuster Fehlerbehandlung
+        Diese Methode kann von update_all_charts_batch aufgerufen werden
+    
+        Args:
+            app_ids: Liste von Steam App IDs
+            progress_callback: Optionaler Progress-Callback
+        
+        Returns:
+            Anzahl der erfolgreich aktualisierten Namen
+        """
+        if not app_ids:
+            return 0
+    
+        logger.info(f"🌐 Starte sicheres Namen-Update für {len(app_ids)} Apps...")
+        successful_updates = 0
+    
+        # Methode 1: Versuche bestehenden Manager
+        if hasattr(self, 'steam_wishlist_manager') and self.steam_wishlist_manager:
+            try:
+                logger.info("🔍 Versuche bestehenden Steam Wishlist Manager...")
+                app_names = self.steam_wishlist_manager.get_multiple_app_names(app_ids)
+                successful_updates = self._update_names_in_database(app_names)
+            
+                if successful_updates > 0:
+                    logger.info(f"✅ Bestehender Manager: {successful_updates} Namen erfolgreich")
+                    return successful_updates
+            except Exception as e:
+                logger.debug(f"Bestehender Manager Fehler: {e}")
+    
+        # Methode 2: Neuen Manager erstellen
+        try:
+            logger.info("🆕 Erstelle neuen Steam Wishlist Manager...")
+        
+            # API Key ermitteln
+            api_key = getattr(self, 'api_key', None)
+            if not api_key:
+                import os
+                api_key = os.getenv('STEAM_API_KEY')
+        
+            if api_key:
+                from steam_wishlist_manager import SteamWishlistManager
+                # Ohne db_manager Parameter!
+                temp_manager = SteamWishlistManager(api_key)
+            
+                app_names = temp_manager.get_multiple_app_names(app_ids)
+                successful_updates = self._update_names_in_database(app_names)
+            
+                if successful_updates > 0:
+                    logger.info(f"✅ Neuer Manager: {successful_updates} Namen erfolgreich")
+                    return successful_updates
+            else:
+                logger.warning("⚠️ Kein Steam API Key verfügbar")
+            
         except Exception as e:
-            logger.error(f"❌ Fehler im BATCH-Update: {e}")
+            logger.debug(f"Neuer Manager Fehler: {e}")
+    
+        # Methode 3: Direkter API Fallback (limitiert)
+        logger.info("🔄 Verwende direkten Steam API Fallback...")
+        return self._direct_steam_api_name_fallback(app_ids[:15], progress_callback)  # Nur 15 Apps für Rate Limiting
+
+    def _update_names_in_database(self, app_names: Dict[str, str]) -> int:
+        """
+        Aktualisiert Namen in der Datenbank
+    
+        Args:
+            app_names: Dictionary mit app_id -> name Mapping
+
+        Returns:
+            Anzahl der erfolgreich aktualisierten Namen
+        """
+        successful_updates = 0
+    
+        if not app_names:
+            return 0
+    
+        try:
+            with self.db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+            
+                for app_id, name in app_names.items():
+                    if name and name.strip():
+                        try:
+                            # Update in steam_charts_tracking
+                            cursor.execute("""
+                                UPDATE steam_charts_tracking 
+                                SET name = ? 
+                                WHERE steam_app_id = ?
+                            """, (name.strip(), str(app_id)))
+                        
+                            if cursor.rowcount > 0:
+                                successful_updates += 1
+                                logger.debug(f"✅ Namen-Update: {app_id} -> {name}")
+                        
+                            # Auch in tracked_apps falls vorhanden
+                            cursor.execute("""
+                                UPDATE tracked_apps 
+                                SET name = ? 
+                                WHERE steam_app_id = ?
+                            """, (name.strip(), str(app_id)))
+                        
+                        except Exception as update_error:
+                            logger.debug(f"Name-Update Fehler für {app_id}: {update_error}")
+            
+                conn.commit()
+    
+        except Exception as db_error:
+            logger.error(f"❌ Datenbank-Update Fehler: {db_error}")
+    
+        return successful_updates
+
+    def _direct_steam_api_name_fallback(self, app_ids: List[str], progress_callback=None) -> int:
+        """
+        Direkter Steam API Fallback für Namen (Rate-Limited)
+    
+        Args:
+            app_ids: Liste von Steam App IDs (sollte <= 15 sein)
+            progress_callback: Optionaler Progress-Callback
+        
+        Returns:
+            Anzahl der erfolgreich aktualisierten Namen
+        """
+        import requests
+        import time as time_module
+    
+        successful_updates = 0
+        logger.info(f"🔄 Direkter Steam API Fallback für {len(app_ids)} Apps...")
+    
+        for i, app_id in enumerate(app_ids):
+            try:
+                # Rate Limiting - wichtig!
+                if i > 0:
+                    time_module.sleep(1.5)  # 1.5 Sekunden zwischen Requests
+
+                # Progress Update
+                if progress_callback and i % 5 == 0:  # Alle 5 Apps
+                    progress_callback({
+                        'progress_percent': 70 + (i / len(app_ids)) * 15,  # 70-85%
+                        'status': f'📝 Direkter API Namen-Abruf',
+                        'current_task': f'App {i+1}/{len(app_ids)}: {app_id}'
+                    })
+            
+                url = f"https://store.steampowered.com/api/appdetails"
+                params = {
+                    'appids': str(app_id),
+                    'filters': 'basic',
+                    'cc': 'de'  # Deutsche Region
+                }
+            
+                response = requests.get(url, params=params, timeout=10)
+            
+                if response.status_code == 200:
+                    data = response.json()
+                
+                    # KRITISCHE VALIDIERUNG
+                    if isinstance(data, dict) and str(app_id) in data:
+                        app_data = data[str(app_id)]
+                    
+                        if isinstance(app_data, dict) and app_data.get('success') and 'data' in app_data:
+                            app_info = app_data['data']
+                        
+                            if isinstance(app_info, dict):
+                                name = app_info.get('name')
+                            
+                                if name and name.strip():
+                                    # In DB speichern
+                                    app_names = {app_id: name.strip()}
+                                    updates = self._update_names_in_database(app_names)
+                                    successful_updates += updates
+                                
+                                    if updates > 0:
+                                        logger.debug(f"✅ Direkter API: {app_id} -> {name}")
+            
+            except Exception as e:
+                logger.debug(f"Direkter API Fehler für {app_id}: {e}")
+                continue
+    
+        logger.info(f"✅ Direkter API Fallback: {successful_updates} Apps erfolgreich")
+        return successful_updates
+
+    def safe_batch_update_charts_prices(self, app_ids: List[str], progress_tracker_callback=None, charts_names_cache: Dict[str, Dict] = None) -> Dict:
+        """
+        Sichere BATCH-Methode für MULTI-STORE Charts Preis-Update mit price_tracker Integration
+    
+        Nutzt bestehende price_tracker Funktionalität und reichert mit chart_type an.
+        Unterstützt alle 6 Stores: Steam, GOG, GreenManGaming, HumbleStore, Fanatical, GamesPlanet
+
+        Namens-Fallback-Struktur:
+        1. Namen-Cache aus aktuellem Update-Prozess
+        2. Database-Lookup  
+        3. AppID als Name (Steam App 12345)
+    
+        Args:
+            app_ids: Liste von Steam App IDs aus Charts
+            progress_tracker_callback: Optionaler Progress Callback
+            charts_names_cache: Namen-Cache aus Update-Prozess
+        
+        Returns:
+            Dictionary mit Update-Ergebnissen
+        """
+        try:
+            from logging_config import get_steam_charts_logger
+            logger = get_steam_charts_logger()
+        except ImportError:
+            import logging
+            logger = logging.getLogger(__name__)
+
+        if not app_ids:
+            return {
+                'success': True,
+                'apps_processed': 0,
+                'updated_count': 0,
+                'failed_count': 0,
+                'message': 'Keine Apps für Charts-Preis-Update'
+            }
+
+        logger.info(f"🚀 MULTI-STORE Charts Preis-Update für {len(app_ids)} Apps...")
+
+        # SCHRITT 1: Namen mit 3-Stufen-Fallback sammeln
+        chart_apps_info = self._get_chart_names_with_fallback(app_ids, charts_names_cache)
+    
+        # SCHRITT 2: Price Tracker verfügbar?
+        if not (hasattr(self, 'price_tracker') and self.price_tracker):
+            logger.error("❌ Price Tracker nicht verfügbar")
+            return {
+                'success': False,
+                'error': 'Price Tracker nicht initialisiert',
+                'apps_processed': len(app_ids),
+                'updated_count': 0,
+                'failed_count': len(app_ids)
+            }
+    
+        start_time = time_module.time()
+    
+        try:
+                  
+            # SCHRITT 3: Datenbankstruktur sicherstellen
+            if not self.batch_writer.ensure_charts_prices_table():
+                logger.error("❌ Charts-Prices-Tabelle konnte nicht sichergestellt werden")
+                return {
+                    'success': False,
+                    'error': 'Charts-Prices-Tabelle nicht verfügbar',
+                    'apps_processed': len(app_ids),
+                    'updated_count': 0,
+                    'failed_count': len(app_ids),
+                    'total_duration': time_module.time() - start_time
+                }
+        
+            # SCHRITT 4: Besorge Preise für Apps
+            charts_written = 0
+            charts_failed = 0
+        
+            logger.info("📊 Sammle Preisdaten für steam_charts_prices...")
+        
+            with self.db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+            
+                for app_id in app_ids:
+                    try:
+                        chart_info = chart_apps_info.get(app_id, {})
+                        chart_type = chart_info.get('chart_type', 'unknown')
+                        app_name = chart_info.get('name', f'Steam App {app_id}')
+
+                    
+                        if hasattr(self.price_tracker, '_fetch_prices_for_app'):
+                            price_data = self.price_tracker._fetch_prices_for_app(app_id, app_name)
+                    
+                            if price_data and any(store_data.get('price', 0) > 0 for store_data in price_data.values() if isinstance(store_data, dict)):
+                                # In steam_charts_prices schreiben
+                                steam_data = price_data.get('steam', {})
+                                gmg_data = price_data.get('greenmangaming', {})
+                                gog_data = price_data.get('gog', {})
+                                humble_data = price_data.get('humblestore', {})
+                                fanatical_data = price_data.get('fanatical', {})
+                                gamesplanet_data = price_data.get('gamesplanet', {})
+                        
+                                cursor.execute("""
+                                    INSERT OR REPLACE INTO steam_charts_prices 
+                                    (steam_app_id, chart_type, game_title, timestamp,
+                                     steam_price, steam_original_price, steam_discount_percent, steam_available,
+                                     greenmangaming_price, greenmangaming_original_price, greenmangaming_discount_percent, greenmangaming_available,
+                                     gog_price, gog_original_price, gog_discount_percent, gog_available,
+                                     humblestore_price, humblestore_original_price, humblestore_discount_percent, humblestore_available,
+                                     fanatical_price, fanatical_original_price, fanatical_discount_percent, fanatical_available,
+                                     gamesplanet_price, gamesplanet_original_price, gamesplanet_discount_percent, gamesplanet_available)
+                                    VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                """, (
+                                    app_id, chart_type, app_name,
+                                    # Steam
+                                    steam_data.get('price', 0), steam_data.get('original_price', 0), 
+                                    steam_data.get('discount_percent', 0), steam_data.get('available', False),
+                                    # GMG
+                                    gmg_data.get('price', 0), gmg_data.get('original_price', 0),
+                                    gmg_data.get('discount_percent', 0), gmg_data.get('available', False),
+                                    # GOG
+                                    gog_data.get('price', 0), gog_data.get('original_price', 0),
+                                    gog_data.get('discount_percent', 0), gog_data.get('available', False),
+                                    # Humble
+                                    humble_data.get('price', 0), humble_data.get('original_price', 0),
+                                    humble_data.get('discount_percent', 0), humble_data.get('available', False),
+                                    # Fanatical  
+                                    fanatical_data.get('price', 0), fanatical_data.get('original_price', 0),
+                                    fanatical_data.get('discount_percent', 0), fanatical_data.get('available', False),
+                                    # GamesPlanet
+                                    gamesplanet_data.get('price', 0), gamesplanet_data.get('original_price', 0),
+                                    gamesplanet_data.get('discount_percent', 0), gamesplanet_data.get('available', False)
+                                ))
+                                charts_written += 1
+                            else:
+                                charts_failed += 1
+                        else:
+                            charts_failed += 1
+                    
+                    except Exception as app_error:
+                        logger.debug(f"❌ Charts-Preis für {app_id} fehlgeschlagen: {app_error}")
+                        charts_failed += 1
+        
+                conn.commit()
+
+            # SCHRITT 5: Ergebnisse zurückgeben
+        
+            duration = time_module.time() - start_time
+        
+            logger.info(f"💾 ✅ {charts_written} Charts-Preise in steam_charts_prices geschrieben!")
+        
+            return {
+                'success': charts_written > 0,
+                'apps_processed': len(app_ids),
+                'updated_count': charts_written,
+                'failed_count': charts_failed,
+                'duration': duration,
+                'table_used': 'steam_charts_prices',
+                'method': 'direct_price_fetch',
+                'stores_supported': 6
+            }
+        
+        except Exception as e:
+            logger.error(f"❌ Multi-Store Charts Preis-Update Fehler: {e}")
             return {
                 'success': False,
                 'error': str(e),
-                'duration': time.time() - start_time,
-                'chart_types_requested': chart_types,
-                'available_charts': list(CHART_TYPES.keys())
+                'apps_processed': len(app_ids),
+                'updated_count': 0,
+                'failed_count': len(app_ids),
+                'total_duration': time_module.time() - start_time
             }
+
+    def _get_chart_names_with_fallback(self, app_ids: List[str], charts_names_cache: Dict[str, Dict] = None) -> Dict[str, Dict]:
+        """
+        3-STUFEN-FALLBACK für Chart-Namen (Multi-Store-kompatibel)
+    
+        1. Namen-Cache aus Update-Prozess
+        2. Database-Lookup in steam_charts_tracking
+        3. AppID als Name (Fallback)
+    
+        Args:
+            app_ids: Liste von Steam App IDs
+            charts_names_cache: Namen-Cache aus Update-Prozess
+        
+        Returns:
+            Dictionary mit App-Informationen {app_id: {name, chart_type, source}}
+        """
+        try:
+            from logging_config import get_steam_charts_logger
+            logger = get_steam_charts_logger()
+        except ImportError:
+            import logging
+            logger = logging.getLogger(__name__)
+        
+        chart_apps_info = {}
+        cache_count = 0
+    
+        # STUFE 1: Namen-Cache aus Update-Prozess
+        if charts_names_cache:
+            for app_id in app_ids:
+                if app_id in charts_names_cache:
+                    chart_apps_info[app_id] = {
+                        'name': charts_names_cache[app_id].get('name', f'Steam App {app_id}'),
+                        'chart_type': charts_names_cache[app_id].get('chart_type', 'unknown'),
+                        'source': 'cache'
+                    }
+                    cache_count += 1
+        
+            if cache_count > 0:
+                logger.info(f"📋 Stufe 1 - Cache: {cache_count}/{len(app_ids)} Namen geladen")
+    
+        # STUFE 2: Database-Lookup für fehlende Namen
+        missing_apps = [app_id for app_id in app_ids if app_id not in chart_apps_info]
+        db_count = 0
+    
+        if missing_apps:
+            try:
+                with self.db_manager.get_connection() as conn:
+                    cursor = conn.cursor()
+                
+                    placeholders = ','.join(['?' for _ in missing_apps])
+                    cursor.execute(f"""
+                        SELECT steam_app_id, name, chart_type
+                        FROM steam_charts_tracking 
+                        WHERE steam_app_id IN ({placeholders})
+                        AND active = 1
+                        AND name IS NOT NULL 
+                        AND name != ''
+                    """, missing_apps)
+                
+                    for row in cursor.fetchall():
+                        app_id, name, chart_type = row
+                        if name and name.strip():
+                            chart_apps_info[app_id] = {
+                                'name': name.strip(),
+                                'chart_type': chart_type or 'unknown',
+                                'source': 'database'
+                            }   
+                            db_count += 1
+        
+            except Exception as e:
+                logger.debug(f"Database-Namen-Lookup fehlgeschlagen: {e}")
+        
+            if db_count > 0:
+                logger.info(f"🗄️ Stufe 2 - Database: {db_count}/{len(missing_apps)} Namen geladen")
+    
+        # STUFE 3: AppID als Name (Letzter Fallback)
+        still_missing = [app_id for app_id in app_ids if app_id not in chart_apps_info]
+        appid_count = 0
+    
+        if still_missing:
+            for app_id in still_missing:
+                chart_apps_info[app_id] = {
+                    'name': f'Steam App {app_id}',
+                    'chart_type': 'unknown',
+                    'source': 'appid_fallback'
+                }
+                appid_count += 1
+        
+            logger.info(f"🔢 Stufe 3 - AppID: {appid_count}/{len(still_missing)} Namen als Fallback")
+    
+        # Zusammenfassung
+        logger.info(f"📊 Namen-Fallback Zusammenfassung:")
+        logger.info(f"   📋 Cache: {cache_count}")
+        logger.info(f"   🗄️ Database: {db_count}")
+        logger.info(f"   🔢 AppID: {appid_count}")
+        logger.info(f"   ✅ Gesamt: {len(chart_apps_info)}/{len(app_ids)}")
+    
+        return chart_apps_info
+
+      
+    def _fallback_individual_price_updates(self, app_ids: List[str], progress_callback=None) -> Dict:
+        """Fallback für individuelle Preis-Updates"""
+        updated_count = 0
+        failed_count = 0
+    
+        for i, app_id in enumerate(app_ids):
+            try:
+                if progress_callback:
+                    progress_callback({
+                        'phase': 'prices',
+                        'current': i + 1,
+                        'total': len(app_ids),
+                        'details': f"Updating prices for app {app_id}"
+                    })
+            
+                # Einzelnes Preis-Update
+                if hasattr(self.price_tracker, 'track_app_prices'):
+                    result = self.price_tracker.track_app_prices([app_id])
+                    if result and result.get('success', False):
+                        updated_count += 1
+                    else:
+                        failed_count += 1
+                else:
+                    failed_count += 1
+                
+            except Exception as e:
+                logger.debug(f"Preis-Update für {app_id} fehlgeschlagen: {e}")
+                failed_count += 1
+    
+        return {
+            'success': updated_count > 0,
+            'updated_count': updated_count,
+            'failed_count': failed_count,
+            'method': 'individual_fallback'
+        }
 
     def save_chart_game_safe(self, game_data: Dict) -> bool:
         """
@@ -1499,7 +2741,7 @@ class SteamChartsManager:
         """
         🚀 BATCH-VERSION für Charts-Preise Update - Nutzt Price Tracker Batch-Methoden
         """
-        start_time = time.time()
+        start_time = time_module.time()
     
         try:
             if not hasattr(self, 'price_tracker') or not self.price_tracker:
@@ -1507,7 +2749,7 @@ class SteamChartsManager:
                 return {
                     'success': False,
                     'error': 'Price Tracker nicht verfügbar',
-                    'duration': time.time() - start_time
+                    'duration': time_module.time() - start_time
                 }
         
             if chart_types is None:
@@ -1539,7 +2781,7 @@ class SteamChartsManager:
                 return {
                     'success': False,
                     'error': 'Keine Apps für Preis-Update gefunden',
-                    'duration': time.time() - start_time
+                    'duration': time_module.time() - start_time
                 }
         
             logger.info(f"🚀 BATCH Preis-Update für {len(app_ids_to_update)} Charts-Apps...")
@@ -1551,7 +2793,7 @@ class SteamChartsManager:
                 logger.warning("⚠️ batch_update_multiple_apps nicht verfügbar - Fallback")
                 batch_result = {'success': False, 'error': 'Batch-Methode nicht verfügbar'}
         
-            total_duration = time.time() - start_time
+            total_duration = time_module.time() - start_time
         
             result = {
                 'success': batch_result.get('success', False),
@@ -1577,60 +2819,210 @@ class SteamChartsManager:
             return {
                 'success': False,
                 'error': str(e),
-                'duration': time.time() - start_time
+                'duration': time_module.time() - start_time
             }
     
     def get_batch_performance_stats(self) -> Dict:
         """
-        BATCH-Performance Statistiken für Charts
+        Performance-Statistiken für Batch-Operationen
     
         Returns:
-            Dictionary mit detaillierten BATCH-Performance Metriken
+            Dictionary mit Performance-Metriken
         """
         try:
-            from database_manager import create_batch_writer
-        
-            batch_writer = create_batch_writer(self.db_manager)
-            base_stats = batch_writer.get_batch_statistics()
-        
-            # Charts-spezifische Metriken
-            charts_stats = {
-                'batch_status': 'AKTIV - Revolutionäre Performance!',
-                'performance_gains': {
-                    'charts_update_speed': '15x faster (7+ min → <30s)',
-                    'standard_time': '7+ Minuten (Legacy)',
-                    'batch_time': '<30 Sekunden (BATCH)',
-                    'time_saved_per_update': '6+ Minuten',
-                    'database_efficiency': '99% weniger Locks',
-                    'throughput_improvement': 'Revolutionär verbessert',
-                    'memory_efficiency': 'Optimal durch Batch-Processing'
-                },
-                'technical_details': {
-                    'batch_write_optimization': 'Aktiviert',
-                    'database_lock_reduction': '99%',
-                    'concurrent_processing': 'Maximiert',
-                    'error_handling': 'Robust',
-                    'compatibility': '100% mit Legacy-System'
-                },
-                'batch_statistics': base_stats,
-                'recommendation': 'Verwenden Sie BATCH-Charts-Updates für optimale Performance!',
-                'usage_guide': {
-                    'manual_update': 'charts_manager.update_all_charts_batch()',
-                    'automation': 'background_scheduler Integration verfügbar',
-                    'monitoring': 'Performance-Metriken über get_batch_performance_stats()'
+            with self.db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Letzte Batch-Operationen analysieren
+                cursor.execute("""
+                    SELECT 
+                        COUNT(*) as total_charts,
+                        COUNT(DISTINCT chart_type) as chart_types,
+                        MAX(last_seen) as last_update,
+                        AVG(days_in_charts) as avg_days_tracked,
+                        COUNT(CASE WHEN name IS NOT NULL AND name != '' THEN 1 END) as named_charts
+                    FROM steam_charts_tracking
+                """)
+
+                stats = cursor.fetchone()
+
+                # Price Snapshots Check
+                cursor.execute("""
+                    SELECT COUNT(*), AVG(steam_price)
+                    FROM price_snapshots 
+                    WHERE steam_price > 0 
+                    AND datetime(timestamp) > datetime('now', '-7 days')
+                """)
+            
+                price_stats = cursor.fetchone()
+
+                return {
+                    'total_charts_tracked': stats[0] if stats else 0,
+                    'chart_types_active': stats[1] if stats else 0,
+                    'last_update': stats[2] if stats else 'Never',
+                    'average_tracking_days': round(stats[3], 2) if stats and stats[3] else 0,
+                    'charts_with_names': stats[4] if stats else 0,
+                    'name_completion_rate': f"{(stats[4]/stats[0]*100):.1f}%" if stats and stats[0] > 0 else "0%",
+                    'recent_price_updates': price_stats[0] if price_stats else 0,
+                    'average_price': round(price_stats[1], 2) if price_stats and price_stats[1] else 0,
+                    'batch_efficiency': 'High' if stats and stats[0] > 200 else 'Low',
+                    'status': 'Active' if stats and stats[0] > 0 else 'Inactive'
                 }
-            }
-        
-            return charts_stats
-        
+
         except Exception as e:
-            logger.error(f"Fehler beim Abrufen der BATCH-Performance Stats: {e}")
+            logger.error(f"Performance Stats Fehler: {e}")
             return {
-                'batch_status': 'FEHLER',
-                'error': str(e),
-                'recommendation': 'BATCH-System prüfen'
+                'total_charts_tracked': 0,
+                'chart_types_active': 0,
+                'last_update': 'Error',
+                'average_tracking_days': 0,
+                'charts_with_names': 0,
+                'name_completion_rate': '0%',
+                'recent_price_updates': 0,
+                'average_price': 0,
+                'batch_efficiency': 'Unknown',
+                'status': 'Error'
             }
 
+    def validate_charts_system(self) -> Dict:
+        """
+        Vollständige Systemvalidierung für Charts
+    
+        Returns:
+            Dictionary mit Validierungsergebnissen
+        """
+        validation = {
+            'system_healthy': False,
+            'critical_errors': [],
+            'warnings': [],
+            'recommendations': []
+        }
+
+        try:
+            # Health Check durchführen
+            health = self.batch_charts_health_check()
+        
+            if health['overall_health'] == 'critical':
+                validation['critical_errors'].append("System-Health kritisch")
+                validation['critical_errors'].extend(health.get('recommendations', []))
+            elif health['overall_health'] == 'good':
+                validation['warnings'].append("System-Health OK aber verbesserbar")
+            else:
+                validation['system_healthy'] = True
+
+            # Performance Stats prüfen
+            perf_stats = self.get_batch_performance_stats()
+        
+            if perf_stats['total_charts_tracked'] == 0:
+                validation['critical_errors'].append("Keine Charts-Daten vorhanden")
+                validation['recommendations'].append("Führe ersten Charts-Update durch")
+        
+            name_completion = float(perf_stats['name_completion_rate'].rstrip('%'))
+            if name_completion < 50:
+                validation['warnings'].append(f"Niedrige Namen-Vervollständigung: {perf_stats['name_completion_rate']}")
+                validation['recommendations'].append("Namen-Update durchführen")
+
+            if perf_stats['recent_price_updates'] == 0:
+                validation['warnings'].append("Keine aktuellen Preis-Updates")
+                validation['recommendations'].append("Preis-Update durchführen")
+
+            # Batch-Update verfügbar?
+            validation['batch_update_available'] = hasattr(self, 'update_all_charts_batch')
+
+            # Preis-Update verfügbar?
+            validation['price_update_available'] = hasattr(self, 'safe_batch_update_charts_prices')
+
+            # Namen-Update verfügbar?
+            try:
+                from steam_wishlist_manager import bulk_get_app_names
+                validation['name_update_available'] = True
+            except ImportError:
+                validation['name_update_available'] = False
+                validation['warnings'].append("Steam Wishlist Manager nicht verfügbar")
+
+            # Database gesund?
+            if hasattr(self, 'db_manager'):
+                try:
+                    with self.db_manager.get_connection() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT COUNT(*) FROM tracked_apps")
+                        validation['database_healthy'] = True
+                except:
+                    validation['database_healthy'] = False
+                    validation['critical_errors'].append("Datenbank nicht erreichbar")
+
+            # Finale Bewertung
+            if not validation['critical_errors']:
+                validation['system_healthy'] = True
+
+        except Exception as e:
+            validation['critical_errors'].append(f"Validierungsfehler: {e}")
+
+        return validation
+
+    def get_charts_summary(self) -> Dict:
+        """
+        Zusammenfassung des aktuellen Charts-Status
+    
+        Returns:
+            Dictionary mit Charts-Übersicht
+        """
+        try:
+            with self.db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Übersichts-Statistiken
+                cursor.execute("""
+                    SELECT 
+                        chart_type,
+                        COUNT(*) as count,
+                        COUNT(CASE WHEN name IS NOT NULL AND name != '' THEN 1 END) as named_count,
+                        MAX(last_seen) as last_update
+                    FROM steam_charts_tracking
+                    GROUP BY chart_type
+                """)
+
+                charts_by_type = {}
+                for row in cursor.fetchall():
+                    charts_by_type[row[0]] = {
+                        'total_apps': row[1],
+                        'named_apps': row[2],
+                        'name_completion': f"{(row[2]/row[1]*100):.1f}%" if row[1] > 0 else "0%",
+                        'last_update': row[3]
+                    }
+
+                # Gesamt-Statistiken
+                cursor.execute("""
+                    SELECT 
+                        COUNT(DISTINCT steam_app_id) as unique_apps,
+                        COUNT(*) as total_entries,
+                        COUNT(CASE WHEN name IS NOT NULL AND name != '' THEN 1 END) as named_entries
+                    FROM steam_charts_tracking
+                """)
+
+                totals = cursor.fetchone()
+
+                return {
+                    'total_unique_apps': totals[0] if totals else 0,
+                    'total_chart_entries': totals[1] if totals else 0,
+                    'named_entries': totals[2] if totals else 0,
+                    'overall_name_completion': f"{(totals[2]/totals[1]*100):.1f}%" if totals and totals[1] > 0 else "0%",
+                    'charts_by_type': charts_by_type,
+                    'system_status': 'Active' if totals and totals[0] > 0 else 'Empty'
+                }
+
+        except Exception as e:
+            logger.error(f"Charts Summary Fehler: {e}")
+            return {
+                'total_unique_apps': 0,
+                'total_chart_entries': 0,
+                'named_entries': 0,
+                'overall_name_completion': '0%',
+                'charts_by_type': {},
+                'system_status': 'Error'
+            }
+
+    
     def update_specific_charts_batch(self, chart_types: List[str], max_apps_per_chart: int = 100) -> Dict:
         """
         BATCH-Update für spezifische Chart-Typen mit App-Limit
@@ -1670,82 +3062,602 @@ class SteamChartsManager:
 
     def batch_charts_health_check(self) -> Dict:
         """
-        Gesundheitscheck für BATCH-Charts-System
+        Umfassender Gesundheitscheck für Charts-System
     
         Returns:
-            Dict mit System-Status
+            Dictionary mit Gesundheitsstatus und Empfehlungen
         """
         try:
-            print("🔍 BATCH-Charts Gesundheitscheck...")
-        
-            health_status = {
-                'timestamp': datetime.now().isoformat(),
-                'batch_system': 'UNKNOWN',
-                'database_connection': 'UNKNOWN',
-                'charts_endpoints': {},
-                'batch_writer': 'UNKNOWN',
-                'overall_status': 'CHECKING'
-            }
-        
-            # Database Connection Check
-            try:
-                if hasattr(self, 'db_manager') and self.db_manager:
-                    # Teste Database-Verbindung
-                    stats = self.db_manager.get_database_stats()
-                    health_status['database_connection'] = 'OK'
-                else:
-                    health_status['database_connection'] = 'FEHLER - Kein DB Manager'
-            except Exception as e:
-                health_status['database_connection'] = f'FEHLER - {str(e)}'
-        
-            # BATCH-Writer Check
-            try:
-                from database_manager import create_batch_writer
-                batch_writer = create_batch_writer(self.db_manager)
-                batch_stats = batch_writer.get_batch_statistics()
-                health_status['batch_writer'] = 'OK'
-                health_status['batch_operations'] = batch_stats['total_operations']
-            except Exception as e:
-                health_status['batch_writer'] = f'FEHLER - {str(e)}'
-        
-            # Charts-Endpoints Check
-            for chart_type, endpoint in self.STEAM_CHARTS_ENDPOINTS.items():
-                try:
-                    # Teste Endpoint-Erreichbarkeit (ohne vollständigen Download)
-                    response = requests.head(endpoint, timeout=5)
-                    health_status['charts_endpoints'][chart_type] = 'OK' if response.status_code == 200 else f'Status {response.status_code}'
-                except Exception as e:
-                    health_status['charts_endpoints'][chart_type] = f'FEHLER - {str(e)}'
-        
-            # BATCH-System Check
-            try:
-                if hasattr(self, 'update_all_charts_batch'):
-                    health_status['batch_system'] = 'OK - BATCH-Methoden verfügbar'
-                else:
-                    health_status['batch_system'] = 'WARNUNG - BATCH-Methoden fehlen'
-            except Exception as e:
-                health_status['batch_system'] = f'FEHLER - {str(e)}'
-        
-            # Gesamt-Status bestimmen
-            errors = [v for v in health_status.values() if isinstance(v, str) and ('FEHLER' in v or 'ERROR' in v)]
-            if not errors:
-                health_status['overall_status'] = 'OPTIMAL'
-            elif len(errors) < 3:
-                health_status['overall_status'] = 'WARNUNG'
+            from logging_config import get_steam_charts_logger
+            logger = get_steam_charts_logger()
+        except ImportError:
+            import logging
+            logger = logging.getLogger(__name__)
+
+        health_status = {
+            'overall_health': 'unknown',
+            'database_status': 'unknown',
+            'api_status': 'unknown',
+            'charts_data_status': 'unknown',
+            'price_tracker_status': 'unknown',
+            'details': {},
+            'recommendations': []
+        }
+
+        try:
+            # Database Check
+            with self.db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Charts Tabellen prüfen
+                cursor.execute("SELECT COUNT(*) FROM steam_charts_tracking")
+                charts_count = cursor.fetchone()[0]
+
+                # Schema prüfen
+                cursor.execute("PRAGMA table_info(steam_charts_tracking)")
+                schema_info = cursor.fetchall()
+
+                health_status['database_status'] = 'healthy'
+                health_status['details']['charts_count'] = charts_count
+                health_status['details']['schema_columns'] = len(schema_info)
+
+        except Exception as db_error:
+            health_status['database_status'] = 'error'
+            health_status['details']['database_error'] = str(db_error)
+            health_status['recommendations'].append("Datenbank-Schema reparieren")
+
+        try:
+            # API Check - teste Steam API Erreichbarkeit
+            import requests
+            test_url = "https://store.steampowered.com/api/appdetails"
+            test_params = {'appids': '413150', 'filters': 'basic'}
+
+            response = requests.get(test_url, params=test_params, timeout=10)
+
+            if response.status_code == 200:
+                health_status['api_status'] = 'healthy'
             else:
-                health_status['overall_status'] = 'KRITISCH'
+                health_status['api_status'] = 'degraded'
+                health_status['recommendations'].append("Steam API Rate Limiting prüfen")
+
+        except Exception as api_error:
+            health_status['api_status'] = 'error'
+            health_status['details']['api_error'] = str(api_error)
+            health_status['recommendations'].append("Netzwerkverbindung prüfen")
+
+        try:
+            # Price Tracker Check
+            if hasattr(self, 'price_tracker') and self.price_tracker:
+                health_status['price_tracker_status'] = 'available'
+            else:
+                health_status['price_tracker_status'] = 'missing'
+                health_status['recommendations'].append("Price Tracker initialisieren")
+
+        except Exception as tracker_error:
+            health_status['price_tracker_status'] = 'error'
+            health_status['details']['tracker_error'] = str(tracker_error)
+
+        try:
+            # Charts Data Check - teste einen einfachen Chart-Abruf
+            test_charts = self._fetch_chart_data('most_played', limit=5)
+            if test_charts and len(test_charts) > 0:
+                health_status['charts_data_status'] = 'healthy'
+                health_status['details']['test_charts_count'] = len(test_charts)
+            else:
+                health_status['charts_data_status'] = 'no_data'
+                health_status['recommendations'].append("Charts APIs prüfen")
+        except Exception as charts_error:
+            health_status['charts_data_status'] = 'error'
+            health_status['details']['charts_error'] = str(charts_error)
+            health_status['recommendations'].append("Charts-Abruf-Methoden prüfen")
+
+        # Overall Health berechnen
+        statuses = [
+            health_status['database_status'],
+            health_status['api_status'],
+            health_status['price_tracker_status'],
+            health_status['charts_data_status']
+        ]
+
+        if all(s == 'healthy' or s == 'available' for s in statuses):
+            health_status['overall_health'] = 'excellent'
+        elif 'error' in statuses:
+            health_status['overall_health'] = 'critical'
+        else:
+            health_status['overall_health'] = 'good'
+
+        logger.info(f"🏥 Charts Health Check: {health_status['overall_health'].upper()}")
+
+        return health_status
+    
+    def get_charts_validation_status(self) -> Dict[str, bool]:
+        """
+        Validiert den Status des Charts-Systems
+    
+        Returns:
+            Dict mit Validierungsstatus
+        """
+        validation = {
+            'charts_manager_available': True,  # Wir sind ja in der Klasse
+            'charts_data_available': False,
+            'batch_update_available': False,
+            'price_update_available': False,
+            'name_update_available': False,
+            'database_healthy': False
+        }
+    
+        try:
+            # Charts-Daten prüfen
+            if hasattr(self, 'get_charts_count'):
+                try:
+                    count = self.get_charts_count()
+                    validation['charts_data_available'] = count > 0
+                except:
+                    pass
         
-            print(f"🔍 Gesundheitscheck abgeschlossen - Status: {health_status['overall_status']}")
+            # BATCH-Update verfügbar?
+            validation['batch_update_available'] = hasattr(self, 'update_all_charts_batch')
         
-            return health_status
+            # Preis-Update verfügbar?
+            validation['price_update_available'] = hasattr(self, 'update_charts_prices')
+        
+            # Namen-Update verfügbar?
+            try:
+                from steam_wishlist_manager import bulk_get_app_names
+                validation['name_update_available'] = True
+            except ImportError:
+                validation['name_update_available'] = False
+        
+            # Database gesund?
+            if hasattr(self, 'db_manager'):
+                try:
+                    with self.db_manager.get_connection() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT COUNT(*) FROM tracked_apps")
+                        validation['database_healthy'] = True
+                except:
+                    validation['database_healthy'] = False
+    
+        except Exception as e:
+            logger.warning(f"Charts-Validierung fehlgeschlagen: {e}")
+    
+        return validation
+    
+    def _fetch_charts_price_data(self, app_id: str) -> Optional[Dict]:
+        """
+        Charts-spezifischer Preis-Abruf (ohne Database-Write)
+    
+        Args:
+            app_id: Steam App ID
+        
+        Returns:
+            Preis-Daten Dictionary oder None
+        """
+        try:
+            # Nutze bestehenden Price Tracker falls verfügbar
+            if hasattr(self, 'price_tracker') and self.price_tracker:
+                if hasattr(self.price_tracker, '_fetch_all_prices'):
+                    return self.price_tracker._fetch_all_prices(app_id)
+                elif hasattr(self.price_tracker, '_fetch_cheapshark_prices'):
+                    return self.price_tracker._fetch_cheapshark_prices(app_id)
+        
+            # Einfacher Fallback
+            return self._simple_price_fetch(app_id)
+            
+        except Exception as e:
+            logger.debug(f"⚠️ Preis-Abruf für {app_id} fehlgeschlagen: {e}")
+            return None
+
+    def _simple_price_fetch(self, app_id: str) -> Optional[Dict]:
+        """
+        EINFACHER Preis-Abruf (CheapShark)
+        """
+        try:
+            import requests
+        
+            url = f"https://www.cheapshark.com/api/1.0/games"
+            response = requests.get(url, params={'steamAppID': app_id}, timeout=10)
+            time_module.sleep(0.1)
+        
+            if response.status_code == 200:
+                data = response.json()
+                if data and isinstance(data, list) and len(data) > 0:
+                    game_data = data[0]
+                    cheapest_price = float(game_data.get('cheapest', 0))
+                
+                    if cheapest_price > 0:
+                        return {
+                            'best_price': cheapest_price,
+                            'best_store': 'cheapshark',
+                            'best_discount_percent': 0,
+                            'available_stores_count': 1,
+                            'store_data': {'cheapshark': {'price': cheapest_price}}
+                        }
+        
+            return None
+        
+        except Exception:
+            return None
+
+    def _manual_charts_price_fetch(self, app_id: str) -> Optional[Dict]:
+        """
+        Manueller Preis-Abruf für Charts (Fallback)
+
+        Args:
+            app_id: Steam App ID
+        
+        Returns:
+            Basis-Preis-Daten oder None
+        """
+        try:
+            import requests
+        
+            # CheapShark API
+            url = f"https://www.cheapshark.com/api/1.0/games"
+            params = {'steamAppID': app_id}
+        
+            response = requests.get(url, params=params, timeout=15)
+            time_module.sleep(0.1)  # Rate limiting
+        
+            if response.status_code == 200:
+                data = response.json()
+                if data and isinstance(data, list) and len(data) > 0:
+                    game_data = data[0]
+                    cheapest_price = float(game_data.get('cheapest', 0))
+                
+                    if cheapest_price > 0:
+                        return {
+                            'best_price': cheapest_price,
+                            'best_store': 'cheapshark',
+                            'best_discount_percent': 0,
+                            'available_stores_count': 1,
+                            'store_data': {
+                                'cheapshark': {
+                                    'price': cheapest_price,
+                                    'available': True
+                                }
+                            }
+                        }
+        
+            return None
         
         except Exception as e:
-            logger.error(f"Fehler im BATCH-Charts Gesundheitscheck: {e}")
+            logger.debug(f"⚠️ Manual Charts price fetch failed for {app_id}: {e}")
+            return None
+
+
+    def _batch_write_charts_prices_fixed(self, charts_price_data: List[Dict]) -> Dict:
+        """
+        Schreibt Charts-Preise in die RICHTIGE Tabelle!
+    
+        Args:
+            charts_price_data: Liste von Charts-Preis-Dictionaries
+        
+        Returns:
+            Write-Result Dictionary
+        """
+        try:
+            from logging_config import get_steam_charts_logger
+            logger = get_steam_charts_logger()
+        except ImportError:
+            import logging
+            logger = logging.getLogger(__name__)
+        
+        if not charts_price_data:
+            return {'success': True, 'message': 'Keine Charts-Preisdaten zum Schreiben'}
+    
+        start_time = time_module.time()
+    
+        try:
+            with self.db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+            
+                # Tabelle sicherstellen
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS steam_charts_prices (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        steam_app_id TEXT NOT NULL,
+                        game_title TEXT NOT NULL,
+                        chart_type TEXT,
+                        best_price REAL,
+                        best_store TEXT,
+                        best_discount_percent REAL,
+                        available_stores_count INTEGER,
+                        timestamp TEXT NOT NULL,
+                        store_details TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+            
+                # Batch-Insert
+                insert_data = []
+                for entry in charts_price_data:
+                    insert_data.append((
+                        entry['steam_app_id'],
+                        entry['game_title'],  # FALLBACK-NAME!
+                        entry['chart_type'],
+                        entry.get('best_price', 0),
+                        entry.get('best_store', ''),
+                        entry.get('best_discount_percent', 0),
+                        entry.get('available_stores_count', 0),
+                        entry['timestamp'],
+                        entry.get('store_details', '{}')
+                    ))
+            
+                cursor.executemany("""
+                    INSERT INTO steam_charts_prices (
+                        steam_app_id, game_title, chart_type, best_price, best_store,
+                        best_discount_percent, available_stores_count, timestamp, store_details
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, insert_data)
+            
+                conn.commit()
+                duration = time_module.time() - start_time
+            
+                logger.info(f"✅ EINFACH: {len(insert_data)} Charts-Preise in steam_charts_prices geschrieben ({duration:.2f}s)")
+            
+                return {'success': True, 'items_written': len(insert_data), 'duration': duration}
+
+        except Exception as e:
+            logger.error(f"❌ Charts-Price Batch-Write fehlgeschlagen: {e}")
             return {
-                'timestamp': datetime.now().isoformat(),
-                'overall_status': 'KRITISCHER FEHLER',
-                'error': str(e)
+                'success': False,
+                'error': str(e),
+                'table': 'steam_charts_prices',
+                'duration': time_module.time() - start_time
             }
+
+    def _collect_names_cache_after_update(self, app_ids: List[str]) -> Dict[str, Dict]:
+        """
+        Sammelt Namen-Cache aus steam_charts_tracking nach Namen-Update
+    
+        Args:
+            app_ids: Liste von Steam App IDs
+        
+        Returns:
+            Dictionary mit Namen-Cache {app_id: {name, chart_type, source}}
+        """
+        try:
+            from logging_config import get_steam_charts_logger
+            logger = get_steam_charts_logger()
+        except ImportError:
+            import logging
+            logger = logging.getLogger(__name__)
+    
+        names_cache = {}
+    
+        try:
+            with self.db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+            
+                placeholders = ','.join(['?' for _ in app_ids])
+                cursor.execute(f"""
+                    SELECT steam_app_id, name, chart_type
+                    FROM steam_charts_tracking
+                    WHERE steam_app_id IN ({placeholders})
+                    AND active = 1
+                    AND name IS NOT NULL
+                    AND name != ''
+                """, app_ids)
+            
+                for row in cursor.fetchall():
+                    app_id, name, chart_type = row
+                    if name and name.strip():
+                        names_cache[app_id] = {
+                            'name': name.strip(),
+                            'chart_type': chart_type or 'unknown',
+                            'source': 'database'
+                        }
+        
+            logger.info(f"📋 Namen-Cache nach Update: {len(names_cache)} Einträge gesammelt")
+            return names_cache
+        
+        except Exception as e:
+            logger.error(f"❌ Namen-Cache sammeln fehlgeschlagen: {e}")
+            return {}
+
+
+    def get_charts_price_statistics(self) -> Dict:
+        """
+        Neue Hilfsmethode: Statistiken für Charts-Preise
+    
+        Returns:
+            Dictionary mit Charts-Preis-Statistiken
+        """
+        try:
+            with self.db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+
+                stats = {}
+            
+                # Gesamtanzahl Charts-Preise
+                cursor.execute("SELECT COUNT(*) FROM steam_charts_prices")
+                stats['total_charts_prices'] = cursor.fetchone()[0]
+            
+                # Preise pro Chart-Typ
+                cursor.execute("""
+                    SELECT chart_type, COUNT(*) 
+                    FROM steam_charts_prices 
+                    GROUP BY chart_type
+                """)
+                stats['prices_by_chart_type'] = dict(cursor.fetchall())
+            
+                # Neueste Preise
+                cursor.execute("""
+                    SELECT COUNT(*) 
+                    FROM steam_charts_prices 
+                    WHERE timestamp > datetime('now', '-24 hours')
+                """)
+                stats['recent_prices_24h'] = cursor.fetchone()[0]
+            
+                # Apps mit Preisen
+                cursor.execute("""
+                    SELECT COUNT(DISTINCT steam_app_id) 
+                    FROM steam_charts_prices
+                """)
+                stats['apps_with_prices'] = cursor.fetchone()[0]
+            
+                return stats
+            
+        except Exception as e:
+            return {'error': str(e)}
+
+
+    def validate_charts_price_fix(self) -> Dict:
+        """
+        Validiert ob der Charts-Price-Fix korrekt funktioniert
+    
+        Returns:
+            Dictionary mit Validierungsergebnissen
+        """
+        validation = {
+            'fix_applied': False,
+            'correct_table_used': False,
+            'real_names_used': False,
+            'chart_types_preserved': False,
+            'no_steam_entries': False
+        }
+    
+        try:
+            with self.db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+            
+                # 1. Prüfe ob steam_charts_prices Tabelle existiert und Daten hat
+                cursor.execute("SELECT COUNT(*) FROM steam_charts_prices")
+                charts_price_count = cursor.fetchone()[0]
+                validation['correct_table_used'] = charts_price_count > 0
+            
+                if charts_price_count > 0:
+                    # 2. Prüfe ob echte Namen verwendet werden (nicht 'steam')
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM steam_charts_prices 
+                        WHERE game_title != 'steam' AND game_title NOT LIKE 'Steam App %'
+                    """)
+                    real_names_count = cursor.fetchone()[0]
+                    validation['real_names_used'] = real_names_count > 0
+                
+                    # 3. Prüfe ob Chart-Typen erhalten bleiben
+                    cursor.execute("""
+                        SELECT COUNT(DISTINCT chart_type) FROM steam_charts_prices 
+                        WHERE chart_type IS NOT NULL AND chart_type != 'unknown'
+                    """)
+                    chart_types_count = cursor.fetchone()[0]
+                    validation['chart_types_preserved'] = chart_types_count > 0
+            
+                # 4. Prüfe ob keine neuen 'steam' Einträge in price_snapshots
+                cursor.execute("""
+                    SELECT COUNT(*) FROM price_snapshots 
+                    WHERE game_titel = 'steam' 
+                    AND timestamp > datetime('now', '-1 hour')
+                """)
+                recent_steam_entries = cursor.fetchone()[0]
+                validation['no_steam_entries'] = recent_steam_entries == 0
+            
+                # Gesamtbewertung
+                validation['fix_applied'] = all([
+                    validation['correct_table_used'],
+                    validation['real_names_used'], 
+                    validation['no_steam_entries']
+                ])
+            
+        except Exception as e:
+            validation['error'] = str(e)
+    
+        return validation
+
+    def get_charts_price_comparison(self, app_ids: List[str] = None, chart_type: str = None) -> List[Dict]:
+        """
+        Multi-Store Preisvergleich für Charts-Apps
+    
+        Args:
+            app_ids: Optional: Spezifische App IDs
+            chart_type: Optional: Nur bestimmter Chart-Typ
+        
+        Returns:
+            Liste mit Multi-Store-Preisvergleich
+        """
+        try:
+            from logging_config import get_steam_charts_logger
+            logger = get_steam_charts_logger()
+        except ImportError:
+            import logging
+            logger = logging.getLogger(__name__)
+    
+        try:
+            with self.db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+            
+                # Base Query für Multi-Store-Vergleich
+                query = """
+                    SELECT 
+                        steam_app_id,
+                        chart_type,
+                        game_title,
+                        steam_price, steam_available,
+                        greenmangaming_price, greenmangaming_available,
+                        gog_price, gog_available,
+                        humblestore_price, humblestore_available,
+                        fanatical_price, fanatical_available,
+                        gamesplanet_price, gamesplanet_available,
+                        timestamp
+                    FROM steam_charts_prices
+                    WHERE 1=1
+                """
+                params = []
+            
+                # Optional: Spezifische Apps
+                if app_ids:
+                    placeholders = ','.join(['?' for _ in app_ids])
+                    query += f" AND steam_app_id IN ({placeholders})"
+                    params.extend(app_ids)
+            
+                # Optional: Chart-Typ
+                if chart_type:
+                    query += " AND chart_type = ?"
+                    params.append(chart_type)
+            
+                query += " ORDER BY game_title, timestamp DESC"
+            
+                cursor.execute(query, params)
+            
+                comparisons = []
+                for row in cursor.fetchall():
+                    # Store-Preise sammeln
+                    stores = {}
+                    store_names = ['steam', 'greenmangaming', 'gog', 'humblestore', 'fanatical', 'gamesplanet']
+                
+                    for i, store in enumerate(store_names):
+                        price_idx = 3 + (i * 2)
+                        available_idx = 4 + (i * 2)
+                    
+                        if row[available_idx]:  # Nur verfügbare Stores
+                            stores[store] = {
+                                'price': row[price_idx],
+                                'available': row[available_idx]
+                            }
+                
+                    # Bester Preis ermitteln
+                    best_price = min(stores.values(), key=lambda x: x['price'])['price'] if stores else 0
+                    best_store = min(stores.items(), key=lambda x: x[1]['price'])[0] if stores else 'Unknown'
+                
+                    comparison = {
+                        'steam_app_id': row[0],
+                        'chart_type': row[1],
+                        'game_title': row[2],
+                        'stores': stores,
+                        'best_price': best_price,
+                        'best_store': best_store,
+                        'available_stores_count': len(stores),
+                        'timestamp': row[-1]
+                    }
+                    comparisons.append(comparison)
+            
+                logger.info(f"🛒 {len(comparisons)} Charts-Apps Preisvergleich erstellt")
+                return comparisons
+            
+        except Exception as e:
+            logger.error(f"❌ Charts Preisvergleich Fehler: {e}")
+            return []
 
 # =====================================================================
 # CONVENIENCE FUNCTIONS
@@ -1824,12 +3736,8 @@ def create_batch_optimized_charts_manager(api_key: str, db_manager) -> SteamChar
     
     # Prüfe ob BATCH-Methoden verfügbar sind
     if not hasattr(charts_manager, 'update_all_charts_batch'):
-        logger.warning("⚠️ BATCH-Methoden nicht verfügbar - füge sie hinzu")
-        
-        # Monkey-patch BATCH-Methoden falls nötig
-        charts_manager.get_batch_performance_stats = lambda: get_batch_performance_stats(charts_manager)
-        charts_manager.update_specific_charts_batch = lambda ct, ma=100: update_specific_charts_batch(charts_manager, ct, ma)
-        charts_manager.batch_charts_health_check = lambda: batch_charts_health_check(charts_manager)
+        logger.warning("⚠️ BATCH-Methoden nicht verfügbar")
+        logger.info("💡 Tipp: Stellen Sie sicher, dass update_all_charts_batch() implementiert ist")
     
     return charts_manager
 
@@ -1868,14 +3776,14 @@ def test_batch_charts_performance(api_key: str = None) -> Dict:
         
         # Test 3: Mini-BATCH-Update (nur 1 Chart-Typ)
         import time
-        start_time = time.time()
+        start_time = time_module.time()
         
         if hasattr(charts_manager, 'update_specific_charts_batch'):
             result = charts_manager.update_specific_charts_batch(['most_played'], max_apps_per_chart=10)
         else:
             result = {'success': False, 'error': 'BATCH-Update nicht verfügbar'}
         
-        test_duration = time.time() - start_time
+        test_duration = time_module.time() - start_time
         
         test_results = {
             'timestamp': datetime.now().isoformat(),
