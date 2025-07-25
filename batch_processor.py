@@ -795,7 +795,7 @@ def cmd_batch_charts_update(args):
         print(f"📊 Chart-Typen: {', '.join(chart_types)}")
         
         # GEFIXT: VERWENDE time_module ANSTATT time
-        start_time = time_module.time()  # ← HIER WAR DAS PROBLEM!
+        start_time = time_module.time() 
         
         # BATCH-Charts-Update
         if hasattr(charts_manager, 'update_all_charts_batch'):
@@ -807,7 +807,7 @@ def cmd_batch_charts_update(args):
             print("⚠️ Installieren Sie die BATCH-Charts-Ergänzungen")
         
         # GEFIXT: VERWENDE time_module ANSTATT time
-        duration = time_module.time() - start_time  # ← HIER WAR DAS PROBLEM!
+        duration = time_module.time() - start_time 
         batch_stats = batch_writer.get_batch_statistics()
         
         print(f"\n✅ BATCH Charts-Update abgeschlossen!")
