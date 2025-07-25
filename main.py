@@ -86,17 +86,14 @@ def safe_input(prompt, default=""):
 
 def create_tracker_with_fallback():
     """
-    Erstellt Tracker
-    Versucht, den vollständigen Tracker mit Charts zu erstellen.
+    KORRIGIERTE Tracker-Initialisierung für main.py
+    Behebt das Charts Manager Problem durch korrekte Aktivierungslogik
+    
+    Diese Funktion erstellt einen SteamPriceTracker mit robustem Fallback-System.
+    Zuerst wird versucht, einen vollständigen Tracker mit Charts zu erstellen.
     Falls das fehlschlägt, wird ein Fallback-Tracker ohne Charts erstellt.
-    Im absoluten Notfall wird ein EmergencyTracker ohne Charts und mit minimalen Funktionen zurückgegeben.
-    Diese Funktion ist robust gegen Import-Fehler und fehlende Charts-Manager.
-    Sie gibt immer einen Tracker zurück, der entweder vollständig oder im Notfall minimal funktionsfähig ist.
-    Diese Funktion ist die zentrale Initialisierungsroutine für den Tracker.
-    Sie sollte immer verwendet werden, um sicherzustellen, dass der Tracker korrekt initialisiert wird.
-    Sie ist so gestaltet, dass sie auch bei fehlenden Abhängigkeiten oder Import-Fehlern funktioniert.
-    Sie gibt entweder den vollständigen Tracker, einen Fallback-Tracker oder einen EmergencyTracker zurück.
-
+    Im absoluten Notfall wird ein EmergencyTracker mit minimalen Funktionen zurückgegeben.
+    
     Returns:
         tuple: (tracker, charts_manager, es_manager)
             - tracker: Der initialisierte Tracker (vollständig oder Fallback)
@@ -108,7 +105,8 @@ def create_tracker_with_fallback():
     try:
         print("📋 Erstelle vollständigen Tracker mit Charts...")
         
-        # Tracker mit Charts erstellen - jetzt sicher da store-Problem behoben
+        # KORRIGIERT: Direkter Aufruf ohne komplexe Fallback-Logik
+        from price_tracker import create_price_tracker
         tracker = create_price_tracker(enable_charts=True)
         
         if not tracker:
@@ -117,7 +115,7 @@ def create_tracker_with_fallback():
         
         print("✅ Basis-Tracker erfolgreich erstellt")
         
-        # Charts Manager prüfen und aktivieren
+        # KORRIGIERT: Direkte Charts Manager Prüfung
         charts_manager = None
         if hasattr(tracker, 'charts_manager') and tracker.charts_manager:
             charts_manager = tracker.charts_manager
@@ -126,8 +124,9 @@ def create_tracker_with_fallback():
             
             # Optional: Charts Manager testen
             try:
-                if hasattr(charts_manager, 'test_connection') or hasattr(charts_manager, 'get_chart_types'):
-                    print("   🔧 Charts Manager funktionsfähig")
+                if hasattr(charts_manager, 'get_chart_types'):
+                    chart_types = charts_manager.get_chart_types()
+                    print(f"   🎯 Verfügbare Chart-Typen: {len(chart_types)}")
             except Exception as test_error:
                 print(f"   ⚠️ Charts Manager Test-Warnung: {test_error}")
                 
@@ -136,21 +135,22 @@ def create_tracker_with_fallback():
             if not hasattr(tracker, 'api_key') or not tracker.api_key:
                 print("   💡 Grund: Kein Steam API Key in .env")
             else:
-                print("   💡 Grund: Import-Fehler oder Charts deaktiviert")
+                print("   💡 Grund: Import-Fehler oder Initialisierungsfehler")
                 
-            # Fallback: Versuche Charts nachträglich zu aktivieren
-            print("🔄 Versuche Charts nachträglich zu aktivieren...")
-            try:
-                if hasattr(tracker, '_init_components_safe'):
-                    tracker.enable_charts = True
-                    tracker._init_components_safe()
-                    if hasattr(tracker, 'charts_manager') and tracker.charts_manager:
-                        charts_manager = tracker.charts_manager
-                        print("✅ Charts Manager nachträglich aktiviert")
-            except Exception as retry_error:
-                print(f"ℹ️ Nachträgliche Charts-Aktivierung fehlgeschlagen: {retry_error}")
+                # KORRIGIERT: Sichere nachträgliche Aktivierung
+                print("🔄 Versuche Charts nachträglich zu aktivieren...")
+                try:
+                    if hasattr(tracker, '_init_components_safe'):
+                        success = tracker._init_components_safe()
+                        if success and tracker.charts_manager:
+                            charts_manager = tracker.charts_manager
+                            print("✅ Charts Manager nachträglich aktiviert")
+                        else:
+                            print("⚠️ Nachträgliche Aktivierung fehlgeschlagen")
+                except Exception as retry_error:
+                    print(f"ℹ️ Nachträgliche Charts-Aktivierung fehlgeschlagen: {retry_error}")
         
-        # ENTFERNT: Elasticsearch Manager - wird nicht mehr über main.py verwaltet
+        # Elasticsearch Manager entfernt - wird nicht mehr über main.py verwaltet
         es_manager = None
         
         return tracker, charts_manager, es_manager
@@ -161,6 +161,7 @@ def create_tracker_with_fallback():
         
         # Fallback: Tracker ohne Charts
         try:
+            from price_tracker import create_price_tracker
             tracker = create_price_tracker(enable_charts=False)
             if tracker:
                 print("✅ Fallback-Tracker ohne Charts erstellt")
@@ -193,18 +194,11 @@ def create_tracker_with_fallback():
                 return {
                     'tracked_apps': 0,
                     'total_snapshots': 0,
-                    'stores_tracked': ['Steam'],
-                    'newest_snapshot': None,
-                    'emergency_mode': True
+                    'stores_tracked': 0
                 }
-            
-            def add_or_update_app(self, steam_app_id, name=None):
-                return False, "Notfall-Modus - Funktion nicht verfügbar"
-            
-            def get_best_deals(self, **kwargs):
-                return []
         
-        return EmergencyTracker(), None, None
+        emergency_tracker = EmergencyTracker()
+        return emergency_tracker, None, None
 
 def add_app_safe(tracker, steam_app_id, app_name=None, source="manual"):
     """Sichere App-Hinzufügung"""

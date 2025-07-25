@@ -116,37 +116,65 @@ class SteamPriceTracker:
             return None
     
     def _init_components(self):
-        """SICHERE Komponenten-Initialisierung"""
+        """KORRIGIERTE Komponenten-Initialisierung - Charts Manager wird jetzt korrekt aktiviert"""
         global _INITIALIZING
-        
+    
         print(f"🔧 _init_components - enable_charts={self.enable_charts}")
-        
-        # Charts Manager NUR wenn explizit gewünscht UND nicht bereits initialisierend
-        if self.enable_charts and not _INITIALIZING:
+    
+        #Charts Manager wenn explizit gewünscht (ohne _INITIALIZING Check)
+        if self.enable_charts and self.api_key:
             try:
                 print("🔧 Versuche Charts Manager zu laden...")
-                
+            
                 # WICHTIG: Lazy Import um Zirkel zu vermeiden
                 import importlib
                 charts_module = importlib.import_module('steam_charts_manager')
                 SteamChartsManager = getattr(charts_module, 'SteamChartsManager')
-                
+            
                 self.charts_manager = SteamChartsManager(self.api_key, self.db_manager, self)
                 self.charts_enabled = True
                 print("✅ Charts Manager initialisiert")
                 logger.info("✅ Charts Manager initialisiert")
-                
+            
             except Exception as e:
                 print(f"⚠️ Charts Manager Fehler: {e}")
                 logger.warning(f"⚠️ Charts Manager nicht verfügbar: {e}")
                 self.charts_enabled = False
-        else:
-            print("ℹ️ Charts Manager übersprungen")
+                self.charts_manager = None
+        elif self.enable_charts and not self.api_key:
+            print("ℹ️ Charts Manager übersprungen - kein API Key")
             self.charts_enabled = False
-        
+            self.charts_manager = None
+        else:
+            print("ℹ️ Charts Manager übersprungen - deaktiviert")
+            self.charts_enabled = False
+            self.charts_manager = None
+    
         # Scheduler
         if self.enable_scheduler:
             self._init_scheduler()
+
+    def _init_components_safe(self):
+        """Sichere Nachträgliche Komponenten-Initialisierung für main.py"""
+        if self.enable_charts and self.api_key and not self.charts_enabled:
+            try:
+                print("🔄 Versuche Charts Manager nachträglich zu initialisieren...")
+            
+                import importlib
+                charts_module = importlib.import_module('steam_charts_manager')
+                SteamChartsManager = getattr(charts_module, 'SteamChartsManager')
+            
+                self.charts_manager = SteamChartsManager(self.api_key, self.db_manager, self)
+                self.charts_enabled = True
+                print("✅ Charts Manager nachträglich initialisiert")
+                logger.info("✅ Charts Manager nachträglich initialisiert")
+                return True
+            
+            except Exception as e:
+                print(f"⚠️ Nachträgliche Charts-Initialisierung fehlgeschlagen: {e}")
+                logger.warning(f"⚠️ Nachträgliche Charts-Initialisierung fehlgeschlagen: {e}")
+                return False
+        return False
     
     def _init_scheduler(self):
         """Initialisiert den Scheduler"""
