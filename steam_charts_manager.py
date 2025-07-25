@@ -224,7 +224,7 @@ class SteamChartsManager:
     
     def get_most_played_games(self, count: int = 100) -> List[Dict]:
         """
-        🔥 OFFIZIELLE STEAM API: ISteamChartsService/GetMostPlayedGames
+        OFFIZIELLE STEAM API: ISteamChartsService/GetMostPlayedGames
     
         Args:
             count: Anzahl Spiele (max 100)
@@ -1571,14 +1571,14 @@ class SteamChartsManager:
                         'steam_app_id': row[0],
                         'chart_type': row[1],
                         'game_title': row[2],
-                        'name': row[2],                # KOMPATIBILITÄT: alte 'name' Feld
+                        'name': row[2],               
                         'best_price': row[3],          # bester Preis aller Stores
-                        'current_price': row[3],       # KOMPATIBILITÄT: alte API
+                        'current_price': row[3],      
                         'best_store': row[4],          # Store mit bestem Preis
-                        'store': row[4],               # KOMPATIBILITÄT: alte 'store' Feld
+                        'store': row[4],               
                         'available_stores_count': row[5],  # Anzahl verfügbare Stores
                         'max_discount_percent': row[6],    # höchster Rabatt aller Stores
-                        'discount_percent': row[6],    # KOMPATIBILITÄT: alte API
+                        'discount_percent': row[6],    
                         'timestamp': row[7],
                         'is_charts_deal': True,        # Charts-Deal-Flag
                         'multistore_supported': True   # Multi-Store-Flag
@@ -2739,7 +2739,7 @@ class SteamChartsManager:
 
     def batch_update_charts_prices(self, chart_types: List[str] = None, limit_per_chart: int = 50) -> Dict:
         """
-        🚀 BATCH-VERSION für Charts-Preise Update - Nutzt Price Tracker Batch-Methoden
+        BATCH-VERSION für Charts-Preise Update - Nutzt Price Tracker Batch-Methoden
         """
         start_time = time_module.time()
     
@@ -2786,7 +2786,7 @@ class SteamChartsManager:
         
             logger.info(f"🚀 BATCH Preis-Update für {len(app_ids_to_update)} Charts-Apps...")
         
-            # 🚀 NUTZE PRICE TRACKER BATCH-METHODEN!
+            # NUTZE PRICE TRACKER BATCH-METHODEN!
             if hasattr(self.price_tracker, 'batch_update_multiple_apps'):
                 batch_result = self.price_tracker.batch_update_multiple_apps(app_ids_to_update)
             else:
