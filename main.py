@@ -1076,7 +1076,7 @@ def menu_batch_charts_update(charts_manager):
             if progress_tracker:
                 progress_tracker.update_progress(progress_info)
         
-        # 🚀 BATCH UPDATE
+        # BATCH UPDATE
         if hasattr(charts_manager, 'update_all_charts_batch'):
             result = charts_manager.update_all_charts_batch(
                 chart_types=chart_types,
@@ -1379,9 +1379,9 @@ def run_dynamic_menu():
             print("⚠️ Statistiken konnten nicht geladen werden")
             print("=" * 60)
         
-        # VOLLSTÄNDIGE FUNCTION MAP - ALLE FUNKTIONEN
+        # VOLLSTÄNDIGE FUNCTION MAP
         function_map = {
-            # 🏠 BASIS-FUNKTIONEN
+            # BASIS-FUNKTIONEN
             'menu_add_app_manually': lambda: menu_add_app_manually(tracker),
             'menu_import_wishlist': lambda: menu_import_wishlist(tracker),
             'menu_show_current_prices': lambda: menu_show_current_prices(tracker),
@@ -1389,17 +1389,17 @@ def run_dynamic_menu():
             'menu_show_price_history': lambda: menu_show_price_history(tracker),
             'menu_update_prices': lambda: menu_update_prices(tracker),
             
-            # 🚀 AUTOMATION & BATCH
+            #AUTOMATION & BATCH
             'menu_toggle_scheduler': lambda: menu_toggle_scheduler(tracker),
             'menu_update_names_all_apps': lambda: menu_update_names_all_apps(tracker),
             
-            # 🎮 APP-VERWALTUNG
+            #APP-VERWALTUNG
             'menu_manage_apps': lambda: menu_manage_apps(tracker),
             'menu_remove_apps': lambda: menu_remove_apps(tracker),
             'menu_csv_export': lambda: menu_csv_export(tracker),
             'menu_detailed_statistics': lambda: menu_detailed_statistics(tracker),
             
-            # 📊 CHARTS & ANALYTICS (alle unified auf update_all_charts_batch)
+            #CHARTS & ANALYTICS (alle unified auf update_all_charts_batch)
             'menu_show_charts': lambda: menu_show_charts(charts_manager, tracker) if charts_manager else print("❌ Charts Manager nicht verfügbar"),
             'menu_update_charts_complete': lambda: menu_batch_charts_update(charts_manager) if charts_manager else print("❌ Charts Manager nicht verfügbar"),
             'menu_charts_deals': lambda: menu_charts_deals(charts_manager, tracker) if charts_manager else print("❌ Charts Manager nicht verfügbar"),
@@ -1408,14 +1408,14 @@ def run_dynamic_menu():
             # 🚀 NEUE ERWEITERTE BATCH-FUNKTION
             'menu_batch_charts_update': lambda: menu_batch_charts_update(charts_manager) if charts_manager else print("❌ Charts Manager nicht verfügbar"),
             
-            # 🔍 ELASTICSEARCH
+            #ELASTICSEARCH
             'menu_elasticsearch_export': lambda: menu_elasticsearch_export(es_manager, tracker) if es_manager else print("❌ Elasticsearch Manager nicht verfügbar"),
             'menu_elasticsearch_dashboard': lambda: menu_elasticsearch_dashboard(es_manager) if es_manager else print("❌ Elasticsearch Manager nicht verfügbar"),
             'menu_elasticsearch_analytics': lambda: menu_elasticsearch_analytics(es_manager) if es_manager else print("❌ Elasticsearch Manager nicht verfügbar"),
             'menu_elasticsearch_config': lambda: menu_elasticsearch_config(es_manager) if es_manager else print("❌ Elasticsearch Manager nicht verfügbar"),
             'menu_elasticsearch_sync': lambda: menu_elasticsearch_sync(es_manager, tracker) if es_manager else print("❌ Elasticsearch Manager nicht verfügbar"),
             
-            # 🛠️ SYSTEM-TOOLS
+            # SYSTEM-TOOLS
             'menu_system_settings': lambda: menu_system_settings(),
             'menu_system_info': lambda: menu_system_info(tracker, charts_manager, es_manager),
             'menu_backup_export': lambda: menu_backup_export(tracker),
@@ -1579,7 +1579,7 @@ def run_classic_menu():
                 print("\n🎮 HAUPTMENÜ")
                 print("=" * 60)
                 
-                # 🏠 BASIS-FUNKTIONEN (1-6)
+                # BASIS-FUNKTIONEN (1-6)
                 print("🏠 BASIS-FUNKTIONEN")
                 print("1.  📱 App manuell hinzufügen")
                 print("2.  📥 Steam Wishlist importieren") 
@@ -1588,19 +1588,19 @@ def run_classic_menu():
                 print("5.  📈 Preisverlauf anzeigen")
                 print("6.  🔄 Preise manuell aktualisieren")
                 
-                # 🚀 AUTOMATION & BATCH (7-8)
+                # AUTOMATION & BATCH (7-8)
                 print("\n🚀 AUTOMATION & BATCH")
                 print("7.  🚀 Automatisches Tracking")
                 print("8.  📝 Namen für alle Apps aktualisieren")
                 
-                # 🎮 APP-VERWALTUNG (9-12)
+                # APP-VERWALTUNG (9-12)
                 print("\n🎮 APP-VERWALTUNG")
                 print("9.  📋 Getrackte Apps verwalten")
                 print("10. 🗑️ Apps entfernen")
                 print("11. 📄 CSV-Export erstellen")
                 print("12. 📊 Detaillierte Statistiken")
                 
-                # 📊 CHARTS & ANALYTICS (13-18) - VOLLSTÄNDIG MIT BATCH
+                # CHARTS & ANALYTICS (13-18) - VOLLSTÄNDIG MIT BATCH
                 if charts_enabled:
                     print("\n📊 CHARTS & ANALYTICS (BATCH-optimiert)")
                     print("13. 📈 Charts anzeigen")
@@ -1610,7 +1610,7 @@ def run_classic_menu():
                     print("17. 🤖 Charts-Automation")
                     print("18. 📦 Erweiterte BATCH-Optionen")  # 🚀 NEUE OPTION
                 
-                # 🔍 ELASTICSEARCH (19-23)
+                # ELASTICSEARCH (19-23)
                 if es_enabled:
                     print("\n🔍 ELASTICSEARCH")
                     print("19. 📤 ES Daten exportieren")
@@ -1619,7 +1619,7 @@ def run_classic_menu():
                     print("22. ⚙️ ES Konfiguration")
                     print("23. 🔄 ES Synchronisierung")
                 
-                # 🛠️ SYSTEM-TOOLS (24-30)
+                #  SYSTEM-TOOLS (24-30)
                 print("\n🛠️ SYSTEM-TOOLS")
                 print("24. ⚙️ System-Einstellungen")
                 print("25. 📊 System-Informationen")
@@ -1642,7 +1642,7 @@ def run_classic_menu():
                     enhanced_cleanup()
                     break
                 
-                # 🏠 BASIS-FUNKTIONEN (1-6)
+                # BASIS-FUNKTIONEN (1-6)
                 elif choice == "1":
                     menu_add_app_manually(tracker)
                 elif choice == "2":
@@ -1656,13 +1656,13 @@ def run_classic_menu():
                 elif choice == "6":
                     menu_update_prices(tracker)
                 
-                # 🚀 AUTOMATION & BATCH (7-8)
+                # AUTOMATION & BATCH (7-8)
                 elif choice == "7":
                     menu_toggle_scheduler(tracker)
                 elif choice == "8":
                     menu_update_names_all_apps(tracker)
                 
-                # 🎮 APP-VERWALTUNG (9-12)
+                # APP-VERWALTUNG (9-12)
                 elif choice == "9":
                     menu_manage_apps(tracker)
                 elif choice == "10":
@@ -1672,7 +1672,7 @@ def run_classic_menu():
                 elif choice == "12":
                     menu_detailed_statistics(tracker)
                 
-                # 📊 CHARTS & ANALYTICS (13-18) - UNIFIED BATCH CALLS
+                # CHARTS & ANALYTICS (13-18) - UNIFIED BATCH CALLS
                 elif choice == "13":
                     if charts_enabled:
                         menu_show_charts(charts_manager, tracker)
@@ -1704,7 +1704,7 @@ def run_classic_menu():
                     else:
                         print("❌ Charts Manager nicht verfügbar")
                 
-                # 🔍 ELASTICSEARCH (19-23)
+                # ELASTICSEARCH (19-23)
                 elif choice == "19":
                     if es_enabled:
                         menu_elasticsearch_export(es_manager, tracker)
@@ -1731,7 +1731,7 @@ def run_classic_menu():
                     else:
                         print("❌ Elasticsearch Manager nicht verfügbar")
                 
-                # 🛠️ SYSTEM-TOOLS (24-30)
+                #  SYSTEM-TOOLS (24-30)
                 elif choice == "24":
                     menu_system_settings()
                 elif choice == "25":
@@ -1775,7 +1775,7 @@ def run_classic_menu():
 
 class ProgressTracker:
     """
-    🎯 PROGRESS-ANZEIGE mit Throbber und Prozentanzeige - FIXED VERSION
+    PROGRESS-ANZEIGE mit Throbber und Prozentanzeige
     """
     
     def __init__(self):
