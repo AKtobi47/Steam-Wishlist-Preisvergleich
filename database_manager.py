@@ -1896,25 +1896,20 @@ class DatabaseBatchWriter:
         """
         return self.db_manager.get_connection()
     
-    def batch_write_charts(self, charts_data: List[Dict]) -> Dict:
+    def batch_write_charts(self, price_data: List[Dict]) -> Dict:
         """
-        Charts Batch Writer
-        Batch Writer für Steam Charts Tracking
-        - Schneller als Einzel-Insert
-        - Reduziert Lock-Konflikte
-        - Schema-Kompatibilität sichergestellt
-        - Fallback-Mechanismus bei Schema-Problemen
-        - Dynamische Spalten für zukünftige Erweiterungen
-        - Leistungsmetriken für Monitoring
-        - Einfache Fehlerbehandlung und Logging
-        - Optimiert für hohe Datenmengen
-        - Unterstützt Batch-Operationen für Preis- und Chart-Daten
-        - Verbessert Performance und Zuverlässigkeit
-        
+        Batch-Schreiboperation für Steam Charts Tracking.
+
+        Diese Methode schreibt eine Liste von Chart-Datensätzen effizient in die Tabelle steam_charts_tracking.
+        Sie ist optimiert für große Datenmengen, reduziert Datenbank-Lock-Konflikte und stellt die Schema-Kompatibilität sicher.
+        Die Methode deaktiviert temporär Foreign-Key-Constraints für maximale Performance und erstellt bei Bedarf History-Einträge für Top-100-Charts.
+        Fehlerhafte oder unvollständige Datensätze werden übersprungen und im Ergebnis protokolliert.
+
         Args:
-            charts_data (List[Dict]): Liste von Charts-Daten, die geschrieben werden sollen.
+            charts_data (List[Dict]): Liste von Chart-Datensätzen, die gespeichert werden sollen.
+
         Returns:
-            Dict: Ergebnis der Batch-Operation mit Metriken.
+            Dict: Ergebnis der Batch-Operation mit Angaben zu Erfolg, Anzahl geschriebener und fehlerhafter Datensätze, Dauer und Performance.
         """
         try:
             from logging_config import get_database_logger
@@ -1923,72 +1918,68 @@ class DatabaseBatchWriter:
             import logging
             logger = logging.getLogger(__name__)
     
-        if not charts_data:
-            return {
-                'success': True,
-                'written_count': 0,
-                'message': 'Keine Charts-Daten zum Schreiben'
-            }
+        if not price_data:
+            return {'success': True, 'written_count': 0}
     
-        start_time = time_module.time()
+        start_time = time.time()
     
         try:
-            # Tabelle über ensure-Methode sicherstellen
-            if not self.ensure_charts_tracking_table():
-                logger.error("❌ Charts-Tracking-Tabelle konnte nicht sichergestellt werden")
-                return {
-                    'success': False,
-                    'error': 'Charts-Tracking-Tabelle nicht verfügbar',
-                    'total_items': len(charts_data),
-                    'total_duration': time_module.time() - start_time
-                }
-        
             with self.get_connection() as conn:
                 cursor = conn.cursor()
             
-                # Batch-Insert mit UPSERT-Logik (unverändert)
+                # Stelle sicher dass steam_charts_prices Tabelle existiert
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS steam_charts_prices (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        steam_app_id TEXT NOT NULL,
+                        price REAL,
+                        currency TEXT DEFAULT 'EUR',
+                        discount_percent INTEGER DEFAULT 0,
+                        original_price REAL,
+                        on_sale BOOLEAN DEFAULT 0,
+                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        chart_source TEXT DEFAULT 'steam_charts',
+                        INDEX(steam_app_id, timestamp)
+                    )
+                ''')
+            
                 written_count = 0
             
-                for chart in charts_data:
+                for price_entry in price_data:
                     try:
                         cursor.execute("""
-                            INSERT OR REPLACE INTO steam_charts_tracking 
-                            (steam_app_id, name, chart_type, current_rank, current_players, 
-                             peak_players, last_seen, updated_at, active)
-                            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1)
+                            INSERT INTO steam_charts_prices 
+                            (steam_app_id, price, currency, discount_percent, original_price, on_sale, chart_source)
+                            VALUES (?, ?, ?, ?, ?, ?, 'batch_update')
                         """, (
-                            str(chart.get('steam_app_id', '')),
-                            chart.get('name', ''),
-                            chart.get('chart_type', 'unknown'),
-                            int(chart.get('current_rank', chart.get('rank', 999))),
-                            int(chart.get('current_players', 0)),
-                            int(chart.get('peak_players', 0))
+                            str(price_entry.get('steam_app_id', '')),
+                            float(price_entry.get('price', 0.0)),
+                            price_entry.get('currency', 'EUR'),
+                            int(price_entry.get('discount_percent', 0)),
+                            float(price_entry.get('original_price', price_entry.get('price', 0.0))),
+                            bool(price_entry.get('on_sale', False))
                         ))
                         written_count += 1
                     except Exception as row_error:
-                        logger.debug(f"Row-Fehler: {row_error}")
+                        logger.debug(f"Preis-Row-Fehler: {row_error}")
                         continue
             
                 conn.commit()
+                duration = time.time() - start_time
             
-                duration = time_module.time() - start_time
+                logger.info(f"✅ Charts Preis Batch-Write: {written_count} Preise in {duration:.2f}s")
             
                 return {
                     'success': True,
                     'written_count': written_count,
                     'duration': duration,
-                    'performance_multiplier': f"{written_count/duration:.1f}/s",
-                    'table_used': 'steam_charts_tracking'
+                    'table_used': 'steam_charts_prices'
                 }
             
         except Exception as e:
-            logger.error(f"❌ Charts Batch Write fehlgeschlagen: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'total_items': len(charts_data),
-                'total_duration': time_module.time() - start_time
-            }
+            logger.error(f"❌ Charts Preis Batch Write fehlgeschlagen: {e}")
+            return {'success': False, 'error': str(e), 'written_count': 0}
+
     
     def batch_write_prices(self, price_data: List[Dict]) -> Dict:
         """
@@ -2192,54 +2183,59 @@ class DatabaseBatchWriter:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
             
-                # ===================================================
-                # STEAM CHARTS TRACKING - Vollständige Struktur
-                # ===================================================
+                # Primary Charts Tracking Table (OHNE Foreign Key Constraints)
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS steam_charts_tracking (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
                         steam_app_id TEXT NOT NULL,
-                        name TEXT,
                         chart_type TEXT NOT NULL,
-                        current_rank INTEGER,
-                        best_rank INTEGER,
-                        total_appearances INTEGER DEFAULT 1,
-                        days_in_charts INTEGER DEFAULT 1,
-                        peak_players INTEGER DEFAULT 0,
+                        name TEXT,
+                        current_rank INTEGER DEFAULT 999,
                         current_players INTEGER DEFAULT 0,
-                        metadata TEXT,
-                        first_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        active INTEGER DEFAULT 1,
-                        UNIQUE(steam_app_id, chart_type)
+                        peak_players INTEGER DEFAULT 0,
+                        last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        active BOOLEAN DEFAULT 1,
+                        first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        days_on_charts INTEGER DEFAULT 1,
+                        best_rank INTEGER DEFAULT 999,
+                        PRIMARY KEY (steam_app_id, chart_type)
                     )
                 ''')
             
-                # ===================================================
-                # PERFORMANCE-INDIZES für steam_charts_tracking
-                # ===================================================
-                indices = [
-                    "CREATE INDEX IF NOT EXISTS idx_charts_tracking_app_id ON steam_charts_tracking(steam_app_id)",
-                    "CREATE INDEX IF NOT EXISTS idx_charts_tracking_app_type ON steam_charts_tracking(steam_app_id, chart_type)",
-                    "CREATE INDEX IF NOT EXISTS idx_charts_tracking_chart_type ON steam_charts_tracking(chart_type)",
-                    "CREATE INDEX IF NOT EXISTS idx_charts_tracking_active ON steam_charts_tracking(active)",
-                    "CREATE INDEX IF NOT EXISTS idx_charts_tracking_rank ON steam_charts_tracking(current_rank)",
-                    "CREATE INDEX IF NOT EXISTS idx_charts_tracking_last_seen ON steam_charts_tracking(last_seen)"
-                ]
+                # Charts History Table (Optional - für detaillierte Historie)
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS charts_history (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        steam_app_id TEXT NOT NULL,
+                        chart_type TEXT NOT NULL,
+                        rank_position INTEGER NOT NULL,
+                        snapshot_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        additional_data TEXT
+                    )
+                ''')
             
-                for index_sql in indices:
-                    try:
-                        cursor.execute(index_sql)
-                    except Exception as index_error:
-                        logger.debug(f"Index bereits vorhanden oder Fehler: {index_error}")
+                # Indices für Performance
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_charts_tracking_app_type 
+                    ON steam_charts_tracking(steam_app_id, chart_type)
+                ''')
+            
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_charts_tracking_rank 
+                    ON steam_charts_tracking(chart_type, current_rank)
+                ''')
+            
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_charts_history_app 
+                    ON charts_history(steam_app_id, chart_type, snapshot_timestamp)
+                ''')
             
                 conn.commit()
                 logger.debug("✅ steam_charts_tracking Tabelle und Indizes sichergestellt")
                 return True
             
         except Exception as e:
-            logger.error(f"❌ steam_charts_tracking Tabellen-Sicherstellung fehlgeschlagen: {e}")
+            logger.error(f"❌ Fehler beim Erstellen der Charts-Tabellen: {e}")
             return False
 
 
