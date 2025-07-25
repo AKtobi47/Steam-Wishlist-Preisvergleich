@@ -718,16 +718,27 @@ class DatabaseManager:
     
         success_count = 0
         total_tables = 0
-    
+
         try:
             # ===================================================
-            # SCHRITT 1: Kern-Tabellen über ensure-Pattern
+            # SCHRITT 1: DatabaseBatchWriter für ensure-Methoden erstellen
+            # ===================================================
+        
+            try:
+                from database_manager import create_batch_writer
+                batch_writer = create_batch_writer(self)
+            except ImportError:
+                # Fallback: DatabaseBatchWriter direkt erstellen
+                batch_writer = DatabaseBatchWriter(self)
+
+            # ===================================================
+            # SCHRITT 2: Kern-Tabellen über batch_writer ensure-Pattern
             # ===================================================
         
             core_tables = [
-                ("Charts Tracking", self.ensure_charts_tracking_table),
-                ("Charts Prices", self.ensure_charts_prices_table),
-                ("Price Snapshots", self.ensure_price_snapshots_table)
+                ("Charts Tracking", batch_writer.ensure_charts_tracking_table),
+                ("Charts Prices", batch_writer.ensure_charts_prices_table),
+                ("Price Snapshots", batch_writer.ensure_price_snapshots_table)
             ]
         
             for table_name, ensure_func in core_tables:
@@ -740,20 +751,20 @@ class DatabaseManager:
                         logger.error(f"❌ {table_name} Tabelle konnte nicht sichergestellt werden")
                 except Exception as table_error:
                     logger.error(f"❌ {table_name} Tabelle Fehler: {table_error}")
-        
+
             # ===================================================
-            # SCHRITT 2: Charts-Hilfs-Tabellen
+            # SCHRITT 3: Charts-Hilfs-Tabellen direkt erstellen
             # ===================================================
         
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-            
+
                 # charts_history - Rang-Historie über Zeit
                 try:
                     cursor.execute('''
                         CREATE TABLE IF NOT EXISTS charts_history (
                             id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            steam_app_id TEXT NOT NULL REFERENCES steam_charts_tracking(steam_app_id),
+                            steam_app_id TEXT NOT NULL,
                             chart_type TEXT NOT NULL,
                             rank_position INTEGER NOT NULL,
                             snapshot_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -766,7 +777,7 @@ class DatabaseManager:
                 except Exception as e:
                     logger.error(f"❌ charts_history Tabelle Fehler: {e}")
                     total_tables += 1
-            
+
                 # steam_charts_rank_history - Detaillierte Rang-Historie
                 try:
                     cursor.execute('''
@@ -775,8 +786,7 @@ class DatabaseManager:
                             steam_app_id TEXT NOT NULL,
                             chart_type TEXT NOT NULL,
                             rank_position INTEGER NOT NULL,
-                            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            FOREIGN KEY (steam_app_id, chart_type) REFERENCES steam_charts_tracking(steam_app_id, chart_type)
+                            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                         )
                     ''')
                     total_tables += 1
@@ -785,7 +795,7 @@ class DatabaseManager:
                 except Exception as e:
                     logger.error(f"❌ steam_charts_rank_history Tabelle Fehler: {e}")
                     total_tables += 1
-            
+
                 # steam_charts_statistics - Update-Statistiken
                 try:
                     cursor.execute('''
@@ -806,7 +816,7 @@ class DatabaseManager:
                 except Exception as e:
                     logger.error(f"❌ steam_charts_statistics Tabelle Fehler: {e}")
                     total_tables += 1
-            
+
                 # steam_charts_config - Charts-Konfiguration
                 try:
                     cursor.execute('''
@@ -822,75 +832,62 @@ class DatabaseManager:
                 except Exception as e:
                     logger.error(f"❌ steam_charts_config Tabelle Fehler: {e}")
                     total_tables += 1
-            
+
                 conn.commit()
-        
-            # ===================================================
-            # SCHRITT 3: Charts-Views erstellen
-            # ===================================================
-            try:
-                if hasattr(self, '_create_charts_views'):
-                    self._create_charts_views()
-                    logger.debug("✅ Charts-Views erstellt")
-            except Exception as views_error:
-                logger.warning(f"⚠️ Charts-Views teilweise: {views_error}")
-        
+
             # ===================================================
             # SCHRITT 4: Performance-Indizes für ALLE Tabellen
             # ===================================================
             try:
                 with self.get_connection() as conn:
                     cursor = conn.cursor()
-                
+
                     # Alle Charts-Indizes
                     all_charts_indices = [
-                        # Kern-Tabellen (bereits in ensure-Methoden)
+                        # Kern-Tabellen
                         "CREATE INDEX IF NOT EXISTS idx_charts_tracking_app_id ON steam_charts_tracking(steam_app_id)",
                         "CREATE INDEX IF NOT EXISTS idx_charts_tracking_app_type ON steam_charts_tracking(steam_app_id, chart_type)",
                         "CREATE INDEX IF NOT EXISTS idx_charts_prices_app_chart ON steam_charts_prices(steam_app_id, chart_type)",
                         "CREATE INDEX IF NOT EXISTS idx_price_snapshots_app_id ON price_snapshots(steam_app_id)",
-                    
+
+                        # Hilfs-Tabellen
                         "CREATE INDEX IF NOT EXISTS idx_charts_history_app_id ON charts_history(steam_app_id)",
                         "CREATE INDEX IF NOT EXISTS idx_charts_history_timestamp ON charts_history(snapshot_timestamp)",
                         "CREATE INDEX IF NOT EXISTS idx_charts_history_type ON charts_history(chart_type)",
-                    
+
                         "CREATE INDEX IF NOT EXISTS idx_charts_rank_history_app_type ON steam_charts_rank_history(steam_app_id, chart_type)",
                         "CREATE INDEX IF NOT EXISTS idx_charts_rank_history_timestamp ON steam_charts_rank_history(timestamp)",
-                    
+
                         "CREATE INDEX IF NOT EXISTS idx_charts_statistics_type ON steam_charts_statistics(chart_type)",
                         "CREATE INDEX IF NOT EXISTS idx_charts_statistics_timestamp ON steam_charts_statistics(timestamp)"
                     ]
-                
+
                     for index_sql in all_charts_indices:
                         try:
                             cursor.execute(index_sql)
                         except Exception as index_error:
                             logger.debug(f"Index bereits vorhanden oder Fehler: {index_error}")
-                
+
                     conn.commit()
                     logger.debug("✅ Vollständige Charts-Indizes erstellt")
-                
+
             except Exception as indices_error:
                 logger.warning(f"⚠️ Charts-Indizes teilweise: {indices_error}")
-        
+
             # ===================================================
             # ERGEBNIS
             # ===================================================
-        
+
             all_tables_ready = success_count == total_tables
-        
+
             if all_tables_ready:
                 logger.info("✅ Vollständige Charts-Infrastruktur bereit")
                 logger.info(f"   📊 {success_count}/{total_tables} Tabellen sichergestellt")
-                logger.info("   🏗️ Kern-Tabellen: steam_charts_tracking, steam_charts_prices, price_snapshots")
-                logger.info("   📋 Hilfs-Tabellen: charts_history, steam_charts_rank_history, steam_charts_statistics, steam_charts_config")
-                logger.info("   🎯 Views und Indizes aktiviert")
             else:
                 logger.warning(f"⚠️ Charts-Infrastruktur teilweise bereit: {success_count}/{total_tables}")
-                logger.warning("   ❌ Manche Tabellen konnten nicht erstellt werden - prüfe Logs")
-        
+
             return all_tables_ready
-        
+
         except Exception as e:
             logger.error(f"❌ Charts-Infrastruktur-Initialisierung fehlgeschlagen: {e}")
             return False
@@ -2136,6 +2133,99 @@ class DatabaseBatchWriter:
                 'total_duration': time_module.time() - start_time
             }
     
+    def batch_write_charts_prices(self, price_data: List[Dict]) -> Dict:
+        """
+        Charts Preis Batch Writer - KORRIGIERT (ohne INDEX-Syntaxfehler)
+    
+        Args:
+            price_data: Liste von Charts-Preis-Dictionaries
+    
+        Returns:
+            Write-Result Dictionary
+        """
+        try:
+            from logging_config import get_database_logger
+            logger = get_database_logger()
+        except ImportError:
+            import logging
+            logger = logging.getLogger(__name__)
+
+        if not price_data:
+            return {'success': True, 'written_count': 0}
+
+        start_time = time.time()
+
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Tabelle sicherstellen - KORRIGIERTES SQL ohne INDEX
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS steam_charts_prices (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        steam_app_id TEXT NOT NULL,
+                        price REAL,
+                        currency TEXT DEFAULT 'EUR',
+                        discount_percent INTEGER DEFAULT 0,
+                        original_price REAL,
+                        on_sale BOOLEAN DEFAULT 0,
+                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        chart_source TEXT DEFAULT 'steam_charts'
+                    )
+                ''')
+
+                # Indizes SEPARAT erstellen - das ist korrekte SQLite Syntax
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_charts_prices_app_id 
+                    ON steam_charts_prices(steam_app_id)
+                ''')
+            
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_charts_prices_timestamp 
+                    ON steam_charts_prices(timestamp)
+                ''')
+            
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_charts_prices_app_timestamp 
+                    ON steam_charts_prices(steam_app_id, timestamp)
+                ''')
+
+                written_count = 0
+
+                for price_entry in price_data:
+                    try:
+                        cursor.execute("""
+                            INSERT INTO steam_charts_prices 
+                            (steam_app_id, price, currency, discount_percent, original_price, on_sale, chart_source)
+                            VALUES (?, ?, ?, ?, ?, ?, 'batch_update')
+                        """, (
+                            str(price_entry.get('steam_app_id', '')),
+                            float(price_entry.get('price', 0.0)),
+                            price_entry.get('currency', 'EUR'),
+                            int(price_entry.get('discount_percent', 0)),
+                            float(price_entry.get('original_price', price_entry.get('price', 0.0))),
+                            bool(price_entry.get('on_sale', False))
+                        ))
+                        written_count += 1
+                    except Exception as row_error:
+                        logger.debug(f"Preis-Row-Fehler: {row_error}")
+                        continue
+
+                conn.commit()
+                duration = time.time() - start_time
+
+                logger.info(f"✅ Charts Preis Batch-Write: {written_count} Preise in {duration:.2f}s")
+
+                return {
+                    'success': True,
+                    'written_count': written_count,
+                    'duration': duration,
+                    'table_used': 'steam_charts_prices'
+                }
+
+        except Exception as e:
+            logger.error(f"❌ Charts Preis Batch Write fehlgeschlagen: {e}")
+            return {'success': False, 'error': str(e), 'written_count': 0}
     
     def _ensure_charts_schema_compatibility(self):
         """
