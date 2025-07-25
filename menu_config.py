@@ -74,7 +74,7 @@ class DynamicMenuSystem:
         Initialisiert die komplette Menüstruktur mit allen Optionen
         """
     
-        # 🏠 BASIS-FUNKTIONEN (automatisch nummeriert)
+        # BASIS-FUNKTIONEN (automatisch nummeriert)
         basic_category = MenuCategory("BASIS-FUNKTIONEN", "🏠", "Grundlegende Tracking-Funktionen")
         basic_category.add_option(MenuOption("App manuell hinzufügen", "App zum Tracking hinzufügen", "menu_add_app_manually", icon="📱"))
         basic_category.add_option(MenuOption("Steam Wishlist importieren", "Wishlist von Steam importieren", "menu_import_wishlist", icon="📥"))
@@ -83,29 +83,29 @@ class DynamicMenuSystem:
         basic_category.add_option(MenuOption("Preisverlauf anzeigen", "Historische Preisdaten", "menu_show_price_history", icon="📈"))
         basic_category.add_option(MenuOption("Preise manuell aktualisieren", "Sofortiges Preis-Update", "menu_update_prices", icon="🔄"))
     
-        # 🚀 AUTOMATION & BATCH (automatisch nummeriert)
+        # AUTOMATION & BATCH (automatisch nummeriert)
         automation_category = MenuCategory("AUTOMATION & BATCH", "🚀", "Automatisierungs-Features")
         automation_category.add_option(MenuOption("Automatisches Tracking", "Scheduler starten/stoppen", "menu_toggle_scheduler", icon="🚀"))
         automation_category.add_option(MenuOption("Namen für alle Apps aktualisieren", "BATCH Namen-Update (Wishlist+Manual+Charts)", "menu_update_names_all_apps", icon="📝"))
     
-        # 🎮 APP-VERWALTUNG (automatisch nummeriert)
+        # APP-VERWALTUNG (automatisch nummeriert)
         management_category = MenuCategory("APP-VERWALTUNG", "🎮", "Verwaltung der getrackte Apps")
         management_category.add_option(MenuOption("Getrackte Apps verwalten", "Apps bearbeiten", "menu_manage_apps", icon="📋"))
         management_category.add_option(MenuOption("Apps entfernen", "Apps aus Tracking entfernen", "menu_remove_apps", icon="🗑️"))
         management_category.add_option(MenuOption("CSV-Export erstellen", "Daten exportieren", "menu_csv_export", icon="📄"))
         management_category.add_option(MenuOption("Detaillierte Statistiken", "System-Analytics", "menu_detailed_statistics", icon="📊"))
     
-        # 📊 CHARTS & ANALYTICS (nur wenn charts_enabled=True) - VOLLSTÄNDIG MIT BATCH
+        # CHARTS & ANALYTICS (nur wenn charts_enabled=True) - VOLLSTÄNDIG MIT BATCH
         charts_category = MenuCategory("CHARTS & ANALYTICS", "📊", "Steam Charts Integration")
         charts_category.add_option(MenuOption("Charts anzeigen", "Steam Charts-Daten", "menu_show_charts", ["charts_enabled"], "📈"))
         charts_category.add_option(MenuOption("Charts vollständig aktualisieren", "Charts + Namen + Preise (BATCH)", "menu_batch_charts_update", ["charts_enabled"], "🔄"))
         charts_category.add_option(MenuOption("Charts-Deals anzeigen", "Deals aus Charts-Daten", "menu_charts_deals", ["charts_enabled"], "🎯"))
         charts_category.add_option(MenuOption("Charts-Statistiken", "Charts-Analysen", "menu_charts_statistics", ["charts_enabled"], "📊"))
         charts_category.add_option(MenuOption("Charts-Automation", "Automatische Charts", "menu_charts_automation", ["charts_enabled"], "🤖"))
-        # 🚀 NEUE ERWEITERTE BATCH-OPTION
+        # NEUE ERWEITERTE BATCH-OPTION
         charts_category.add_option(MenuOption("Erweiterte BATCH-Optionen", "Power-User BATCH-Charts-Updates", "menu_batch_charts_update", ["charts_enabled"], "📦"))
     
-        # 🔍 ELASTICSEARCH (nur wenn es_available=True)
+        # ELASTICSEARCH (nur wenn es_available=True)
         es_category = MenuCategory("ELASTICSEARCH", "🔍", "Erweiterte Analytics mit Elasticsearch")
         es_category.add_option(MenuOption("ES Daten exportieren", "Export zu Elasticsearch", "menu_elasticsearch_export", ["es_available"], "📤"))
         es_category.add_option(MenuOption("Kibana Dashboard", "Dashboard öffnen", "menu_elasticsearch_dashboard", ["es_available"], "📊"))
@@ -113,7 +113,7 @@ class DynamicMenuSystem:
         es_category.add_option(MenuOption("ES Konfiguration", "ES-Einstellungen", "menu_elasticsearch_config", ["es_available"], "⚙️"))
         es_category.add_option(MenuOption("ES Synchronisierung", "Daten sync", "menu_elasticsearch_sync", ["es_available"], "🔄"))
     
-        # 🛠️ SYSTEM-TOOLS (automatisch nummeriert)
+        #  SYSTEM-TOOLS (automatisch nummeriert)
         system_category = MenuCategory("SYSTEM-TOOLS", "🛠️", "System-Wartung und Konfiguration")
         system_category.add_option(MenuOption("System-Einstellungen", "Konfiguration bearbeiten", "menu_system_settings", icon="⚙️"))
         system_category.add_option(MenuOption("System-Informationen", "System-Status", "menu_system_info", icon="📊"))
@@ -192,7 +192,7 @@ class DynamicMenuSystem:
             if not available_options:
                 continue
         
-            # 🎨 VERSCHIEDENE KATEGORIE-STILE basierend auf menu_style
+            # VERSCHIEDENE KATEGORIE-STILE basierend auf menu_style
             if config['menu_style'] == 'compact':
                 # COMPACT: Minimaler Stil
                 print(f"\n{category.icon} {category.name}")
@@ -214,7 +214,7 @@ class DynamicMenuSystem:
                     print(f"   {category.description}")
                 print("-" * 40)
 
-            # 🎨 VERSCHIEDENE OPTION-STILE basierend auf menu_style
+            # VERSCHIEDENE OPTION-STILE basierend auf menu_style
             for option in available_options:
             
                 if config['menu_style'] == 'compact':
